@@ -2,6 +2,7 @@ import express from 'express';
 import { q, one, getSettings, flag } from './db.js';
 import { bus } from './bus.js';
 import { syncUser } from './steam.js';
+import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
   HttpError, signedIn, member, roleAtLeast, publicUser, str, int, color, safeUrl,
 } from './util.js';
@@ -225,7 +226,7 @@ api.get('/channels/:id/messages', member, async (req, res) => {
     `${MESSAGE_SELECT} WHERE m.channel_id=$1 AND m.id < $2 AND m.deleted = false ORDER BY m.id DESC LIMIT 60`,
     [ch.id, before],
   );
-  const ids = [...new Set(msgs.map((m) => m.user_id).filter(Boolean))];
+  const ids = [...new Set([...msgs.map((m) => m.user_id).filter(Boolean), ...mentionedUserIds(msgs)])];
   const users = ids.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [ids])) : [];
   res.json({ messages: msgs.reverse(), users });
 });
@@ -243,9 +244,24 @@ api.post('/channels/:id/messages', member, async (req, res) => {
   if (ch.read_only && !roleAtLeast(req.user.role, 'mod')) throw new HttpError(403, 'Only staff can post here.');
   const body = str(req.body?.body, 2000);
   if (!body) throw new HttpError(400, 'Message is empty.');
+  const mentions = parseMentions(body);
+  if (mentions.groups.has('everyone') && !roleAtLeast(req.user.role, 'mod')) {
+    throw new HttpError(403, 'Only mods and admins can mention @everyone.');
+  }
   const msg = await one('INSERT INTO messages (channel_id, user_id, body) VALUES ($1,$2,$3) RETURNING *', [ch.id, req.user.id, body]);
   bus.emit('chat:new', msg);
   res.json(msg);
+
+  try {
+    const recipients = await mentionRecipients(mentions, ch, req.user.id);
+    if (recipients.length) {
+      const text = (await plainText(body)).slice(0, 120);
+      const note = { title: `${req.user.persona_name} mentioned you in #${ch.name}`, body: text, link: `#/chat/${ch.id}` };
+      for (const id of recipients) bus.emit('notify', id, note);
+    }
+  } catch (e) {
+    console.warn('[chat] mention notify failed:', e.message);
+  }
 });
 
 api.delete('/messages/:id', member, async (req, res) => {

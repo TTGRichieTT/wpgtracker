@@ -294,7 +294,7 @@ function updateNav() {
     `<a href="#" id="moreBtn">${icon('menu')}<span>More</span></a>`;
   document.getElementById('moreBtn').onclick = (e) => { e.preventDefault(); document.getElementById('menuBtn').click(); };
   const me = state.me;
-  document.getElementById('mecard').innerHTML = `${avatar(me, 'sm')}<div class="grow"><b>${esc(me.name)}</b><div class="muted">${me.rank ? esc(me.rank.abbr) : ''} · ${fmtNum(me.xp)} XP</div></div>
+  document.getElementById('mecard').innerHTML = `${avatar(me, 'sm')}<div class="grow"><b>${esc(me.name)}</b><div class="muted">${isPmc(me) ? 'PMC' : me.rank ? esc(me.rank.abbr) : 'No rank'} · ${fmtNum(me.xp)} XP</div></div>
     <button class="btn ghost small" id="logoutBtn" title="Sign out" aria-label="Sign out">${icon('logout')}</button>`;
   document.getElementById('logoutBtn').onclick = logout;
   markActive();
@@ -326,6 +326,7 @@ function connectSocket() {
   });
   socket.on('chat:new', (d) => {
     if (d.user) state.users.set(d.user.id, d.user);
+    (d.mentioned || []).forEach((u) => state.users.set(u.id, u));
     emitLive('chat:new', d);
   });
   socket.on('chat:deleted', (d) => emitLive('chat:deleted', d));
@@ -708,8 +709,45 @@ async function viewEditProfile(main) {
 }
 
 // ---------- Chat ----------
+// ---------- @mentions ----------
+// Stored in messages as <@u:ID> (user), <@r:ID> (rank), <@g:NAME> (group).
+const MENTION_GROUPS = [
+  { id: 'everyone', label: 'everyone', desc: 'Everyone who can see this channel', staff: true },
+  { id: 'admin', label: 'Admins', desc: 'All admins' },
+  { id: 'mod', label: 'Mods', desc: 'All mods' },
+  { id: 'member', label: 'Members', desc: 'All WPG members' },
+  { id: 'pmc', label: 'PMC', desc: 'All PMC guests' },
+];
+const MENTION_TOKEN = /&lt;@(u|r|g):([a-z0-9]{1,20})&gt;/g;
+
+function mentionsMe(body) {
+  const me = state.me;
+  const tokens = [...String(body).matchAll(/<@(u|r|g):([a-z0-9]{1,20})>/g)];
+  return tokens.some(([, kind, id]) => (kind === 'u' && Number(id) === me.id)
+    || (kind === 'r' && !isPmc(me) && Number(id) === me.rank_id)
+    || (kind === 'g' && (id === 'everyone' || (id === 'admin' && me.role === 'admin') || (id === 'mod' && me.role === 'mod')
+      || (id === 'member' && !isPmc(me)) || (id === 'pmc' && isPmc(me)))));
+}
+
+function renderBody(body, rankById) {
+  return esc(body).replace(MENTION_TOKEN, (_, kind, id) => {
+    if (kind === 'u') {
+      const u = state.users.get(Number(id));
+      return `<a class="mention${Number(id) === state.me.id ? ' me' : ''}" href="#/u/${Number(id)}">@${esc(u?.name || 'unknown')}</a>`;
+    }
+    if (kind === 'r') {
+      const r = rankById.get(Number(id));
+      return `<span class="mention" style="--mc:${esc(r?.color || '#29b6f6')}">@${esc(r?.name || 'rank')}</span>`;
+    }
+    const g = MENTION_GROUPS.find((x) => x.id === id);
+    return `<span class="mention group">@${esc(g?.label || id)}</span>`;
+  });
+}
+
 async function viewChat(main, [idParam], alive) {
-  const channels = await api('channels');
+  const [channels, ranks, members] = await Promise.all([api('channels'), api('ranks'), api('members').catch(() => [])]);
+  const rankById = new Map(ranks.map((r) => [r.id, r]));
+  members.forEach((u) => { if (!state.users.has(u.id)) state.users.set(u.id, u); });
   if (!channels.length) { main.innerHTML = '<div class="panel empty">No channels yet.</div>'; return; }
   const ch = channels.find((c) => c.id === Number(idParam)) || channels[0];
   main.innerHTML = `
@@ -720,7 +758,8 @@ async function viewChat(main, [idParam], alive) {
         <div class="msgs" id="msgs"><div class="spinner"></div></div>
         <div class="typing" id="typing"></div>
         ${ch.read_only && !isStaff() ? '<div class="composer muted small">Only staff can post in this channel.</div>' : `
-        <form class="composer" id="composer"><textarea name="body" placeholder="Message #${esc(ch.name)}" maxlength="2000" rows="1"></textarea><button class="btn primary" aria-label="Send">${icon('send')}</button></form>`}
+        <div class="mention-pop hidden" id="mentionPop" role="listbox" aria-label="Mention someone"></div>
+        <form class="composer" id="composer"><textarea name="body" placeholder="Message #${esc(ch.name)} — type @ to mention" maxlength="2000" rows="1"></textarea><button class="btn primary" aria-label="Send">${icon('send')}</button></form>`}
       </div>
     </div>`;
   const box = document.getElementById('msgs');
@@ -730,9 +769,9 @@ async function viewChat(main, [idParam], alive) {
     if (!m.user_id) return `<div class="msg system" data-id="${m.id}">⭐ ${esc(m.body)}</div>`;
     const u = state.users.get(m.user_id) || { name: 'Unknown', id: m.user_id };
     const canDel = m.user_id === state.me.id || isStaff();
-    return `<div class="msg" data-id="${m.id}"><a href="#/u/${u.id}">${avatar(u)}</a><div class="grow">
+    return `<div class="msg${mentionsMe(m.body) && m.user_id !== state.me.id ? ' mention-me' : ''}" data-id="${m.id}"><a href="#/u/${u.id}">${avatar(u)}</a><div class="grow">
       <div><a class="who" href="#/u/${u.id}" style="color:${isPmc(u) ? '#ffb347' : esc(u.rank?.color || 'var(--text)')}">${isPmc(u) ? '[PMC] ' : u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Developer</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
-      <div class="body">${esc(m.body)}</div></div>
+      <div class="body">${renderBody(m.body, rankById)}</div></div>
       ${canDel ? `<button class="btn ghost small del" data-del="${m.id}" title="Delete" aria-label="Delete">${icon('trash')}</button>` : ''}</div>`;
   };
 
@@ -793,16 +832,92 @@ async function viewChat(main, [idParam], alive) {
       ta.style.height = `${Math.min(140, ta.scrollHeight)}px`;
       if (Date.now() - lastTyping > 2000) { lastTyping = Date.now(); state.socket?.emit('typing', ch.id); }
     });
+    // ----- @mention pick-list -----
+    const pop = document.getElementById('mentionPop');
+    const picked = new Map(); // "@Display" -> token
+    let options = [];
+    let sel = 0;
+    let query = null; // { start, text } of the "@word" being typed
+    const canEveryone = isStaff();
+
+    function findQuery() {
+      const before = ta.value.slice(0, ta.selectionStart);
+      const m = /(^|\s)@([^\s@]{0,30})$/.exec(before);
+      return m ? { start: before.length - m[2].length - 1, text: m[2].toLowerCase() } : null;
+    }
+    function buildOptions(text) {
+      const has = (s) => String(s || '').toLowerCase().includes(text);
+      const groups = MENTION_GROUPS.filter((g) => (!g.staff || canEveryone) && (has(g.label) || has(g.id)))
+        .map((g) => ({ token: `<@g:${g.id}>`, display: `@${g.label}`, label: `@${g.label}`, sub: g.desc, kind: 'Group' }));
+      const rks = ranks.filter((r) => has(r.name) || has(r.abbr))
+        .map((r) => ({ token: `<@r:${r.id}>`, display: `@${r.name}`, label: `@${r.name}`, sub: `Everyone ranked ${r.abbr}`, kind: 'Rank', rank: r }));
+      const people = [...state.users.values()].filter((u) => u.status === 'active' && (has(u.name) || has(u.callsign)))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((u) => ({ token: `<@u:${u.id}>`, display: `@${u.name}`, label: u.name, sub: rankName(u), kind: 'Person', user: u }));
+      return [...people.slice(0, 8), ...rks.slice(0, 5), ...groups].slice(0, 14);
+    }
+    function closePop() { pop.classList.add('hidden'); query = null; options = []; }
+    function drawPop() {
+      if (!options.length) return closePop();
+      pop.innerHTML = options.map((o, i) => `<button type="button" class="mention-opt${i === sel ? ' sel' : ''}" data-i="${i}" role="option">
+        ${o.user ? avatar(o.user, 'sm') : o.rank ? rankBadge(o.rank, 28) : `<span class="mention group" style="margin:0">@</span>`}
+        <span class="grow"><b>${esc(o.label)}</b><span class="muted small"> · ${esc(o.sub)}</span></span><span class="pill">${o.kind}</span></button>`).join('');
+      pop.classList.remove('hidden');
+      pop.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+    }
+    function refreshPop() {
+      query = findQuery();
+      if (!query) return closePop();
+      options = buildOptions(query.text);
+      sel = 0;
+      drawPop();
+    }
+    function choose(i) {
+      const o = options[i];
+      if (!o || !query) return;
+      const end = ta.selectionStart;
+      ta.value = `${ta.value.slice(0, query.start)}${o.display} ${ta.value.slice(end)}`;
+      const caret = query.start + o.display.length + 1;
+      ta.setSelectionRange(caret, caret);
+      picked.set(o.display, o.token);
+      closePop();
+      ta.focus();
+    }
+    ta.addEventListener('input', refreshPop);
+    ta.addEventListener('click', refreshPop);
+    ta.addEventListener('blur', () => setTimeout(closePop, 150));
+    pop.addEventListener('mousedown', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (b) { e.preventDefault(); choose(Number(b.dataset.i)); }
+    });
+
     ta.addEventListener('keydown', (e) => {
+      if (!pop.classList.contains('hidden') && options.length) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); sel = (sel + 1) % options.length; return drawPop(); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); sel = (sel - 1 + options.length) % options.length; return drawPop(); }
+        if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); return choose(sel); }
+        if (e.key === 'Escape') { e.preventDefault(); return closePop(); }
+      }
       if (e.key === 'Enter' && !e.shiftKey && !matchMedia('(pointer:coarse)').matches) { e.preventDefault(); form.requestSubmit(); }
     });
+
+    // Swap the "@Name" text the user sees for mention tokens before sending.
+    const withTokens = (text) => [...picked.entries()]
+      .sort((a, b) => b[0].length - a[0].length)
+      .reduce((out, [display, token]) => out.split(display).join(token), text);
+
     form.onsubmit = async (e) => {
       e.preventDefault();
-      const body = ta.value.trim();
-      if (!body) return;
+      const typed = ta.value.trim();
+      if (!typed) return;
+      const body = withTokens(typed);
       ta.value = '';
       ta.style.height = '';
-      try { await api(`channels/${ch.id}/messages`, { method: 'POST', body: { body } }); } catch (x) { ta.value = body; fail(x); }
+      closePop();
+      try {
+        await api(`channels/${ch.id}/messages`, { method: 'POST', body: { body } });
+        picked.clear();
+      } catch (x) { ta.value = typed; fail(x); }
     };
   }
 }

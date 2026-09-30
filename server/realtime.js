@@ -3,6 +3,7 @@ import { q, one } from './db.js';
 import { bus } from './bus.js';
 import { usersWithRanks, visibleChannels } from './routes.js';
 import { publicUser } from './util.js';
+import { mentionedUserIds } from './mentions.js';
 
 export function startRealtime(httpServer, sessionMiddleware) {
   const io = new Server(httpServer, { cors: { origin: false } });
@@ -48,7 +49,9 @@ export function startRealtime(httpServer, sessionMiddleware) {
   bus.on('chat:new', async (msg) => {
     const author = msg.user_id ? await one('SELECT * FROM users WHERE id=$1', [msg.user_id]) : null;
     const [user] = author ? await usersWithRanks([author]) : [null];
-    io.to(`c:${msg.channel_id}`).emit('chat:new', { message: msg, user });
+    const ids = mentionedUserIds([msg]);
+    const mentioned = ids.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [ids])) : [];
+    io.to(`c:${msg.channel_id}`).emit('chat:new', { message: msg, user, mentioned });
   });
   bus.on('chat:deleted', (msg) => io.to(`c:${msg.channel_id}`).emit('chat:deleted', { id: msg.id, channel_id: msg.channel_id }));
   bus.on('dm:new', (dm, sender) => {
