@@ -527,6 +527,10 @@ const SETTINGS = [
     ['accent_color', 'Accent colour', 'color'],
     ['discord_invite', 'Discord invite link'],
   ]],
+  ['Discord voice', [
+    ['discord_voice_enabled', 'Show who is in the Discord voice channels (HQ + Comms)', 'check'],
+    ['discord_server_id', 'Discord server ID (optional — found from the invite link if left empty)'],
+  ]],
   ['Members', [
     ['require_approval', 'New sign-ups need approval (members only)', 'check'],
     ['dm_friends_only', 'Private messages only between friends', 'check'],

@@ -428,3 +428,21 @@ a.mention:hover { text-decoration: none; filter: brightness(1.2); }
   background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
 .mention-opt.sel, .mention-opt:hover { background: rgba(41,182,246,.16); }
 .mention-opt .av-wrap .dot { display: none; }
+
+/* Discord voice */
+.discord-panel { margin-top: 16px; }
+.btn.discord-join { background: linear-gradient(180deg, #6d78ff, #4752c4); border-color: #8a93ff; color: #fff; box-shadow: 0 0 16px rgba(88,101,242,.35); }
+.vc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.vc-chan { background: #07121f; border: 1px solid rgba(58,120,180,.25); border-radius: 6px; padding: 8px 10px; }
+.vc-chan.live { border-color: rgba(61,220,132,.45); box-shadow: 0 0 12px rgba(61,220,132,.12); }
+.vc-name { display: flex; align-items: center; gap: 6px; font: 700 14px var(--head); text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.vc-chan.live .vc-name { color: var(--text); }
+.vc-name svg { width: 16px; height: 16px; }
+.vc-user { display: flex; align-items: center; gap: 8px; padding: 4px 0 0 4px; font-size: 14px; }
+.vc-user img { width: 24px; height: 24px; border-radius: 50%; box-shadow: 0 0 0 2px #3ddc84; }
+.vc-flag svg { width: 16px; height: 16px; color: var(--red); }
+.voice-mini .vc-chan { margin-top: 6px; }
+.voice-mini .discord-join { margin-top: 10px; width: 100%; }
+@media (max-width: 860px) { .voice-mini { display: none; } }
+.chat .channels a.btn.discord-join { display: flex; color: #fff; padding: 6px 10px; }
+.chat .channels a.btn.discord-join:hover { color: #fff; filter: brightness(1.1); }

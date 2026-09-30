@@ -449,11 +449,12 @@ async function viewHome(main) {
         <div class="panel">
           <div class="panel-title">${icon('users')} On duty now <span class="sub" id="onlineCount">${onlineOthers().length}</span></div>
           <div class="list" id="onlineList">${onlineHtml()}</div>
-          ${state.settings.discord_invite ? `<a class="btn" style="margin-top:12px" href="${esc(state.settings.discord_invite)}" target="_blank" rel="noopener">${icon('discord')} Join our Discord</a>` : ''}
         </div>
       </div>
+      <div class="panel discord-panel" id="voicePanel"><div class="panel-title">${icon('discord')} Discord <span class="sub">comms</span></div><div data-voice></div></div>
     </div>`;
   document.getElementById('syncBtn').onclick = syncMine;
+  startVoice(main.querySelector('#voicePanel [data-voice]'), { alive: () => document.body.contains(main.querySelector('#voicePanel')) });
   onLive('presence', () => {
     const el = document.getElementById('onlineList');
     if (!el) return;
@@ -709,6 +710,49 @@ async function viewEditProfile(main) {
 }
 
 // ---------- Chat ----------
+// ---------- Discord voice (from Discord's server widget) ----------
+function joinDiscordBtn(url, cls = 'btn discord-join') {
+  return url ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener">${icon('discord')} Join the Discord</a>` : '';
+}
+
+function voiceHtml(v, compact) {
+  const invite = v.invite || state.settings.discord_invite || '';
+  if (!v.enabled) {
+    if (v.reason === 'off') return compact ? '' : joinDiscordBtn(invite);
+    const staffHelp = {
+      no_server: 'Add your Discord invite link in Admin → Settings to show who is in voice.',
+      widget_disabled: 'In Discord: Server Settings → Widget → turn on “Enable Server Widget”. Then voice channels show here.',
+    }[v.reason] || `Discord voice unavailable: ${v.reason}`;
+    if (compact) return isStaff() ? `<p class="muted small">${esc(staffHelp)}</p>` : '';
+    return `${isStaff() ? `<p class="muted small">${esc(staffHelp)}</p>` : ''}${joinDiscordBtn(invite)}`;
+  }
+  const busy = v.channels.filter((c) => c.members.length);
+  const person = (m) => `<div class="vc-user"><img src="${esc(m.avatar || '/img/icon-192.png')}" alt="" loading="lazy" referrerpolicy="no-referrer">
+    <span class="grow">${esc(m.name)}${m.game && !compact ? `<span class="muted small"> · ${esc(m.game)}</span>` : ''}</span>
+    ${m.deafened ? `<span class="vc-flag" title="Deafened">${icon('deaf')}</span>` : m.muted ? `<span class="vc-flag" title="Muted">${icon('micoff')}</span>` : ''}</div>`;
+  const chan = (c) => `<div class="vc-chan${c.members.length ? ' live' : ''}"><div class="vc-name">${icon('headset')} ${esc(c.name)}${c.members.length ? ` <span class="pill mod">${c.members.length}</span>` : ''}</div>${c.members.map(person).join('')}</div>`;
+  if (compact) {
+    return `<h3 style="margin-top:14px">Voice <span class="muted small">${v.inVoice} in voice</span></h3>
+      ${busy.length ? busy.map(chan).join('') : '<p class="muted small">Nobody in voice right now.</p>'}
+      ${joinDiscordBtn(invite, 'btn small discord-join')}`;
+  }
+  return `<div class="row between" style="margin-bottom:10px"><span class="muted">${fmtNum(v.online)} online on Discord · <b style="color:var(--text)">${v.inVoice}</b> in voice</span>${joinDiscordBtn(invite)}</div>
+    <div class="vc-grid">${v.channels.map(chan).join('') || '<p class="muted">No voice channels are visible. Discord only shows channels that @everyone can see.</p>'}</div>`;
+}
+
+// Loads and refreshes the voice list every 30 seconds while the element is on screen.
+function startVoice(el, { compact = false, alive }) {
+  if (!el) return;
+  const load = async () => {
+    try {
+      const v = await api('discord/voice');
+      if (alive()) el.innerHTML = voiceHtml(v, compact);
+    } catch { /* keep the last view */ }
+  };
+  load();
+  const t = setInterval(() => (alive() ? load() : clearInterval(t)), 30000);
+}
+
 // ---------- @mentions ----------
 // Stored in messages as <@u:ID> (user), <@r:ID> (rank), <@g:NAME> (group).
 const MENTION_GROUPS = [
@@ -752,7 +796,8 @@ async function viewChat(main, [idParam], alive) {
   const ch = channels.find((c) => c.id === Number(idParam)) || channels[0];
   main.innerHTML = `
     <div class="chat">
-      <div class="panel channels"><h3>Channels</h3>${channels.map((c) => `<a href="#/chat/${c.id}" class="${c.id === ch.id ? 'active' : ''}"># ${esc(c.name)}</a>`).join('')}</div>
+      <div class="panel channels"><h3>Channels</h3>${channels.map((c) => `<a href="#/chat/${c.id}" class="${c.id === ch.id ? 'active' : ''}"># ${esc(c.name)}</a>`).join('')}
+        <div class="voice-mini" data-voice-mini></div></div>
       <div class="panel chat-main">
         <div class="chat-head"><b style="font:700 18px var(--head);text-transform:uppercase"># ${esc(ch.name)}</b> <span class="muted small">${esc(ch.description)}</span></div>
         <div class="msgs" id="msgs"><div class="spinner"></div></div>
@@ -764,6 +809,7 @@ async function viewChat(main, [idParam], alive) {
     </div>`;
   const box = document.getElementById('msgs');
   let oldest = null;
+  startVoice(main.querySelector('[data-voice-mini]'), { compact: true, alive });
 
   const msgHtml = (m) => {
     if (!m.user_id) return `<div class="msg system" data-id="${m.id}">⭐ ${esc(m.body)}</div>`;

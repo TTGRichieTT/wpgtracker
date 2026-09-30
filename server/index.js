@@ -11,6 +11,7 @@ import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop 
 import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
 import { servers } from './servers.js';
+import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
 import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS } from './util.js';
 
@@ -160,6 +161,7 @@ app.post('/auth/logout', (req, res) => {
 app.use('/api/ingest', ingest);
 app.use('/api/admin', admin);
 app.use('/api', servers);
+app.use('/api', discord);
 app.use('/api', api);
 app.use('/api', (_req, _res) => {
   throw new HttpError(404, 'Not found');
@@ -179,8 +181,11 @@ app.use((req, res, next) => {
 
 app.use((err, _req, res, _next) => {
   const status = err.status || 500;
-  if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 ? 'Something went wrong on the server.' : err.message, code: err.code });
+  // Our own errors (HttpError) have messages written for people, e.g. "wrong RCON password" — show those.
+  // Anything unexpected stays hidden and goes to the log.
+  const known = err instanceof HttpError;
+  if (!known) console.error(err);
+  res.status(status).json({ error: known || status < 500 ? err.message : 'Something went wrong on the server.', code: err.code });
 });
 
 const server = http.createServer(app);

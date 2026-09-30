@@ -92,7 +92,7 @@ async function rcon(server, method, path, body) {
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { text }; }
-  if (res.status === 401 || res.status === 403) throw new HttpError(502, 'The game server rejected the RCON password.');
+  if (res.status === 401 || res.status === 403) throw new HttpError(502, 'The game server rejected the RCON password. Fix it in Servers → Server settings (use the same password that works on rcon.wardogs.com).');
   if (!res.ok) throw new HttpError(502, `Game server said: ${data?.error?.message || data?.error || data?.message || res.status}`);
   return data;
 }

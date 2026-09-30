@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = {
   dm_friends_only: 'false',
   sync_minutes: '60',
   discord_invite: '',
+  discord_server_id: '',
+  discord_voice_enabled: 'true',
   accent_color: '#29b6f6',
   logo_url: '/img/brand/wpg-logo.webp',
   tracker_enabled: 'true',
