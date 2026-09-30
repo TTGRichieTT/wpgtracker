@@ -135,6 +135,24 @@ servers.get('/admin/servers/:id/status', role('mod'), async (req, res) => {
   res.json(await rcon(s, 'GET', '/status'));
 });
 
+// Map list for "Change map". Map IDs differ from in-game names (e.g. Kavkazi = Bakurani).
+servers.get('/admin/servers/:id/maps', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const data = await rcon(s, 'GET', '/catalog/maps');
+  res.json((data?.maps || []).map((m) => ({ id: m.id, name: m.displayName || m.id })));
+});
+
+servers.get('/admin/servers/:id/maps/:mapId/modes', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const mapId = encodeURIComponent(str(req.params.mapId, 80));
+  const [forMap, all] = await Promise.all([
+    rcon(s, 'GET', `/catalog/maps/${mapId}/experiences`),
+    rcon(s, 'GET', '/catalog/experiences').catch(() => ({})),
+  ]);
+  const names = new Map((all?.experiences || []).map((e) => [e.id, e.displayName || e.id]));
+  res.json((forMap?.experiences || []).map((id) => ({ id: String(id), name: names.get(id) || String(id) })));
+});
+
 servers.get('/admin/servers/:id/bans', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   res.json(await rcon(s, 'GET', '/bans'));
@@ -149,7 +167,16 @@ const ACTIONS = {
   unban: { min: 'admin', run: (s, b) => rcon(s, 'DELETE', `/bans/${steamId(b)}`) },
   restart: { min: 'admin', run: (s) => rcon(s, 'POST', '/match/restart') },
   end: { min: 'admin', run: (s) => rcon(s, 'POST', '/match/end') },
-  map: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/match/map', { map: need(str(b.map, 80), 'Type a map name.') }) },
+  map: {
+    min: 'admin',
+    run: (s, b) => {
+      // Same body as the official Wardogs RCON console: { map, experiences? }
+      const body = { map: need(str(b.map, 80), 'Pick a map.') };
+      const exps = (Array.isArray(b.experiences) ? b.experiences : []).map((e) => str(e, 80)).filter(Boolean).slice(0, 10);
+      if (exps.length) body.experiences = exps;
+      return rcon(s, 'POST', '/match/map', body);
+    },
+  },
 };
 function need(v, msg) {
   if (!v) throw new HttpError(400, msg);

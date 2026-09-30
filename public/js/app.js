@@ -917,6 +917,50 @@ export function promptBox(title, placeholder = '', { danger = false, okLabel = '
   });
 }
 
+// Pick a map and game mode from the server's own list (like the official Wardogs RCON console).
+async function changeMapBox(sid, act) {
+  const m = modal(`<div class="row between"><h2 style="margin:0">Change map</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
+    <div id="mapBody"><div class="spinner" style="margin:20px auto"></div></div>`);
+  m.el.querySelector('[data-close]').onclick = m.close;
+  const body = m.el.querySelector('#mapBody');
+  let maps;
+  try {
+    maps = await api(`admin/servers/${sid}/maps`);
+  } catch (x) {
+    body.innerHTML = `<p style="color:var(--red)">${esc(x.message)}</p>`;
+    return;
+  }
+  if (!maps.length) { body.innerHTML = '<p class="muted">The server did not send a map list.</p>'; return; }
+  body.innerHTML = `<form class="stack" id="mapForm">
+      <label class="field"><span>Map</span><select name="map">${maps.map((mp) => `<option value="${esc(mp.id)}">${esc(mp.name)}</option>`).join('')}</select></label>
+      <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;margin-bottom:6px">Game mode</span><div id="modeList" class="stack"></div></div>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Change map</button></div>
+    </form>`;
+  const form = body.querySelector('#mapForm');
+  form.querySelector('[data-close]').onclick = m.close;
+  const modeList = form.querySelector('#modeList');
+  const loadModes = async () => {
+    modeList.innerHTML = '<div class="spinner" style="margin:6px 0"></div>';
+    try {
+      const modes = await api(`admin/servers/${sid}/maps/${encodeURIComponent(form.map.value)}/modes`);
+      modeList.innerHTML = modes.length
+        ? modes.map((md, i) => `<label class="check"><input type="checkbox" name="mode" value="${esc(md.id)}" ${i === 0 ? 'checked' : ''}> ${esc(md.name)} <span class="muted small">${esc(md.id)}</span></label>`).join('')
+        : '<p class="muted small">No modes listed — the server will use its default.</p>';
+    } catch (x) {
+      modeList.innerHTML = `<p class="muted small">${esc(x.message)}</p>`;
+    }
+  };
+  form.map.onchange = loadModes;
+  loadModes();
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const experiences = [...form.querySelectorAll('[name=mode]:checked')].map((c) => c.value);
+    const name = form.map.options[form.map.selectedIndex].text;
+    m.close();
+    act(sid, { action: 'map', map: form.map.value, experiences }, `Changing map to ${name}.`);
+  };
+}
+
 const regionName = (r) => String(r || '').split('-').map((p) => (p.length <= 2 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join(' ');
 const modeName = (exp, map) => String(exp || '').split('+')[0].replace(new RegExp(`^${map}_`, 'i'), '').replace(/_\d+$/, '').replace(/_/g, ' ') || '—';
 
@@ -1055,8 +1099,7 @@ async function viewServers(main, _r, alive) {
     } else if (a === 'end') {
       if (await confirmBox('End the current match now?')) act(sid, { action: 'end' }, 'Match ended.');
     } else if (a === 'map') {
-      const map = await promptBox('Change to which map?', 'Map name, e.g. Madrid', { okLabel: 'Change map' });
-      if (map) act(sid, { action: 'map', map }, `Changing map to ${map}.`);
+      changeMapBox(sid, act);
     }
   };
   main.querySelectorAll('[data-broadcast]').forEach((f) => {

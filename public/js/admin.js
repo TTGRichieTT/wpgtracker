@@ -85,7 +85,7 @@ const RESOURCES = {
       { k: 'join_code', label: 'Server ID (from the game)' },
       { k: 'name', label: 'Display name (optional)' },
       { k: 'description', label: 'Description', type: 'textarea' },
-      { k: 'rcon_url', label: 'RCON address (from your host, e.g. https://…:7776)' },
+      { k: 'rcon_url', label: 'RCON address — http://SERVER-IP:PORT (same host + port as rcon.wardogs.com)' },
       { k: 'rcon_password', label: 'RCON password', type: 'secret' },
       { k: 'enabled', label: 'Show on Servers page', type: 'check' },
       { k: 'sort_order', label: 'Order', type: 'number' },
