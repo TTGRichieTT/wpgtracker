@@ -72,6 +72,24 @@ servers.get('/servers', member, async (req, res) => {
 });
 
 // ---------- RCON ----------
+// Turns low-level network errors into advice a person can act on.
+function reachReason(e, base) {
+  const cause = e?.cause || {};
+  const code = String(cause.code || cause.errno || '');
+  const msg = `${e?.message || ''} ${cause.message || ''}`;
+  if (e?.name === 'TimeoutError' || /TIMEDOUT|UND_ERR_CONNECT_TIMEOUT/i.test(code)) {
+    return 'no answer (timed out). The port may be blocked by the host or a firewall, or the server is offline.';
+  }
+  if (/ECONNREFUSED/i.test(code)) return 'connection refused. Check the port number, and that RCON is switched on (Remote Access) in the host panel.';
+  if (/ENOTFOUND|EAI_AGAIN/i.test(code)) return 'address not found. Check the IP / address for typos.';
+  if (/SSL|TLS|EPROTO|wrong version/i.test(`${code} ${msg}`) || (/ECONNRESET|UND_ERR_SOCKET/i.test(code) && base.startsWith('https:'))) {
+    return 'secure-connection error. The server speaks plain http — change the address to start with http:// instead of https://.';
+  }
+  if (/ECONNRESET/i.test(code)) return 'the connection was dropped by the server or a firewall.';
+  if (/EHOSTUNREACH|ENETUNREACH/i.test(code)) return 'the network path to the server is blocked.';
+  return `${code || 'network error'}${cause.message ? ` (${cause.message})` : ''}.`;
+}
+
 async function rcon(server, method, path, body) {
   if (!server.rcon_url || !server.rcon_password) throw new HttpError(400, 'RCON is not set up for this server yet.');
   const base = server.rcon_url.replace(/\/+$/, '').replace(/\/v1$/, '');
@@ -87,7 +105,7 @@ async function rcon(server, method, path, body) {
       signal: AbortSignal.timeout(10000),
     });
   } catch (e) {
-    throw new HttpError(502, `Can't reach the game server's RCON (${e.name === 'TimeoutError' ? 'timed out' : e.message}).`);
+    throw new HttpError(502, `Can't reach the game server's RCON at ${base}: ${reachReason(e, base)}`);
   }
   const text = await res.text();
   let data = null;
