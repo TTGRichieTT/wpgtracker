@@ -220,6 +220,7 @@ const NAV = [
   { href: '#/chat', key: 'chat', label: 'Comms', icon: 'chat' },
   { href: '#/messages', key: 'messages', label: 'Messages', icon: 'mail', count: () => state.unread },
   { href: '#/friends', key: 'friends', label: 'Friends', icon: 'friends', count: () => state.friendReq },
+  { href: '#/servers', key: 'servers', label: 'Servers', icon: 'server' },
   { href: '#/members', key: 'members', label: 'Members', icon: 'users' },
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   { href: '#/ranks', key: 'ranks', label: 'Ranks', icon: 'chevrons' },
@@ -356,6 +357,7 @@ async function route() {
     messages: viewMessages,
     friends: viewFriends,
     members: viewMembers,
+    servers: viewServers,
     leaderboard: viewLeaderboard,
     ranks: viewRanks,
     u: viewProfile,
@@ -870,6 +872,166 @@ async function viewMembers(main, _r, alive) {
   }
   input.oninput = () => { clearTimeout(t); t = setTimeout(load, 250); };
   await load();
+}
+
+// ---------- Game servers ----------
+export function promptBox(title, placeholder = '', { danger = false, okLabel = 'Confirm' } = {}) {
+  return new Promise((resolve) => {
+    const m = modal(`<form class="stack"><h3 style="margin:0">${esc(title)}</h3>
+      <input type="text" name="v" maxlength="300" placeholder="${esc(placeholder)}">
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-no>Cancel</button><button class="btn ${danger ? 'danger' : 'primary'}">${esc(okLabel)}</button></div></form>`);
+    const f = m.el.querySelector('form');
+    f.v.focus();
+    m.el.querySelector('[data-no]').onclick = () => { m.close(); resolve(null); };
+    f.onsubmit = (e) => { e.preventDefault(); m.close(); resolve(f.v.value.trim()); };
+  });
+}
+
+const regionName = (r) => String(r || '').split('-').map((p) => (p.length <= 2 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join(' ');
+const modeName = (exp, map) => String(exp || '').split('+')[0].replace(new RegExp(`^${map}_`, 'i'), '').replace(/_\d+$/, '').replace(/_/g, ' ') || '—';
+
+async function viewServers(main, _r, alive) {
+  const staff = isStaff();
+  const admin = state.me.role === 'admin';
+  const { servers, stale } = await api('servers');
+  if (!alive()) return;
+  if (!servers.length) {
+    main.innerHTML = `<h1>Servers</h1><div class="panel empty">No servers added yet.${admin ? ' Add one in Admin → Game servers.' : ''}</div>`;
+    return;
+  }
+
+  const serverCard = (s) => {
+    const l = s.live;
+    const pct = l ? Math.min(100, (l.players / Math.max(1, l.maxPlayers)) * 100) : 0;
+    return `
+      <div class="panel glow" data-server="${s.id}">
+        <div class="row between" style="align-items:flex-start">
+          <div class="grow">
+            <div style="font:700 22px var(--head);text-transform:uppercase;line-height:1.15">${esc(l?.name || s.name)}</div>
+            ${l && s.name && s.name !== l.name ? `<div class="muted small">${esc(s.name)}</div>` : ''}
+          </div>
+          <span class="pill ${s.online ? 'mod' : 'banned'}">${s.online ? '● Online' : 'Offline'}</span>
+        </div>
+        ${s.description ? `<p class="muted" style="margin:8px 0 0">${esc(s.description)}</p>` : ''}
+        ${l ? `
+          <div style="margin:14px 0 6px" class="row between"><b style="font:700 18px var(--head)">${l.players} / ${l.maxPlayers} players</b>
+            <span class="row">${l.rulesets.map((r) => `<span class="pill">${esc(r)}</span>`).join('')}${l.passwordProtected ? `<span class="pill pending">${icon('lock', 'width="12" height="12"')} Password</span>` : ''}</span></div>
+          <div class="xpbar"><div style="width:${pct.toFixed(1)}%"></div></div>
+          <div class="tiles" style="margin-top:14px">
+            ${tile('target', 'Map', l.map || '—')}
+            ${tile('swords', 'Mode', modeName(l.mode, l.map))}
+            ${tile('chart', 'Region', regionName(l.region))}
+          </div>` : '<p class="muted">This server is not showing in the live server list right now. It may be offline or restarting.</p>'}
+        <div class="row" style="margin-top:14px">
+          <span class="muted small" style="text-transform:uppercase;font:700 13px var(--head);color:var(--accent2)">Server ID</span>
+          <code style="background:#06101c;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;overflow-wrap:anywhere">${esc(s.join_code)}</code>
+          <button class="btn small" data-copy="${esc(s.join_code)}">${icon('copy')} Copy</button>
+        </div>
+        ${s.has_rcon ? `<div style="margin-top:18px"><h4 class="row" style="margin:0 0 8px">${icon('users', 'width="18" height="18"')} On the server now</h4><div class="list" data-players="${s.id}"><div class="spinner" style="margin:10px auto"></div></div></div>` : ''}
+        ${staff ? controlsHtml(s) : ''}
+      </div>`;
+  };
+
+  const controlsHtml = (s) => {
+    if (!s.has_rcon) {
+      return `<p class="muted small" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">${icon('shield', 'width="14" height="14"')} Staff: add this server's RCON address and password in ${admin ? '<a href="#/admin/game-servers">Admin → Game servers</a>' : 'Admin → Game servers (ask an admin)'} to control it from here.</p>`;
+    }
+    return `
+      <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px" class="stack">
+        <h4 class="row" style="margin:0">${icon('shield', 'width="18" height="18" style="color:var(--gold)"')} Server controls</h4>
+        <form class="row" data-broadcast="${s.id}"><input type="text" name="message" class="grow" maxlength="300" placeholder="Message everyone on the server" style="min-width:180px"><button class="btn">${icon('megaphone')} Broadcast</button></form>
+        ${admin ? `
+        <div class="row">
+          <button class="btn" data-act="restart" data-sid="${s.id}">${icon('refresh')} Restart match</button>
+          <button class="btn" data-act="end" data-sid="${s.id}">End match</button>
+          <button class="btn" data-act="map" data-sid="${s.id}">${icon('target')} Change map</button>
+          <button class="btn ghost" data-act="unban" data-sid="${s.id}">Unban a Steam ID</button>
+        </div>` : '<p class="muted small">Mods can broadcast, kick and kill. Admins can also ban and control the match.</p>'}
+      </div>`;
+  };
+
+  main.innerHTML = `<div class="row between"><h1>Servers</h1><button class="btn" id="srvRefresh">${icon('refresh')} Refresh</button></div>
+    ${stale ? '<p class="muted small">⚠ Live server data may be a few minutes old.</p>' : ''}
+    <div class="stack">${servers.map(serverCard).join('')}</div>
+    <div class="credit">Live server data by <a href="https://wardogservers.com" target="_blank" rel="noopener">Wardog Servers</a></div>`;
+
+  async function loadPlayers(s) {
+    const box = main.querySelector(`[data-players="${s.id}"]`);
+    if (!box) return;
+    try {
+      const players = await api(`servers/${s.id}/players`);
+      if (!alive()) return;
+      box.innerHTML = players.length ? players.map((p) => `
+        <div class="item player-item">
+          <div class="grow" style="min-width:0">
+            ${p.member ? `<a href="#/u/${p.member.id}" style="color:inherit">${userLine(p.member)}</a>` : `<b>${esc(p.name)}</b>`}
+            <div class="muted small">${p.kills !== null ? `${p.kills} kills · ${p.deaths} deaths` : ''}${p.pingMs !== null ? ` · ${p.pingMs} ms` : ''}${p.member ? '' : ' · not in app'}</div>
+          </div>
+          ${staff && p.steamId ? `<div class="row">
+            <button class="btn small" data-act="kick" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Kick</button>
+            <button class="btn small ghost" data-act="kill" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Kill</button>
+            ${admin ? `<button class="btn small danger" data-act="ban" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Ban</button>` : ''}
+          </div>` : ''}
+        </div>`).join('') : '<p class="muted">Nobody on right now.</p>';
+    } catch (e) {
+      box.innerHTML = `<p class="muted small">Couldn't load players: ${esc(e.message)}</p>`;
+    }
+  }
+  servers.filter((s) => s.has_rcon).forEach(loadPlayers);
+
+  async function act(sid, body, done) {
+    try {
+      await api(`admin/servers/${sid}/action`, { method: 'POST', body });
+      toast('Done', done);
+      const s = servers.find((x) => x.id === Number(sid));
+      if (s) loadPlayers(s);
+    } catch (x) { fail(x); }
+  }
+
+  main.onclick = async (e) => {
+    const copy = e.target.closest('[data-copy]');
+    if (copy) {
+      try { await navigator.clipboard.writeText(copy.dataset.copy); toast('Copied', 'Server ID copied.'); } catch { toast('Copy failed', 'Select the ID and copy it by hand.', { error: true }); }
+      return;
+    }
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const { act: a, sid, steam, name } = b.dataset;
+    if (a === 'kick') {
+      const reason = await promptBox(`Kick ${name}?`, 'Reason (optional)', { okLabel: 'Kick' });
+      if (reason !== null) act(sid, { action: 'kick', steamId: steam, reason }, `${name} was kicked.`);
+    } else if (a === 'kill') {
+      if (await confirmBox(`Kill ${name} in game?`)) act(sid, { action: 'kill', steamId: steam }, `${name} was killed.`);
+    } else if (a === 'ban') {
+      const reason = await promptBox(`Ban ${name} from the server?`, 'Reason (optional)', { danger: true, okLabel: 'Ban' });
+      if (reason !== null) act(sid, { action: 'ban', steamId: steam, reason }, `${name} was banned.`);
+    } else if (a === 'unban') {
+      const id = await promptBox('Unban which Steam ID?', '17-digit Steam ID', { okLabel: 'Unban' });
+      if (id) act(sid, { action: 'unban', steamId: id }, 'Ban removed.');
+    } else if (a === 'restart') {
+      if (await confirmBox('Restart the current match for everyone?')) act(sid, { action: 'restart' }, 'Match restarting.');
+    } else if (a === 'end') {
+      if (await confirmBox('End the current match now?')) act(sid, { action: 'end' }, 'Match ended.');
+    } else if (a === 'map') {
+      const map = await promptBox('Change to which map?', 'Map name, e.g. Madrid', { okLabel: 'Change map' });
+      if (map) act(sid, { action: 'map', map }, `Changing map to ${map}.`);
+    }
+  };
+  main.querySelectorAll('[data-broadcast]').forEach((f) => {
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const message = f.message.value.trim();
+      if (!message) return;
+      act(f.dataset.broadcast, { action: 'broadcast', message }, 'Message sent to the server.');
+      f.message.value = '';
+    };
+  });
+
+  const timer = setInterval(() => {
+    if (!alive()) return clearInterval(timer);
+    servers.filter((s) => s.has_rcon).forEach(loadPlayers);
+  }, 20000);
+  document.getElementById('srvRefresh').onclick = () => route();
 }
 
 // ---------- Leaderboard ----------

@@ -10,6 +10,7 @@ import { bus } from './bus.js';
 import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop } from './steam.js';
 import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
+import { servers } from './servers.js';
 import { startRealtime } from './realtime.js';
 import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS } from './util.js';
 
@@ -158,6 +159,7 @@ app.post('/auth/logout', (req, res) => {
 // ---------- API ----------
 app.use('/api/ingest', ingest);
 app.use('/api/admin', admin);
+app.use('/api', servers);
 app.use('/api', api);
 app.use('/api', (_req, _res) => {
   throw new HttpError(404, 'Not found');

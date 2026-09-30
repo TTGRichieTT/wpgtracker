@@ -169,6 +169,17 @@ CREATE TABLE IF NOT EXISTS user_stats (
   PRIMARY KEY (user_id, key)
 );
 
+CREATE TABLE IF NOT EXISTS game_servers (
+  id SERIAL PRIMARY KEY,
+  join_code TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  rcon_url TEXT NOT NULL DEFAULT '',
+  rcon_password TEXT NOT NULL DEFAULT '',
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  sort_order INT NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   sid TEXT PRIMARY KEY,
   sess JSONB NOT NULL,
@@ -224,6 +235,16 @@ export async function seed({ q, one }) {
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [key, value]);
   }
+  // Added after launch, so it has its own flag (and stays deleted if an admin removes it).
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_servers'"))) {
+    await q(
+      `INSERT INTO game_servers (join_code, name, description, sort_order)
+       VALUES ('bf019b3b-7670-4879-9220-b541edc58e1b', 'WPG Wardogs', 'Our main Wardogs server. Real players, real squads.', 10)
+       ON CONFLICT (join_code) DO NOTHING`,
+    );
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_servers', 'true') ON CONFLICT DO NOTHING");
+  }
+
   const done = await one("SELECT value FROM settings WHERE key = '_seeded'");
   if (done) return;
 

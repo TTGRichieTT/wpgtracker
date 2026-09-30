@@ -25,7 +25,7 @@ It runs as a website on Replit, and as an Android app (APK) that opens the same 
    (Replit adds `DATABASE_URL` for you.)
 3. Open **Secrets** (padlock icon) and add:
    - `STEAM_API_KEY`: get one free at <https://steamcommunity.com/dev/apikey>
-   - `INGEST_KEY`: a long random password (only needed for a Discord bot, see part 5)
+   - `INGEST_KEY`: a long random password (only needed for a Discord bot, see part 6)
 4. Press **Run** to test it.
 5. Press **Deploy → Reserved VM**. (Reserved VM keeps chat and stat syncing running all the time.)
    Add the same secrets to the deployment if Replit asks.
@@ -74,7 +74,21 @@ You only rebuild the APK if the web address changes.
 - **Post news:** Admin → News → Add new. Tick *Pin* to keep it at the top.
 - **Enter server stats** (matches, wins, losses, playtime): Admin → Members → Edit → *Server stats*.
 
-## 4. How stats and XP work
+## 4. Game servers
+
+The **Servers** page shows WPG's Wardogs servers live: online or offline, players, map, mode and region.
+Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
+
+- **Add a server:** Admin → Game servers → *Find a server* → search "WPG" → **Add**.
+- **Control a server from the app:** Admin → Game servers → Edit → enter the **RCON address** and **RCON password**.
+  Get these from your server host's panel (RCON must be switched on there).
+  Then staff get a live player list and buttons on the Servers page:
+  - **Mods:** broadcast a message, kick, kill.
+  - **Admins:** also ban, unban, restart match, end match, change map.
+- Every server action is saved in Admin → Audit log.
+- The RCON password is never shown again after saving. Leave the box empty to keep it.
+
+## 5. How stats and XP work
 
 - **Global Wardogs stats** (level, XP, cash, role levels) come from **WARDOGS Tracker** (wardogstracker.gg).
   Each member must sign in there once with Steam so their stats are public.
@@ -85,7 +99,7 @@ You only rebuild the APK if the web address changes.
   You can change every XP value in Admin (Games, Stats, Settings).
 - Stats update by themselves every hour. Members can also press **Sync stats**.
 
-## 5. Discord bot stats (optional, for whoever runs the bot)
+## 6. Discord bot stats (optional, for whoever runs the bot)
 
 A bot can send in stats like matches, wins, losses and playtime:
 
@@ -99,7 +113,7 @@ Content-Type: application/json
 
 The stat names must match the **Key** column in Admin → Stats.
 
-## 6. Test on your own PC
+## 7. Test on your own PC
 
 ```
 npm install
@@ -110,7 +124,7 @@ Then open <http://localhost:3000>.
 With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no Steam.
 **Never turn DEV_LOGIN on for the live site.**
 
-## 7. If something goes wrong
+## 8. If something goes wrong
 
 - **Site down:** Replit → Deployments → check the logs → press **Redeploy**.
 - **Stats not updating:** check `STEAM_API_KEY` in Secrets. Check the member has public Steam game details and a WARDOGS Tracker profile.

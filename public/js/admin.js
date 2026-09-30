@@ -10,6 +10,7 @@ const TABS = [
   { key: 'ranks', label: 'Ranks' },
   { key: 'awards', label: 'Medals' },
   { key: 'stat-defs', label: 'Stats' },
+  { key: 'game-servers', label: 'Game servers' },
   { key: 'channels', label: 'Chat channels' },
   { key: 'games', label: 'Games' },
   { key: 'profile-fields', label: 'Profile fields' },
@@ -70,6 +71,22 @@ const RESOURCES = {
     ],
     defaults: { format: 'number', xp_each: 0 },
     row: (r) => `<div class="grow"><b>${esc(r.label)}</b> <span class="pill">${esc(r.key)}</span><div class="muted small">${esc(r.format)} · ${Number(r.xp_each)} XP each</div></div>`,
+  },
+  'game-servers': {
+    title: 'Game servers',
+    help: 'Servers shown on the Servers page. Server ID is the long code from the game (or use Find a server below). To control a server from the app, add the RCON address and password from your server host. The password is stored safely and never shown again. Leave the password box empty to keep the saved one.',
+    search: true,
+    fields: [
+      { k: 'join_code', label: 'Server ID (from the game)' },
+      { k: 'name', label: 'Display name (optional)' },
+      { k: 'description', label: 'Description', type: 'textarea' },
+      { k: 'rcon_url', label: 'RCON address (from your host, e.g. https://…:7776)' },
+      { k: 'rcon_password', label: 'RCON password', type: 'secret' },
+      { k: 'enabled', label: 'Show on Servers page', type: 'check' },
+      { k: 'sort_order', label: 'Order', type: 'number' },
+    ],
+    defaults: { enabled: true, sort_order: 10 },
+    row: (r) => `<div class="grow"><b>${esc(r.name || r.join_code)}</b> ${r.enabled ? '' : '<span class="pill banned">hidden</span>'} ${r.rcon_url && r.has_rcon_password ? '<span class="pill mod">RCON ready</span>' : '<span class="pill">no RCON</span>'}<div class="muted small" style="overflow-wrap:anywhere">${esc(r.join_code)}</div></div>`,
   },
   channels: {
     title: 'Chat channels',
@@ -142,7 +159,35 @@ async function resourceTab(body, name) {
       <div class="row between"><div class="panel-title" style="margin:0">${esc(cfg.title)}</div><button class="btn primary" id="addBtn">${icon('plus')} Add new</button></div>
       <p class="muted small">${esc(cfg.help)}</p>
       <div class="list">${rows.map((r) => `<div class="item">${cfg.row(r)}<button class="btn small" data-edit="${esc(r[key])}">${icon('edit')} Edit</button></div>`).join('') || '<p class="empty">Nothing here yet.</p>'}</div>
-    </div>`;
+    </div>
+    ${cfg.search ? `<div class="panel" style="margin-top:16px">
+      <div class="panel-title">Find a server</div>
+      <form class="row" id="srvSearch"><input type="search" name="q" class="grow" placeholder="Search live servers by name or ID, e.g. WPG"><button class="btn">Search</button></form>
+      <div class="list" id="srvResults"></div>
+    </div>` : ''}`;
+  const sf = document.getElementById('srvSearch');
+  if (sf) {
+    sf.onsubmit = async (e) => {
+      e.preventDefault();
+      const out = document.getElementById('srvResults');
+      out.innerHTML = '<div class="spinner" style="margin:10px auto"></div>';
+      try {
+        const found = await api(`admin/servers/search?q=${encodeURIComponent(sf.q.value)}`);
+        const have = new Set(rows.map((r) => r.join_code));
+        out.innerHTML = found.map((s) => `<div class="item"><div class="grow"><b>${esc(s.name)}</b><div class="muted small">${s.players}/${s.maxPlayers} players · ${esc(s.region)} · ${esc(s.type)}</div></div>
+          ${have.has(s.join_code) ? '<span class="pill mod">Added</span>' : `<button class="btn small primary" data-add-srv="${esc(s.join_code)}" data-srv-name="${esc(s.name)}">${icon('plus')} Add</button>`}</div>`).join('') || '<p class="muted">No live servers found.</p>';
+        out.querySelectorAll('[data-add-srv]').forEach((b) => {
+          b.onclick = async () => {
+            try {
+              await api(`admin/${name}`, { method: 'POST', body: { join_code: b.dataset.addSrv, name: '', description: '', rcon_url: '', rcon_password: '', enabled: true, sort_order: 10 } });
+              toast('Server added', b.dataset.srvName);
+              resourceTab(body, name);
+            } catch (x) { fail(x); }
+          };
+        });
+      } catch (x) { out.innerHTML = ''; fail(x); }
+    };
+  }
   document.getElementById('addBtn').onclick = () => openEditor(cfg, name, key, null, () => resourceTab(body, name));
   body.querySelectorAll('[data-edit]').forEach((b) => {
     b.onclick = () => openEditor(cfg, name, key, rows.find((r) => String(r[key]) === b.dataset.edit), () => resourceTab(body, name));
@@ -161,6 +206,9 @@ function fieldHtml(f, v, isNew) {
       return `<label class="check field" style="grid-column:1/-1"><input type="checkbox" name="${f.k}" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
     case 'color':
       return `<label class="field"><span>${esc(f.label)}</span><input type="color" name="${f.k}" value="${esc(v || '#c9a227')}"></label>`;
+    case 'secret':
+      return `<label class="field"><span>${esc(f.label)}</span><input type="password" name="${f.k}" autocomplete="new-password" placeholder="${isNew ? '' : '(saved — leave empty to keep)'}"></label>
+        ${isNew ? '' : `<label class="check"><input type="checkbox" name="clear_${f.k}"> Remove saved password</label>`}`;
     case 'select':
       return `<label class="field"><span>${esc(f.label)}</span><select name="${f.k}">${f.options.map(([o, l]) => `<option value="${o}" ${String(v) === o ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
     case 'colors': {
@@ -245,7 +293,10 @@ function openEditor(cfg, name, key, row, done) {
       if (f.type === 'insignia') out[f.k] = readInsignia();
       else if (f.type === 'colors') out[f.k] = stripes();
       else if (f.type === 'check') out[f.k] = form[f.k].checked;
-      else out[f.k] = form[f.k].value;
+      else if (f.type === 'secret') {
+        out[f.k] = form[f.k].value;
+        if (form[`clear_${f.k}`]?.checked) out[`clear_${f.k}`] = true;
+      } else out[f.k] = form[f.k].value;
     }
     try {
       if (isNew) await api(`admin/${name}`, { method: 'POST', body: out });

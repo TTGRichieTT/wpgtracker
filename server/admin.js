@@ -243,6 +243,29 @@ const RESOURCES = {
       sort_order: (v) => int(v),
     },
   },
+  'game-servers': {
+    table: 'game_servers', key: 'id', min: 'admin', order: 'sort_order, id',
+    secrets: ['rcon_password'],
+    fields: {
+      join_code: (v) => str(v, 100) || `server-${Date.now()}`,
+      name: (v) => str(v, 80),
+      description: (v) => str(v, 300),
+      rcon_url: (v) => {
+        const s = str(v, 300);
+        if (!s) return '';
+        try {
+          const u = new URL(s);
+          if (!['http:', 'https:'].includes(u.protocol)) throw new Error();
+          return u.origin + u.pathname.replace(/\/+$/, '');
+        } catch {
+          throw new HttpError(400, 'RCON address must start with https:// (or http://).');
+        }
+      },
+      rcon_password: (v) => str(v, 300),
+      enabled: bool,
+      sort_order: (v) => int(v),
+    },
+  },
   announcements: {
     table: 'announcements', key: 'id', min: 'mod', order: 'pinned DESC, created_at DESC',
     fields: {
@@ -275,9 +298,27 @@ function safeJson(s) {
   }
 }
 
+// Secret fields (like RCON passwords) are never sent back; the panel only sees whether one is set.
+function hideSecrets(r, row) {
+  if (!r.secrets || !row) return row;
+  const out = { ...row };
+  for (const f of r.secrets) {
+    out[`has_${f}`] = !!row[f];
+    out[f] = '';
+  }
+  return out;
+}
+
+function redact(r, body) {
+  if (!r.secrets) return body;
+  const out = { ...body };
+  for (const f of r.secrets) if (out[f]) out[f] = '(changed)';
+  return out;
+}
+
 for (const [name, r] of Object.entries(RESOURCES)) {
   admin.get(`/${name}`, role(r.min), async (_req, res) => {
-    res.json(await q(`SELECT * FROM ${r.table} ORDER BY ${r.order}`));
+    res.json((await q(`SELECT * FROM ${r.table} ORDER BY ${r.order}`)).map((row) => hideSecrets(r, row)));
   });
 
   admin.post(`/${name}`, role(r.min), async (req, res) => {
@@ -288,26 +329,33 @@ for (const [name, r] of Object.entries(RESOURCES)) {
       `INSERT INTO ${r.table} (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`,
       Object.values(data),
     ).catch(dbError);
-    await audit(req.user.id, `${name}.create`, row[r.key], req.body);
+    await audit(req.user.id, `${name}.create`, row[r.key], redact(r, req.body));
     bus.emit('config:changed', name);
-    res.json(row);
+    res.json(hideSecrets(r, row));
   });
 
   admin.put(`/${name}/:key`, role(r.min), async (req, res) => {
+    const b = req.body || {};
     const sets = [];
     const vals = [req.params.key];
     for (const [f, clean] of Object.entries(r.fields)) {
-      if (!(f in (req.body || {}))) continue;
+      if (r.secrets?.includes(f) && b[`clear_${f}`]) {
+        sets.push(`${f}=''`);
+        continue;
+      }
+      if (!(f in b)) continue;
       if (f === r.key && !r.keyEditable) continue;
-      vals.push(clean(req.body[f]));
+      // An empty secret box means "keep the current one".
+      if (r.secrets?.includes(f) && !String(b[f] ?? '').trim()) continue;
+      vals.push(clean(b[f]));
       sets.push(`${f}=$${vals.length}`);
     }
     if (!sets.length) throw new HttpError(400, 'Nothing to change.');
     const row = await one(`UPDATE ${r.table} SET ${sets.join(', ')} WHERE ${r.key}::text=$1 RETURNING *`, vals).catch(dbError);
     if (!row) throw new HttpError(404, 'Not found.');
-    await audit(req.user.id, `${name}.edit`, req.params.key, req.body);
+    await audit(req.user.id, `${name}.edit`, req.params.key, redact(r, b));
     bus.emit('config:changed', name);
-    res.json(row);
+    res.json(hideSecrets(r, row));
   });
 
   admin.delete(`/${name}/:key`, role(r.min), async (req, res) => {

@@ -107,6 +107,8 @@ h3 { font-size: 18px; }
   .bottomnav a.active { color: var(--accent2); }
   .bottomnav .badge-count { position: absolute; top: 8px; left: 55%; margin: 0; height: 18px; min-width: 18px; font-size: 11px; line-height: 18px; }
   h1 { font-size: 24px; }
+  .player-item { flex-wrap: wrap; }
+  .player-item > .grow { flex-basis: 100%; }
 }
 
 /* ---------- Panels ---------- */
