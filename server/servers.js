@@ -130,6 +130,60 @@ servers.get('/servers/:id/players', member, async (req, res) => {
   })));
 });
 
+// ---------- Live match (via RCON), shown to all members ----------
+const spaceCamel = (t) => String(t || '').replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
+const isModifier = (id) => /^KOTH_(InfantryOnly|Hardcore)|infantry|hardcore/i.test(String(id)) && !/_KOTH_\d+$/i.test(String(id));
+const modeLabel = (id) => (!id ? '' : /koth|kingofthehill/i.test(String(id).replace(/[_\s]/g, '')) ? 'King of the Hill' : spaceCamel(id));
+const modLabel = (id) => (/infantry/i.test(id) ? 'Infantry only' : /hardcore/i.test(id) ? 'Hardcore' : spaceCamel(id));
+
+const catalogCache = new Map();
+async function catalog(s) {
+  const hit = catalogCache.get(s.id);
+  if (hit && Date.now() - hit.at < 60 * 60 * 1000) return hit;
+  const maps = await rcon(s, 'GET', '/catalog/maps').catch(() => ({}));
+  const entry = {
+    at: Date.now(),
+    maps: new Map((maps?.maps || []).map((m) => [m.id, m.displayName || m.id])),
+  };
+  catalogCache.set(s.id, entry);
+  return entry;
+}
+
+const liveCacheRcon = new Map();
+servers.get('/servers/:id/live', member, async (req, res) => {
+  const s = await getServer(req.params.id);
+  const hit = liveCacheRcon.get(s.id);
+  if (hit && Date.now() - hit.at < 15000) return res.json(hit.data);
+  const [st, cat, rot] = await Promise.all([
+    rcon(s, 'GET', '/status'),
+    catalog(s),
+    rcon(s, 'GET', '/rotation').catch(() => null),
+  ]);
+  const mapName = (id) => cat.maps.get(id) || spaceCamel(id) || '—';
+  const exps = Array.isArray(st?.experiences) ? st.experiences : [];
+  const entries = Array.isArray(rot?.entries) ? rot.entries : [];
+  const next = rot?.enabled ? entries.find((e) => e.status === 'next') : null;
+  const data = {
+    name: str(st?.serverName, 120),
+    map: mapName(st?.map),
+    mode: modeLabel(exps.find((e) => !isModifier(e))) || '—',
+    modifiers: exps.filter(isModifier).map(modLabel),
+    lighting: spaceCamel(st?.lighting) || '—',
+    players: Number(st?.players?.current ?? 0),
+    maxPlayers: Number(st?.players?.max ?? 0),
+    matchSeconds: Number(st?.matchSeconds) || 0,
+    scoreCap: Number(st?.scoreCap) || 100,
+    scores: (Array.isArray(st?.factionScores) ? st.factionScores : []).slice(0, 6).map((f) => ({
+      name: str(f?.name, 40),
+      score: Number(f?.score) || 0,
+      color: /^#?[0-9a-f]{6}$/i.test(String(f?.colorHex || '')) ? `#${String(f.colorHex).replace('#', '')}` : '',
+    })),
+    next: next ? { map: mapName(next.map), mode: modeLabel((next.experiences || []).find((e) => !isModifier(e))) || '', lighting: spaceCamel(next.lighting) } : null,
+  };
+  liveCacheRcon.set(s.id, { at: Date.now(), data });
+  res.json(data);
+});
+
 servers.get('/admin/servers/:id/status', role('mod'), async (req, res) => {
   const s = await getServer(req.params.id);
   res.json(await rcon(s, 'GET', '/status'));
@@ -196,6 +250,7 @@ servers.post('/admin/servers/:id/action', role('mod'), async (req, res) => {
   if (!roleAtLeast(req.user.role, action.min)) throw new HttpError(403, 'Only admins can do that.');
   const result = await action.run(s, b);
   playersCache.delete(s.id);
+  liveCacheRcon.delete(s.id);
   await audit(req.user.id, `server.${b.action}`, s.name || s.join_code, {
     steamId: b.steamId, reason: b.reason, message: b.message, map: b.map,
   });

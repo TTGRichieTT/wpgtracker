@@ -961,6 +961,10 @@ async function changeMapBox(sid, act) {
   };
 }
 
+// The public server list reports internal map names; show what players see in game.
+const MAP_NAMES = { Madrid: 'Ozeti' };
+const mapDisplay = (m) => MAP_NAMES[m] || m || '—';
+
 const regionName = (r) => String(r || '').split('-').map((p) => (p.length <= 2 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join(' ');
 const modeName = (exp, map) => String(exp || '').split('+')[0].replace(new RegExp(`^${map}_`, 'i'), '').replace(/_\d+$/, '').replace(/_/g, ' ') || '—';
 
@@ -993,14 +997,15 @@ async function viewServers(main, _r, alive) {
         </div>
         ${s.description ? `<p class="muted" style="margin:8px 0 0">${esc(s.description)}</p>` : ''}
         ${l ? `
-          <div style="margin:14px 0 6px" class="row between"><b style="font:700 18px var(--head)">${l.players} / ${l.maxPlayers} players</b>
+          <div style="margin:14px 0 6px" class="row between"><b style="font:700 18px var(--head)" data-live-players="${s.id}">${l.players} / ${l.maxPlayers} players</b>
             <span class="row">${l.rulesets.map((r) => `<span class="pill">${esc(r)}</span>`).join('')}${l.passwordProtected ? `<span class="pill pending">${icon('lock', 'width="12" height="12"')} Password</span>` : ''}</span></div>
           <div class="xpbar"><div style="width:${pct.toFixed(1)}%"></div></div>
           <div class="tiles" style="margin-top:14px">
-            ${tile('target', 'Map', l.map || '—')}
-            ${tile('swords', 'Mode', modeName(l.mode, l.map))}
+            <span data-live-map="${s.id}">${tile('target', 'Map', mapDisplay(l.map))}</span>
+            <span data-live-mode="${s.id}">${tile('swords', 'Mode', modeName(l.mode, l.map))}</span>
             ${tile('chart', 'Region', regionName(l.region))}
           </div>` : '<p class="muted">This server is not showing in the live server list right now. It may be offline or restarting.</p>'}
+        ${s.has_rcon ? `<div data-live="${s.id}" style="margin-top:16px"></div>` : ''}
         <div class="row" style="margin-top:14px">
           <span class="muted small" style="text-transform:uppercase;font:700 13px var(--head);color:var(--accent2)">Server ID</span>
           <code style="background:#06101c;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;overflow-wrap:anywhere">${esc(s.join_code)}</code>
@@ -1065,6 +1070,34 @@ async function viewServers(main, _r, alive) {
   }
   servers.filter((s) => s.has_rcon).forEach(loadPlayers);
 
+  // Live match straight from the server (RCON): real map name, mode, weather, scores, next map.
+  async function loadLive(s) {
+    const box = main.querySelector(`[data-live="${s.id}"]`);
+    if (!box) return;
+    try {
+      const m = await api(`servers/${s.id}/live`);
+      if (!alive()) return;
+      const mapTile = main.querySelector(`[data-live-map="${s.id}"]`);
+      const modeTile = main.querySelector(`[data-live-mode="${s.id}"]`);
+      if (mapTile) mapTile.innerHTML = tile('target', 'Map', m.map);
+      const pl = main.querySelector(`[data-live-players="${s.id}"]`);
+      if (pl && m.maxPlayers) pl.textContent = `${m.players} / ${m.maxPlayers} players`;
+      if (modeTile) modeTile.innerHTML = tile('swords', 'Mode', [m.mode, ...m.modifiers].join(' + '));
+      const mins = Math.floor(m.matchSeconds / 60);
+      box.innerHTML = `
+        <h4 class="row" style="margin:0 0 10px">${icon('crosshair', 'width="18" height="18"')} Live match <span class="muted small">· ${esc(m.lighting)} · ${mins}m ${m.matchSeconds % 60}s · first to ${m.scoreCap}</span></h4>
+        ${m.scores.length ? `<div class="grid three" style="gap:10px">${m.scores.map((f) => `
+          <div class="score-tile" style="--fc:${esc(f.color || '#29b6f6')}">
+            <div class="row between"><b>${esc(f.name)}</b><b style="font:700 20px var(--head)">${fmtNum(f.score)}</b></div>
+            <div class="xpbar"><div style="width:${Math.min(100, (f.score / Math.max(1, m.scoreCap)) * 100).toFixed(1)}%;background:var(--fc);box-shadow:0 0 10px var(--fc)"></div></div>
+          </div>`).join('')}</div>` : ''}
+        ${m.next ? `<p class="muted small" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}</p>` : ''}`;
+    } catch (e) {
+      box.innerHTML = staff ? `<p class="muted small">Live match unavailable: ${esc(e.message)}</p>` : '';
+    }
+  }
+  servers.filter((s) => s.has_rcon).forEach(loadLive);
+
   async function act(sid, body, done) {
     try {
       await api(`admin/servers/${sid}/action`, { method: 'POST', body });
@@ -1114,7 +1147,7 @@ async function viewServers(main, _r, alive) {
 
   const timer = setInterval(() => {
     if (!alive()) return clearInterval(timer);
-    servers.filter((s) => s.has_rcon).forEach(loadPlayers);
+    servers.filter((s) => s.has_rcon).forEach((s) => { loadPlayers(s); loadLive(s); });
   }, 20000);
   document.getElementById('srvRefresh').onclick = () => route();
   document.getElementById('srvAdd')?.addEventListener('click', addServer);

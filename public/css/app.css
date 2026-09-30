@@ -409,3 +409,5 @@ h1 { font-size: 34px; margin-bottom: 14px; }
   -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 58%, transparent 100%);
   mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 58%, transparent 100%);
 }
+.score-tile { background: #07121f; border: 1px solid rgba(58,120,180,.35); border-left: 3px solid var(--fc); border-radius: 6px; padding: 8px 10px; }
+.score-tile .xpbar { margin-top: 6px; height: 6px; }
