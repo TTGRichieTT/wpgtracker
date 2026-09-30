@@ -21,6 +21,7 @@ const TABS = [
 // Field types: text, number, textarea, check, color, select, insignia, colors
 const RESOURCES = {
   announcements: {
+    one: 'announcement',
     title: 'News & announcements',
     help: 'Shown on everyone\'s HQ page. Pinned posts stay at the top.',
     fields: [
@@ -31,6 +32,7 @@ const RESOURCES = {
     row: (r) => `<div class="grow"><b>${r.pinned ? '📌 ' : ''}${esc(r.title)}</b><div class="muted small">${fmtDate(r.created_at)}</div></div>`,
   },
   ranks: {
+    one: 'rank',
     title: 'Ranks',
     help: 'Order sets seniority (bigger number = more senior). Ranks with “Earned by XP” ticked are given automatically when a member reaches that XP. Others are appointed by hand from the Members tab.',
     fields: [
@@ -47,6 +49,7 @@ const RESOURCES = {
     row: (r) => `${rankBadge(r, 48)}<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${esc(r.abbr)}</span><div class="muted small">${r.auto ? `Earned at ${fmtNum(r.min_xp)} XP` : 'Appointed'} · order ${r.sort_order}</div></div>`,
   },
   awards: {
+    one: 'medal',
     title: 'Medals & ribbons',
     help: 'Create medals here, then give them to members from the Members tab.',
     fields: [
@@ -59,6 +62,7 @@ const RESOURCES = {
     row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b><div class="muted small">${esc(r.description)}</div></div>`,
   },
   'stat-defs': {
+    one: 'stat',
     title: 'Server stats',
     help: 'Stats you track for each member (matches, wins…). Mods type them in on the Members tab, or your Discord bot can send them in automatically. “XP each” gives WPG XP per 1 of this stat. Kills and deaths come from WARDOGS Tracker, but adding a stat with key “kills” or “deaths” lets you override them.',
     key: 'key',
@@ -73,6 +77,7 @@ const RESOURCES = {
     row: (r) => `<div class="grow"><b>${esc(r.label)}</b> <span class="pill">${esc(r.key)}</span><div class="muted small">${esc(r.format)} · ${Number(r.xp_each)} XP each</div></div>`,
   },
   'game-servers': {
+    one: 'server',
     title: 'Game servers',
     help: 'Servers shown on the Servers page. Server ID is the long code from the game (or use Find a server below). To control a server from the app, add the RCON address and password from your server host. The password is stored safely and never shown again. Leave the password box empty to keep the saved one.',
     search: true,
@@ -89,6 +94,7 @@ const RESOURCES = {
     row: (r) => `<div class="grow"><b>${esc(r.name || r.join_code)}</b> ${r.enabled ? '' : '<span class="pill banned">hidden</span>'} ${r.rcon_url && r.has_rcon_password ? '<span class="pill mod">RCON ready</span>' : '<span class="pill">no RCON</span>'}<div class="muted small" style="overflow-wrap:anywhere">${esc(r.join_code)}</div></div>`,
   },
   channels: {
+    one: 'channel',
     title: 'Chat channels',
     help: 'Who can see: Members = everyone, Mods = mods and admins, Admins = admins only.',
     fields: [
@@ -102,6 +108,7 @@ const RESOURCES = {
     row: (r) => `<div class="grow"><b># ${esc(r.name)}</b> ${r.min_role !== 'member' ? `<span class="pill mod">${esc(r.min_role)}s</span>` : ''} ${r.read_only ? '<span class="pill">read only</span>' : ''}<div class="muted small">${esc(r.description)}</div></div>`,
   },
   games: {
+    one: 'game',
     title: 'Tracked Steam games',
     help: 'Steam App ID is the number in the game\'s Steam store link (Wardogs = 1867240). Playtime and achievements from these games earn WPG XP. “Steam stats to show” is one per line: statKey=Label.',
     key: 'app_id',
@@ -118,6 +125,7 @@ const RESOURCES = {
     row: (r) => `<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${r.app_id}</span> ${r.enabled ? '' : '<span class="pill banned">off</span>'}<div class="muted small">${r.xp_per_hour} XP/hour · ${r.xp_per_achievement} XP/achievement</div></div>`,
   },
   'profile-fields': {
+    one: 'profile field',
     title: 'Profile fields',
     help: 'Extra boxes members fill in on their profile. “Choice list” shows a drop-down: put the choices in Options, separated by commas.',
     fields: [
@@ -166,35 +174,67 @@ async function resourceTab(body, name) {
       <div class="list" id="srvResults"></div>
     </div>` : ''}`;
   const sf = document.getElementById('srvSearch');
-  if (sf) {
-    sf.onsubmit = async (e) => {
-      e.preventDefault();
-      const out = document.getElementById('srvResults');
-      out.innerHTML = '<div class="spinner" style="margin:10px auto"></div>';
-      try {
-        const found = await api(`admin/servers/search?q=${encodeURIComponent(sf.q.value)}`);
-        const have = new Set(rows.map((r) => r.join_code));
-        out.innerHTML = found.map((s) => `<div class="item"><div class="grow"><b>${esc(s.name)}</b><div class="muted small">${s.players}/${s.maxPlayers} players · ${esc(s.region)} · ${esc(s.type)}</div></div>
-          ${have.has(s.join_code) ? '<span class="pill mod">Added</span>' : `<button class="btn small primary" data-add-srv="${esc(s.join_code)}" data-srv-name="${esc(s.name)}">${icon('plus')} Add</button>`}</div>`).join('') || '<p class="muted">No live servers found.</p>';
-        out.querySelectorAll('[data-add-srv]').forEach((b) => {
-          b.onclick = async () => {
-            try {
-              await api(`admin/${name}`, { method: 'POST', body: { join_code: b.dataset.addSrv, name: '', description: '', rcon_url: '', rcon_password: '', enabled: true, sort_order: 10 } });
-              toast('Server added', b.dataset.srvName);
-              resourceTab(body, name);
-            } catch (x) { fail(x); }
-          };
-        });
-      } catch (x) { out.innerHTML = ''; fail(x); }
-    };
-  }
+  if (sf) bindServerSearch(sf, document.getElementById('srvResults'), rows, () => resourceTab(body, name));
   document.getElementById('addBtn').onclick = () => openEditor(cfg, name, key, null, () => resourceTab(body, name));
   body.querySelectorAll('[data-edit]').forEach((b) => {
     b.onclick = () => openEditor(cfg, name, key, rows.find((r) => String(r[key]) === b.dataset.edit), () => resourceTab(body, name));
   });
 }
 
-function fieldHtml(f, v, isNew) {
+// Search the live Wardogs server list and add a result with one click.
+function bindServerSearch(form, out, existing, onAdded) {
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    out.innerHTML = '<div class="spinner" style="margin:10px auto"></div>';
+    try {
+      const found = await api(`admin/servers/search?q=${encodeURIComponent(form.q.value)}`);
+      const have = new Set(existing.map((r) => r.join_code));
+      out.innerHTML = found.map((s) => `<div class="item"><div class="grow"><b>${esc(s.name)}</b><div class="muted small">${s.players}/${s.maxPlayers} players · ${esc(s.region)} · ${esc(s.type)}</div></div>
+        ${have.has(s.join_code) ? '<span class="pill mod">Added</span>' : `<button class="btn small primary" data-add-srv="${esc(s.join_code)}" data-srv-name="${esc(s.name)}">${icon('plus')} Add</button>`}</div>`).join('') || '<p class="muted">No live servers found. Check the name, or add it by server ID.</p>';
+      out.querySelectorAll('[data-add-srv]').forEach((b) => {
+        b.onclick = async () => {
+          try {
+            const row = await api('admin/game-servers', { method: 'POST', body: { join_code: b.dataset.addSrv, name: '', description: '', rcon_url: '', rcon_password: '', enabled: true, sort_order: 10 } });
+            toast('Server added', b.dataset.srvName);
+            onAdded(row);
+          } catch (x) { fail(x); }
+        };
+      });
+    } catch (x) { out.innerHTML = ''; fail(x); }
+  };
+}
+
+// ---------- Shortcuts used on the Servers page ----------
+export async function editGameServer(id, done) {
+  const rows = await api('admin/game-servers');
+  const row = rows.find((r) => r.id === Number(id));
+  if (!row) throw new Error('Server not found.');
+  openEditor(RESOURCES['game-servers'], 'game-servers', 'id', row, done);
+}
+
+export async function addGameServer(done) {
+  const rows = await api('admin/game-servers');
+  const m = modal(`
+    <div class="row between"><h2 style="margin:0">Add a server</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
+    <p class="muted">Search for the server by name (e.g. <b>WPG</b>) or paste its server ID from the game.</p>
+    <form class="row" id="addSrvSearch"><input type="search" name="q" class="grow" placeholder="Server name or ID"><button class="btn primary">Search</button></form>
+    <div class="list" id="addSrvResults"></div>
+    <p class="muted small" style="margin-top:14px">Not in the live list (e.g. it's offline)? <button type="button" class="btn small" id="addSrvManual">Enter details by hand</button></p>`);
+  m.el.querySelector('[data-close]').onclick = m.close;
+  m.el.querySelector('#addSrvManual').onclick = () => {
+    m.close();
+    openEditor(RESOURCES['game-servers'], 'game-servers', 'id', null, done);
+  };
+  bindServerSearch(m.el.querySelector('#addSrvSearch'), m.el.querySelector('#addSrvResults'), rows, (row) => {
+    m.close();
+    done();
+    // Go straight on to the RCON details for the new server.
+    openEditor(RESOURCES['game-servers'], 'game-servers', 'id', { ...row, rcon_password: '' }, done);
+  });
+  m.el.querySelector('#addSrvSearch').q.focus();
+}
+
+function fieldHtml(f, v, isNew, data = {}) {
   const id = `f_${f.k}`;
   if (f.createOnly && !isNew) return `<label class="field"><span>${esc(f.label)}</span><input type="text" value="${esc(v)}" disabled></label>`;
   switch (f.type) {
@@ -206,9 +246,12 @@ function fieldHtml(f, v, isNew) {
       return `<label class="check field" style="grid-column:1/-1"><input type="checkbox" name="${f.k}" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
     case 'color':
       return `<label class="field"><span>${esc(f.label)}</span><input type="color" name="${f.k}" value="${esc(v || '#c9a227')}"></label>`;
-    case 'secret':
-      return `<label class="field"><span>${esc(f.label)}</span><input type="password" name="${f.k}" autocomplete="new-password" placeholder="${isNew ? '' : '(saved — leave empty to keep)'}"></label>
-        ${isNew ? '' : `<label class="check"><input type="checkbox" name="clear_${f.k}"> Remove saved password</label>`}`;
+    case 'secret': {
+      const saved = !isNew && data[`has_${f.k}`];
+      return `<label class="field"><span>${esc(f.label)}${saved ? ' <span class="pill mod">saved</span>' : ''}</span>
+          <input type="password" name="${f.k}" autocomplete="new-password" placeholder="${saved ? 'Leave empty to keep the saved one' : 'Type the password'}"></label>
+        ${saved ? `<label class="check"><input type="checkbox" name="clear_${f.k}"> Remove saved password</label>` : ''}`;
+    }
     case 'select':
       return `<label class="field"><span>${esc(f.label)}</span><select name="${f.k}">${f.options.map(([o, l]) => `<option value="${o}" ${String(v) === o ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
     case 'colors': {
@@ -241,8 +284,8 @@ function openEditor(cfg, name, key, row, done) {
   const data = row || { ...(cfg.defaults || {}) };
   const m = modal(`
     <form id="edForm" class="stack">
-      <div class="row between"><h2 style="margin:0">${isNew ? 'Add' : 'Edit'} ${esc(cfg.title.toLowerCase())}</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
-      <div class="form-grid">${cfg.fields.map((f) => fieldHtml(f, data[f.k], isNew)).join('')}</div>
+      <div class="row between"><h2 style="margin:0">${isNew ? 'Add' : 'Edit'} ${esc(cfg.one || cfg.title.toLowerCase())}</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
+      <div class="form-grid">${cfg.fields.map((f) => fieldHtml(f, data[f.k], isNew, data)).join('')}</div>
       <div class="row between">
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-close>Cancel</button></div>
         ${isNew ? '' : `<button type="button" class="btn danger" id="delBtn">${icon('trash')} Delete</button>`}

@@ -895,8 +895,13 @@ async function viewServers(main, _r, alive) {
   const admin = state.me.role === 'admin';
   const { servers, stale } = await api('servers');
   if (!alive()) return;
+  const adminTools = () => import('./admin.js');
+  const addServer = async () => {
+    try { await (await adminTools()).addGameServer(() => route()); } catch (x) { fail(x); }
+  };
   if (!servers.length) {
-    main.innerHTML = `<h1>Servers</h1><div class="panel empty">No servers added yet.${admin ? ' Add one in Admin → Game servers.' : ''}</div>`;
+    main.innerHTML = `<h1>Servers</h1><div class="panel empty">No servers added yet.${admin ? `<div style="margin-top:12px"><button class="btn primary" id="srvAdd">${icon('plus')} Add server</button></div>` : ''}</div>`;
+    document.getElementById('srvAdd')?.addEventListener('click', addServer);
     return;
   }
 
@@ -934,11 +939,16 @@ async function viewServers(main, _r, alive) {
 
   const controlsHtml = (s) => {
     if (!s.has_rcon) {
-      return `<p class="muted small" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">${icon('shield', 'width="14" height="14"')} Staff: add this server's RCON address and password in ${admin ? '<a href="#/admin/game-servers">Admin → Game servers</a>' : 'Admin → Game servers (ask an admin)'} to control it from here.</p>`;
+      return `<div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+        <p class="muted small grow" style="margin:0">${icon('shield', 'width="14" height="14"')} ${admin
+          ? 'Add this server\'s RCON address and password to control it from here.'
+          : 'An admin can add this server\'s RCON details so staff can control it from here.'}</p>
+        ${admin ? `<button class="btn small primary" data-settings="${s.id}">${icon('settings')} Add RCON details</button>` : ''}</div>`;
     }
     return `
       <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px" class="stack">
-        <h4 class="row" style="margin:0">${icon('shield', 'width="18" height="18" style="color:var(--gold)"')} Server controls</h4>
+        <div class="row between"><h4 class="row" style="margin:0">${icon('shield', 'width="18" height="18" style="color:var(--gold)"')} Server controls</h4>
+          ${admin ? `<button class="btn small" data-settings="${s.id}">${icon('settings')} Server settings</button>` : ''}</div>
         <form class="row" data-broadcast="${s.id}"><input type="text" name="message" class="grow" maxlength="300" placeholder="Message everyone on the server" style="min-width:180px"><button class="btn">${icon('megaphone')} Broadcast</button></form>
         ${admin ? `
         <div class="row">
@@ -950,7 +960,9 @@ async function viewServers(main, _r, alive) {
       </div>`;
   };
 
-  main.innerHTML = `<div class="row between"><h1>Servers</h1><button class="btn" id="srvRefresh">${icon('refresh')} Refresh</button></div>
+  main.innerHTML = `<div class="row between"><h1>Servers</h1><div class="row">
+      ${admin ? `<button class="btn primary" id="srvAdd">${icon('plus')} Add server</button>` : ''}
+      <button class="btn" id="srvRefresh">${icon('refresh')} Refresh</button></div></div>
     ${stale ? '<p class="muted small">⚠ Live server data may be a few minutes old.</p>' : ''}
     <div class="stack">${servers.map(serverCard).join('')}</div>
     <div class="credit">Live server data by <a href="https://wardogservers.com" target="_blank" rel="noopener">Wardog Servers</a></div>`;
@@ -1032,6 +1044,12 @@ async function viewServers(main, _r, alive) {
     servers.filter((s) => s.has_rcon).forEach(loadPlayers);
   }, 20000);
   document.getElementById('srvRefresh').onclick = () => route();
+  document.getElementById('srvAdd')?.addEventListener('click', addServer);
+  main.querySelectorAll('[data-settings]').forEach((b) => {
+    b.onclick = async () => {
+      try { await (await adminTools()).editGameServer(b.dataset.settings, () => route()); } catch (x) { fail(x); }
+    };
+  });
 }
 
 // ---------- Leaderboard ----------

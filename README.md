@@ -79,8 +79,8 @@ You only rebuild the APK if the web address changes.
 The **Servers** page shows WPG's Wardogs servers live: online or offline, players, map, mode and region.
 Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
 
-- **Add a server:** Admin → Game servers → *Find a server* → search "WPG" → **Add**.
-- **Control a server from the app:** Admin → Game servers → Edit → enter the **RCON address** and **RCON password**.
+- **Add a server:** Servers page → **+ Add server** → search "WPG" → **Add**. (Also in Admin → Game servers.)
+- **Control a server from the app:** Servers page → **Add RCON details** (or **Server settings**) → enter the **RCON address** and **RCON password**.
   Get these from your server host's panel (RCON must be switched on there).
   Then staff get a live player list and buttons on the Servers page:
   - **Mods:** broadcast a message, kick, kill.
