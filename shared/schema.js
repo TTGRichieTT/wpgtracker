@@ -43,6 +43,10 @@ export const users = pgTable('users', {
   rank_locked: boolean().notNull().default(false),
   xp: integer().notNull().default(0),
   bonus_xp: integer().notNull().default(0),
+  // XP earned from activity, added up as it happens at the rates in force at the time
+  // (so changing a rate for an event never rewrites XP already earned).
+  earned_xp: numeric().notNull().default('0'),
+  xp_ledger: boolean().notNull().default(false),
   muted_until: timestamp({ withTimezone: true }),
   custom_fields: jsonb().notNull().default({}),
   steam_private: boolean().notNull().default(false),
@@ -175,6 +179,14 @@ export const userStats = pgTable('user_stats', {
   value: numeric().notNull().default('0'),
   updated_at: now(),
 }, (t) => [primaryKey({ name: 'user_stats_pkey', columns: [t.user_id, t.key] })]);
+
+// Last counted total for each XP source per user (e.g. 'kills', 'stat:wins', 'game:1867240:minutes').
+export const xpCounters = pgTable('xp_counters', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  source: text().notNull(),
+  last_value: numeric().notNull().default('0'),
+  updated_at: now(),
+}, (t) => [primaryKey({ name: 'xp_counters_pkey', columns: [t.user_id, t.source] })]);
 
 export const gameServers = pgTable('game_servers', {
   id: serial().primaryKey(),

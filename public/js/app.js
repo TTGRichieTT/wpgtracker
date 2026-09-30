@@ -1412,11 +1412,46 @@ async function viewLeaderboard(main) {
 }
 
 // ---------- Ranks ----------
+// "How to earn XP", built from the live settings so it changes as soon as an admin changes a rate.
+function xpRulesHtml(x) {
+  const tag = state.settings.clan_tag || 'WPG';
+  const per = (n) => `+${fmtNum(Number(n.toFixed(2)))} XP`;
+  const rows = [];
+  if (x.per_kill) rows.push(['crosshair', `Kills on the ${tag} server`, `${per(x.per_kill)} per kill`]);
+  for (const s of x.stats) {
+    if (s.format === 'minutes') rows.push(['clock', s.label, `${per(s.xp * 60)} per hour`]);
+    else rows.push([s.key === 'wins' ? 'win' : s.key === 'matches' ? 'calendar' : 'chart', s.label, `${per(s.xp)} each`]);
+  }
+  for (const g of x.games) {
+    if (g.per_hour) rows.push(['steam', `Playing ${g.name} (Steam hours)`, `${per(g.per_hour)} per hour`]);
+    if (g.per_achievement) rows.push(['medal', `${g.name} Steam achievements`, `${per(g.per_achievement)} each`]);
+  }
+  rows.push(['star', 'Bonus XP from staff', 'events, good conduct, winning tournaments…']);
+  return `
+    ${x.event ? `<div class="panel glow xp-event"><span class="script" style="font-size:22px">XP event</span><div style="font:700 20px var(--head);text-transform:uppercase;margin-top:6px">${esc(x.event)}</div></div>` : ''}
+    <div class="panel">
+      <div class="panel-title">${icon('xp')} How to earn <span class="sub">${esc(tag)} XP</span></div>
+      <div class="xp-rules">${rows.map(([ic, what, how]) => `
+        <div class="xp-rule"><span class="ic">${icon(ic)}</span><span class="grow">${esc(what)}</span><b>${esc(how)}</b></div>`).join('')}</div>
+      <ul class="muted small" style="margin:14px 0 0;padding-left:18px;line-height:1.7">
+        <li>Your stats sync by themselves every ${x.sync_minutes} minutes, or press <b>Sync stats</b> on HQ. XP is added when they sync.</li>
+        <li>New activity earns the rate <b>at the time it's counted</b>. When staff change a rate (for example an XP event), XP you've already earned stays the same.</li>
+        <li>Global Wardogs stats need <b>WARDOGS Tracker</b> linked — see the card on HQ if you haven't.</li>
+        <li>${x.auto_promote ? 'Ranks marked with XP are given automatically as soon as you reach them.' : 'Automatic promotions are paused right now — staff promote by hand.'} Ranks marked <b>Appointed</b> are given by command.</li>
+        ${isPmc(state.me) ? '<li>You\'re a PMC (guest): you earn XP but don\'t hold a rank.</li>' : ''}
+      </ul>
+    </div>`;
+}
+
 async function viewRanks(main) {
-  const ranks = await api('ranks');
+  const [ranks, rules] = await Promise.all([api('ranks'), api('xp-rules')]);
+  onLive('config', (name) => { if (['settings', 'stat-defs', 'games', 'ranks'].includes(name)) route(); });
+  onLive('me', () => route());
   main.innerHTML = `<h1>Rank structure</h1>
     <p class="muted">Our insignia combine US and British Army symbols: US chevrons, rockers, bars, oak leaves and stars with the British crown, pips and crossed sword &amp; baton.
-    Ranks marked <b>XP</b> are earned automatically. Ranks marked <b>Appointed</b> are given by command.</p>
+    Ranks marked <b>XP</b> are earned automatically. Ranks marked <b>Appointed</b> are given by command.
+    You have <b style="color:var(--text)">${fmtNum(state.me.xp)} XP</b>.</p>
+    <div class="stack" style="margin-bottom:16px">${xpRulesHtml(rules)}</div>
     <div class="panel">${[...ranks].reverse().map((r) => `
       <div class="rank-row" style="${state.me.rank_id === r.id ? 'background:rgba(41,182,246,.08);border-radius:8px' : ''}">
         ${rankBadge(r, 64)}

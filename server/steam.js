@@ -144,28 +144,69 @@ async function syncSteam(user) {
   return { ok: true, private: isPrivate };
 }
 
-// WPG XP = Steam playtime/achievements in tracked games
-//        + WPG server kills (from WARDOGS Tracker)
-//        + custom stats (matches, wins... each worth "xp_each")
-//        + bonus XP given by admins.
-export async function recalcXp(userId) {
-  const steamXp = await one(
-    `SELECT COALESCE(SUM(FLOOR(ug.playtime_forever / 60.0 * g.xp_per_hour) + ug.ach_unlocked * g.xp_per_achievement), 0)::int AS xp
-       FROM user_games ug JOIN games g ON g.app_id = ug.app_id AND g.enabled = true
-      WHERE ug.user_id = $1`,
+// Everything that earns WPG XP for a user right now: its running total and the XP rate in force.
+// canDrop: whether a lower total should take XP back (only for stats admins/bots type in, i.e. corrections).
+async function xpSources(userId) {
+  const sources = [];
+  const games = await q(
+    `SELECT ug.app_id, ug.playtime_forever, ug.ach_unlocked, g.xp_per_hour, g.xp_per_achievement
+       FROM user_games ug JOIN games g ON g.app_id = ug.app_id AND g.enabled = true WHERE ug.user_id = $1`,
     [userId],
   );
-  const statXp = await one(
-    `SELECT COALESCE(FLOOR(SUM(us.value * d.xp_each)), 0)::int AS xp
-       FROM user_stats us JOIN stat_defs d ON d.key = us.key WHERE us.user_id = $1`,
+  for (const g of games) {
+    sources.push({ source: `game:${g.app_id}:minutes`, value: Number(g.playtime_forever) || 0, rate: (Number(g.xp_per_hour) || 0) / 60 });
+    sources.push({ source: `game:${g.app_id}:achievements`, value: Number(g.ach_unlocked) || 0, rate: Number(g.xp_per_achievement) || 0 });
+  }
+  const stats = await q(
+    'SELECT us.key, us.value, d.xp_each FROM user_stats us JOIN stat_defs d ON d.key = us.key WHERE us.user_id = $1',
     [userId],
   );
+  for (const s of stats) sources.push({ source: `stat:${s.key}`, value: Number(s.value) || 0, rate: Number(s.xp_each) || 0, canDrop: true });
   const ws = await one('SELECT server FROM wardogs_stats WHERE user_id=$1', [userId]);
-  const perKill = Number(await setting('xp_per_server_kill')) || 0;
-  const killXp = Math.floor((Number(ws?.server?.kills) || 0) * perKill);
-  const earned = steamXp.xp + statXp.xp + killXp;
-  const user = await one('UPDATE users SET xp = $2 + bonus_xp WHERE id = $1 RETURNING *', [userId, earned]);
-  await autoPromote(user);
+  if (ws?.server && ws.server.kills !== undefined && ws.server.kills !== null) {
+    sources.push({ source: 'kills', value: Number(ws.server.kills) || 0, rate: Number(await setting('xp_per_server_kill')) || 0 });
+  }
+  return sources;
+}
+
+// WPG XP = XP earned from activity (Steam hours/achievements, WPG server kills, server stats)
+//        + bonus XP given by admins.
+// Activity XP is added as it happens, at the rate in force when it's counted. Changing a rate
+// (e.g. 10 XP per kill for an event) only affects new activity, never XP already earned.
+export async function recalcXp(userId) {
+  const user = await one('SELECT * FROM users WHERE id=$1', [userId]);
+  if (!user) return;
+  const sources = await xpSources(userId);
+  let earned = Number(user.earned_xp) || 0;
+
+  if (!user.xp_ledger) {
+    // First time: start the ledger from today's totals at today's rates (same as the old sum).
+    earned = sources.reduce((sum, s) => sum + s.value * s.rate, 0);
+  } else {
+    const rows = await q('SELECT source, last_value FROM xp_counters WHERE user_id=$1', [userId]);
+    const last = new Map(rows.map((r) => [r.source, Number(r.last_value)]));
+    for (const s of sources) {
+      const before = last.has(s.source) ? last.get(s.source) : 0;
+      let delta = s.value - before;
+      if (delta < 0 && !s.canDrop) delta = 0; // e.g. a tracker hiccup must never take XP away
+      earned += delta * s.rate;
+    }
+  }
+  for (const s of sources) {
+    await q(
+      `INSERT INTO xp_counters (user_id, source, last_value, updated_at) VALUES ($1,$2,$3,now())
+       ON CONFLICT (user_id, source) DO UPDATE SET
+         last_value = CASE WHEN $4 THEN EXCLUDED.last_value ELSE GREATEST(xp_counters.last_value, EXCLUDED.last_value) END,
+         updated_at = now()`,
+      [userId, s.source, s.value, !!s.canDrop],
+    );
+  }
+  earned = Math.max(0, earned);
+  const updated = await one(
+    'UPDATE users SET earned_xp=$2::numeric, xp_ledger=true, xp = GREATEST(0, FLOOR($2::numeric)::int + bonus_xp) WHERE id=$1 RETURNING *',
+    [userId, earned],
+  );
+  await autoPromote(updated);
 }
 
 // Promotes (never demotes) through ranks marked "auto" once the member has enough XP.

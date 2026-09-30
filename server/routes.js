@@ -82,6 +82,23 @@ api.get('/profile-fields', member, async (_req, res) => {
 api.get('/ranks', member, async (_req, res) => {
   res.json(await q('SELECT * FROM ranks ORDER BY sort_order'));
 });
+// Current XP rates, for the "How to earn XP" guide on the Ranks page.
+api.get('/xp-rules', member, async (_req, res) => {
+  const s = await getSettings();
+  const [stats, games] = await Promise.all([
+    q('SELECT key, label, format, xp_each FROM stat_defs WHERE xp_each <> 0 ORDER BY sort_order, key'),
+    q('SELECT name, xp_per_hour, xp_per_achievement FROM games WHERE enabled = true ORDER BY featured DESC, name'),
+  ]);
+  res.json({
+    per_kill: Number(s.xp_per_server_kill) || 0,
+    auto_promote: s.auto_promote === 'true',
+    sync_minutes: Math.max(15, Number(s.sync_minutes) || 60),
+    event: s.xp_event_message || '',
+    stats: stats.map((d) => ({ key: d.key, label: d.label, format: d.format, xp: Number(d.xp_each) })),
+    games: games.map((g) => ({ name: g.name, per_hour: g.xp_per_hour, per_achievement: g.xp_per_achievement })),
+  });
+});
+
 api.get('/awards', member, async (_req, res) => {
   res.json(await q('SELECT * FROM awards ORDER BY sort_order, id'));
 });

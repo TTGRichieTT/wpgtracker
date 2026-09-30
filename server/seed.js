@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   tracker_enabled: 'true',
   tracker_server: '',
   xp_per_server_kill: '2',
+  xp_event_message: '',
 };
 
 // Insignia combine US and UK army symbols:
