@@ -1,5 +1,5 @@
-modules = ["nodejs-20", "web", "java-graalvm22.3"]
-run = "npm install && npm start"
+modules = ["nodejs-20", "web", "java-graalvm22.3", "postgresql-16"]
+run = "npm start"
 entrypoint = "server/index.js"
 
 [nix]
@@ -13,3 +13,27 @@ deploymentTarget = "vm"
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm start"
+waitForPort = 3000
+
+[workflows.workflow.metadata]
+outputType = "console"
