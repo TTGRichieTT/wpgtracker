@@ -150,3 +150,13 @@ Global Wardogs stats are provided by [WARDOGS Tracker](https://wardogstracker.gg
 
 The WPG logo, wolf badge, soldier, role pictures and banners are in `public/img/brand/`.
 They were cut from the WPG Discord career card. The mountain background is `public/img/brand/scene.svg`.
+
+### XP and XP events
+
+- The **Ranks** page explains how to earn XP, using the current rates. It updates by itself when an admin changes a rate.
+- XP is **earned as it happens**, at the rate in force when stats sync. Changing a rate never changes XP already earned.
+- **Running an event** (e.g. 10 XP per kill for a weekend):
+  1. Admin → Settings → *XP per kill on the WPG server* → **10**. Add a message in *XP event banner* (e.g. "Kill XP is 10 this weekend!").
+  2. When the event ends: press **Sync everyone's stats now** first (so the last kills still count at 10), wait a few minutes,
+     then set XP per kill back to **2** and clear the banner.
+- Other XP rates: Admin → Stats (matches, wins, playtime…) and Admin → Games (Steam hours and achievements).

@@ -538,7 +538,7 @@ const SETTINGS = [
   ['Ranks & XP', [
     ['auto_promote', 'Promote members automatically by XP', 'check'],
     ['announce_promotions', 'Post promotions in chat', 'check'],
-    ['xp_per_server_kill', 'XP per kill on the WPG server (event ending? press "Sync everyone's stats now" below FIRST, then set it back)', 'number'],
+    ['xp_per_server_kill', 'XP per kill on the WPG server (event ending? press "Sync everyone\'s stats now" below FIRST, then set it back)', 'number'],
     ['xp_event_message', 'XP event banner on the Ranks page (e.g. "Kill XP is 10 this weekend!") — leave empty when no event'],
   ]],
   ['Stats syncing', [
