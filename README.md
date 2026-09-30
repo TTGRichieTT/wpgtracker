@@ -33,6 +33,8 @@ It runs as a website on Replit, and as an Android app (APK) that opens the same 
 
 **Main admin:** Richie's Steam account (`76561198809535860`) is always admin, shows a **Developer** tag, and can't be demoted, banned or deleted.
 To add more main admins later, add a Secret called `OWNER_STEAM_IDS` with Steam IDs separated by commas (include Richie's too).
+**Starting admins:** Steam ID `76561198099451925` becomes admin automatically the first time they sign in (they can be demoted later like anyone).
+To change this list, add a Secret called `ADMIN_STEAM_IDS` with Steam IDs separated by commas.
 Everyone else needs approval, except the very first person to sign in, who also becomes admin.
 
 **No Steam API key?** The app still works. Names and pictures come from public Steam profiles.

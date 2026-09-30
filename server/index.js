@@ -11,7 +11,7 @@ import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop 
 import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
 import { startRealtime } from './realtime.js';
-import { PgSessionStore, HttpError, str, OWNER_IDS } from './util.js';
+import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS } from './util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -87,7 +87,7 @@ async function loginSteamId(req, steamId, fallbackName) {
   const owner = OWNER_IDS.has(steamId);
   if (!user) {
     const count = await one('SELECT COUNT(*)::int AS n FROM users');
-    const first = count.n === 0 || owner;
+    const first = count.n === 0 || owner || START_ADMIN_IDS.has(steamId);
     const needsApproval = !first && (await flag('require_approval'));
     const lowest = await one('SELECT id FROM ranks ORDER BY sort_order LIMIT 1');
     user = await one(

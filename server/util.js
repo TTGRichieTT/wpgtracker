@@ -9,6 +9,12 @@ export const OWNER_IDS = new Set(
   (process.env.OWNER_STEAM_IDS || '76561198809535860').split(',').map((s) => s.trim()).filter((s) => /^\d{17}$/.test(s)),
 );
 export const isOwner = (u) => !!u && OWNER_IDS.has(u.steam_id);
+
+// Made admin (and approved) when their account is first created. Unlike main admins they can be demoted later.
+// Change with ADMIN_STEAM_IDS in Replit Secrets (comma separated Steam IDs).
+export const START_ADMIN_IDS = new Set(
+  (process.env.ADMIN_STEAM_IDS || '76561198099451925').split(',').map((s) => s.trim()).filter((s) => /^\d{17}$/.test(s)),
+);
 export const roleAtLeast = (role, min) => (ROLE_LEVEL[role] || 0) >= (ROLE_LEVEL[min] || 99);
 
 export class PgSessionStore extends session.Store {
