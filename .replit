@@ -1,0 +1,15 @@
+modules = ["nodejs-20", "postgresql-16"]
+run = "npm install && npm start"
+entrypoint = "server/index.js"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+build = ["npm", "ci"]
+run = ["npm", "start"]
+deploymentTarget = "vm"
+
+[[ports]]
+localPort = 3000
+externalPort = 80

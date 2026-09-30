@@ -1,0 +1,20 @@
+{
+  "appId": "com.wpg.barracks",
+  "appName": "WPG Barracks",
+  "webDir": "www",
+  "server": {
+    "url": "https://example.replit.app",
+    "cleartext": false,
+    "errorPath": "offline.html",
+    "allowNavigation": [
+      "example.replit.app",
+      "steamcommunity.com",
+      "*.steamcommunity.com",
+      "*.steampowered.com",
+      "*.steamstatic.com"
+    ]
+  },
+  "android": {
+    "backgroundColor": "#050a12"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "wpg-barracks",
+  "version": "1.0.0",
+  "description": "[WPG] Wasted Prodigy Gamers community app",
+  "type": "module",
+  "main": "server/index.js",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "pg": "^8.23.1",
+    "socket.io": "^4.8.4"
+  }
+}

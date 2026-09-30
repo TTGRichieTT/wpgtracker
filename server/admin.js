@@ -1,0 +1,382 @@
+import express from 'express';
+import crypto from 'node:crypto';
+import { q, one, audit, getSettings, clearSettingsCache } from './db.js';
+import { bus } from './bus.js';
+import { syncUser, recalcXp, announceRankChange } from './steam.js';
+import { usersWithRanks } from './routes.js';
+import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl } from './util.js';
+
+export const admin = express.Router();
+
+// ---------- Users (mods + admins) ----------
+admin.get('/users', role('mod'), async (req, res) => {
+  const status = str(req.query.status, 20);
+  const search = str(req.query.search, 60);
+  const rows = await q(
+    `SELECT * FROM users WHERE ($1 = '' OR status = $1)
+       AND ($2 = '' OR persona_name ILIKE '%' || $2 || '%' OR callsign ILIKE '%' || $2 || '%' OR steam_id = $2)
+     ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, joined_at DESC LIMIT 500`,
+    [status, search],
+  );
+  const users = await usersWithRanks(rows);
+  res.json(users.map((u, i) => ({ ...u, bonus_xp: rows[i].bonus_xp, rank_locked: rows[i].rank_locked, muted_until: rows[i].muted_until })));
+});
+
+admin.get('/users/:id', role('mod'), async (req, res) => {
+  const u = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
+  if (!u) throw new HttpError(404, 'Member not found.');
+  const [out] = await usersWithRanks([u]);
+  const awards = await q(
+    'SELECT ua.*, a.name FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY ua.given_at',
+    [u.id],
+  );
+  const stats = await q('SELECT key, value FROM user_stats WHERE user_id=$1', [u.id]);
+  res.json({
+    user: { ...out, bonus_xp: u.bonus_xp, rank_locked: u.rank_locked, muted_until: u.muted_until },
+    awards,
+    stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
+  });
+});
+
+admin.patch('/users/:id', role('mod'), async (req, res) => {
+  const actor = req.user;
+  const target = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
+  if (!target) throw new HttpError(404, 'Member not found.');
+  const isAdmin = actor.role === 'admin';
+  if (!isAdmin && ROLE_LEVEL[target.role] >= ROLE_LEVEL[actor.role] && target.id !== actor.id) {
+    throw new HttpError(403, 'Mods can only edit regular members.');
+  }
+  const b = req.body || {};
+  const sets = [];
+  const vals = [target.id];
+  const set = (col, v) => {
+    vals.push(v);
+    sets.push(`${col}=$${vals.length}`);
+  };
+
+  if ('status' in b) {
+    if (!['pending', 'active', 'banned'].includes(b.status)) throw new HttpError(400, 'Bad status.');
+    if (target.id === actor.id) throw new HttpError(400, 'You cannot change your own status.');
+    set('status', b.status);
+  }
+  if ('role' in b) {
+    if (!isAdmin) throw new HttpError(403, 'Only admins can change roles.');
+    if (!ROLE_LEVEL[b.role]) throw new HttpError(400, 'Bad role.');
+    if (target.id === actor.id && b.role !== 'admin') {
+      const admins = await one("SELECT COUNT(*)::int AS n FROM users WHERE role='admin' AND status='active'");
+      if (admins.n <= 1) throw new HttpError(400, 'You are the last admin. Make someone else admin first.');
+    }
+    set('role', b.role);
+  }
+  let newRank;
+  if ('rank_id' in b) {
+    newRank = b.rank_id ? await one('SELECT * FROM ranks WHERE id=$1', [int(b.rank_id)]) : null;
+    if (b.rank_id && !newRank) throw new HttpError(400, 'Rank not found.');
+    set('rank_id', newRank ? newRank.id : null);
+  }
+  if ('rank_locked' in b) set('rank_locked', bool(b.rank_locked));
+  if ('bonus_xp' in b) set('bonus_xp', int(b.bonus_xp));
+  if ('callsign' in b) set('callsign', str(b.callsign, 40));
+  if ('bio' in b) set('bio', str(b.bio, 1000));
+  if ('country' in b) set('country', str(b.country, 4));
+  if ('custom_avatar' in b) set('custom_avatar', safeUrl(b.custom_avatar));
+  if ('banner_color' in b) set('banner_color', color(b.banner_color, '#0d2238'));
+  if ('custom_fields' in b && typeof b.custom_fields === 'object') {
+    const clean = Object.fromEntries(Object.entries(b.custom_fields).map(([k, v]) => [str(k, 40), str(v, 200)]));
+    set('custom_fields', JSON.stringify(clean));
+  }
+  if ('mute_minutes' in b) {
+    const mins = int(b.mute_minutes);
+    set('muted_until', mins > 0 ? new Date(Date.now() + mins * 60000) : null);
+  }
+  if (!sets.length) throw new HttpError(400, 'Nothing to change.');
+
+  const updated = await one(`UPDATE users SET ${sets.join(', ')} WHERE id=$1 RETURNING *`, vals);
+  await audit(actor.id, 'user.edit', `${target.persona_name} (#${target.id})`, b);
+
+  if (b.status === 'active' && target.status !== 'active') {
+    bus.emit('notify', target.id, { title: 'Approved!', body: 'Welcome to WPG. You now have full access.' });
+    syncUser(target.id).catch(() => {});
+  }
+  if (b.status === 'banned') bus.emit('user:kick', target.id);
+  if ('rank_id' in b && target.rank_id !== updated.rank_id) {
+    const from = target.rank_id ? await one('SELECT * FROM ranks WHERE id=$1', [target.rank_id]) : null;
+    await announceRankChange(updated, from, newRank);
+  }
+  if ('bonus_xp' in b) await recalcXp(target.id);
+  bus.emit('user:changed', target.id);
+  res.json({ ok: true });
+});
+
+admin.put('/users/:id/stats', role('mod'), async (req, res) => {
+  const target = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
+  if (!target) throw new HttpError(404, 'Member not found.');
+  await saveStats(target.id, req.body || {});
+  await audit(req.user.id, 'user.stats', `${target.persona_name} (#${target.id})`, req.body);
+  await recalcXp(target.id);
+  bus.emit('user:changed', target.id);
+  res.json({ ok: true });
+});
+
+async function saveStats(userId, values) {
+  const defs = new Set((await q('SELECT key FROM stat_defs')).map((d) => d.key));
+  for (const [key, value] of Object.entries(values)) {
+    if (!defs.has(key)) continue;
+    if (value === '' || value === null) {
+      await q('DELETE FROM user_stats WHERE user_id=$1 AND key=$2', [userId, key]);
+      continue;
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) continue;
+    await q(
+      `INSERT INTO user_stats (user_id, key, value, updated_at) VALUES ($1,$2,$3,now())
+       ON CONFLICT (user_id, key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`,
+      [userId, key, n],
+    );
+  }
+}
+
+admin.post('/users/:id/sync', role('mod'), async (req, res) => {
+  res.json(await syncUser(int(req.params.id)));
+});
+
+admin.post('/users/:id/awards', role('mod'), async (req, res) => {
+  const target = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
+  const award = await one('SELECT * FROM awards WHERE id=$1', [int(req.body?.award_id)]);
+  if (!target || !award) throw new HttpError(404, 'Member or award not found.');
+  await q('INSERT INTO user_awards (user_id, award_id, given_by, reason) VALUES ($1,$2,$3,$4)', [
+    target.id, award.id, req.user.id, str(req.body?.reason, 300),
+  ]);
+  await audit(req.user.id, 'award.give', `${target.persona_name} (#${target.id})`, { award: award.name });
+  bus.emit('notify', target.id, { title: 'Medal awarded!', body: `You received: ${award.name}` });
+  bus.emit('user:changed', target.id);
+  res.json({ ok: true });
+});
+
+admin.delete('/user-awards/:id', role('mod'), async (req, res) => {
+  const ua = await one('DELETE FROM user_awards WHERE id=$1 RETURNING *', [int(req.params.id)]);
+  if (ua) {
+    await audit(req.user.id, 'award.remove', `user #${ua.user_id}`, { award_id: ua.award_id });
+    bus.emit('user:changed', ua.user_id);
+  }
+  res.json({ ok: true });
+});
+
+admin.delete('/users/:id', role('admin'), async (req, res) => {
+  const target = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
+  if (!target) throw new HttpError(404, 'Member not found.');
+  if (target.id === req.user.id) throw new HttpError(400, 'You cannot delete yourself.');
+  await q('DELETE FROM users WHERE id=$1', [target.id]);
+  await audit(req.user.id, 'user.delete', `${target.persona_name} (${target.steam_id})`);
+  bus.emit('user:kick', target.id);
+  res.json({ ok: true });
+});
+
+// ---------- Generic editors for simple tables ----------
+// Each entry describes a table admins can fully edit from the panel without code.
+const RESOURCES = {
+  ranks: {
+    table: 'ranks', key: 'id', min: 'admin', order: 'sort_order, id',
+    fields: {
+      name: (v) => str(v, 60) || 'New rank',
+      abbr: (v) => str(v, 8).toUpperCase() || 'NEW',
+      sort_order: (v) => int(v),
+      min_xp: (v) => Math.max(0, int(v)),
+      auto: bool,
+      color: (v) => color(v, '#c9a227'),
+      insignia: (v) => JSON.stringify(cleanInsignia(v)),
+      description: (v) => str(v, 300),
+    },
+  },
+  awards: {
+    table: 'awards', key: 'id', min: 'admin', order: 'sort_order, id',
+    fields: {
+      name: (v) => str(v, 60) || 'New award',
+      description: (v) => str(v, 300),
+      colors: (v) => str(v, 200).split(',').map((c) => color(c.trim(), '#888888')).slice(0, 7).join(','),
+      sort_order: (v) => int(v),
+    },
+  },
+  channels: {
+    table: 'channels', key: 'id', min: 'admin', order: 'sort_order, id',
+    fields: {
+      name: (v) => str(v, 40).toLowerCase().replace(/[^a-z0-9-]+/g, '-') || 'channel',
+      description: (v) => str(v, 200),
+      min_role: (v) => (ROLE_LEVEL[v] ? v : 'member'),
+      read_only: bool,
+      sort_order: (v) => int(v),
+    },
+  },
+  games: {
+    table: 'games', key: 'app_id', min: 'admin', order: 'featured DESC, name',
+    fields: {
+      app_id: (v) => int(v),
+      name: (v) => str(v, 80) || 'Game',
+      enabled: bool,
+      featured: bool,
+      xp_per_hour: (v) => Math.max(0, int(v)),
+      xp_per_achievement: (v) => Math.max(0, int(v)),
+      stat_labels: (v) => str(v, 4000),
+    },
+  },
+  'profile-fields': {
+    table: 'profile_fields', key: 'id', min: 'admin', order: 'sort_order, id',
+    fields: {
+      key: (v) => str(v, 40).toLowerCase().replace(/[^a-z0-9_]+/g, '_') || `field_${Date.now()}`,
+      label: (v) => str(v, 60) || 'Field',
+      type: (v) => (['text', 'select'].includes(v) ? v : 'text'),
+      options: (v) => str(v, 1000),
+      sort_order: (v) => int(v),
+    },
+  },
+  'stat-defs': {
+    table: 'stat_defs', key: 'key', min: 'admin', order: 'sort_order, key', keyEditable: true,
+    fields: {
+      key: (v) => str(v, 40).toLowerCase().replace(/[^a-z0-9_]+/g, '_') || `stat_${Date.now()}`,
+      label: (v) => str(v, 60) || 'Stat',
+      format: (v) => (['number', 'minutes', 'money', 'ratio'].includes(v) ? v : 'number'),
+      xp_each: (v) => (Number.isFinite(Number(v)) ? Number(v) : 0),
+      sort_order: (v) => int(v),
+    },
+  },
+  announcements: {
+    table: 'announcements', key: 'id', min: 'mod', order: 'pinned DESC, created_at DESC',
+    fields: {
+      title: (v) => str(v, 120) || 'Announcement',
+      body: (v) => str(v, 5000),
+      pinned: bool,
+    },
+    onCreate: (req) => ({ author_id: req.user.id }),
+  },
+};
+
+const INSIGNIA_NUM = { chevrons: 3, rockers: 3, pips: 3, bars: 2, stars: 5 };
+const INSIGNIA_BOOL = ['crown', 'oak', 'wreath', 'swords', 'plate'];
+function cleanInsignia(v) {
+  const src = typeof v === 'string' ? safeJson(v) : v || {};
+  const out = {};
+  for (const [k, max] of Object.entries(INSIGNIA_NUM)) {
+    const n = Math.min(max, Math.max(0, int(src[k])));
+    if (n) out[k] = n;
+  }
+  for (const k of INSIGNIA_BOOL) if (bool(src[k])) out[k] = true;
+  if (['gold', 'silver'].includes(src.metal)) out.metal = src.metal;
+  return out;
+}
+function safeJson(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return {};
+  }
+}
+
+for (const [name, r] of Object.entries(RESOURCES)) {
+  admin.get(`/${name}`, role(r.min), async (_req, res) => {
+    res.json(await q(`SELECT * FROM ${r.table} ORDER BY ${r.order}`));
+  });
+
+  admin.post(`/${name}`, role(r.min), async (req, res) => {
+    const data = { ...(r.onCreate?.(req) || {}) };
+    for (const [f, clean] of Object.entries(r.fields)) data[f] = clean(req.body?.[f]);
+    const cols = Object.keys(data);
+    const row = await one(
+      `INSERT INTO ${r.table} (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`,
+      Object.values(data),
+    ).catch(dbError);
+    await audit(req.user.id, `${name}.create`, row[r.key], req.body);
+    bus.emit('config:changed', name);
+    res.json(row);
+  });
+
+  admin.put(`/${name}/:key`, role(r.min), async (req, res) => {
+    const sets = [];
+    const vals = [req.params.key];
+    for (const [f, clean] of Object.entries(r.fields)) {
+      if (!(f in (req.body || {}))) continue;
+      if (f === r.key && !r.keyEditable) continue;
+      vals.push(clean(req.body[f]));
+      sets.push(`${f}=$${vals.length}`);
+    }
+    if (!sets.length) throw new HttpError(400, 'Nothing to change.');
+    const row = await one(`UPDATE ${r.table} SET ${sets.join(', ')} WHERE ${r.key}::text=$1 RETURNING *`, vals).catch(dbError);
+    if (!row) throw new HttpError(404, 'Not found.');
+    await audit(req.user.id, `${name}.edit`, req.params.key, req.body);
+    bus.emit('config:changed', name);
+    res.json(row);
+  });
+
+  admin.delete(`/${name}/:key`, role(r.min), async (req, res) => {
+    await q(`DELETE FROM ${r.table} WHERE ${r.key}::text=$1`, [req.params.key]);
+    await audit(req.user.id, `${name}.delete`, req.params.key);
+    bus.emit('config:changed', name);
+    res.json({ ok: true });
+  });
+}
+
+function dbError(e) {
+  if (e.code === '23505') throw new HttpError(400, 'That already exists (the key/ID must be unique).');
+  throw e;
+}
+
+// ---------- Settings (admins) ----------
+admin.get('/settings', role('admin'), async (_req, res) => {
+  const s = await getSettings();
+  res.json(Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith('_'))));
+});
+
+admin.put('/settings', role('admin'), async (req, res) => {
+  const current = await getSettings();
+  for (const [k, v] of Object.entries(req.body || {})) {
+    if (!(k in current) || k.startsWith('_')) continue;
+    const value = k === 'logo_url' ? safeUrl(v) : str(v, 2000);
+    await q('UPDATE settings SET value=$2 WHERE key=$1', [k, value]);
+  }
+  clearSettingsCache();
+  await audit(req.user.id, 'settings.edit', '', req.body);
+  bus.emit('config:changed', 'settings');
+  res.json({ ok: true });
+});
+
+admin.post('/sync-all', role('admin'), async (req, res) => {
+  const users = await q("SELECT id FROM users WHERE status='active' AND steam_id ~ '^[0-9]{17}$'");
+  res.json({ ok: true, queued: users.length });
+  for (const { id } of users) {
+    await syncUser(id).catch(() => {});
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+});
+
+admin.get('/audit', role('mod'), async (_req, res) => {
+  res.json(
+    await q(
+      `SELECT a.*, u.persona_name AS actor FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+        ORDER BY a.id DESC LIMIT 200`,
+    ),
+  );
+});
+
+// ---------- Stats push API (for a Discord bot or game server) ----------
+// POST /api/ingest/stats   header: Authorization: Bearer <INGEST_KEY>
+// body: { "steam_id": "7656...", "stats": { "matches": 12, "wins": 7 } }
+//   or: { "players": [ { "steam_id": "...", "stats": {...} }, ... ] }
+export const ingest = express.Router();
+ingest.post('/stats', async (req, res) => {
+  const key = process.env.INGEST_KEY || '';
+  const given = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  const ok = key.length >= 16 && given.length === key.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(key));
+  if (!ok) throw new HttpError(401, 'Bad or missing INGEST_KEY.');
+  const players = Array.isArray(req.body?.players) ? req.body.players : [req.body || {}];
+  let updated = 0;
+  for (const p of players.slice(0, 500)) {
+    const user = await one('SELECT id FROM users WHERE steam_id=$1', [String(p.steam_id || '')]);
+    if (!user || typeof p.stats !== 'object') continue;
+    await saveStats(user.id, p.stats);
+    await recalcXp(user.id);
+    bus.emit('user:changed', user.id);
+    updated++;
+  }
+  res.json({ ok: true, updated });
+});
+
+export { roleAtLeast };

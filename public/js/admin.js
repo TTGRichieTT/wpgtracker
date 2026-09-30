@@ -1,0 +1,486 @@
+import { api, esc, state, toast, fail, modal, confirmBox, userLine, fmtNum, fmtDate, timeAgo, query, ribbon, COUNTRIES, flag, refreshMe } from './app.js';
+import { icon } from './icons.js';
+import { insigniaSVG, rankBadge, INSIGNIA_PARTS } from './insignia.js';
+
+const isAdmin = () => state.me.role === 'admin';
+
+const TABS = [
+  { key: 'users', label: 'Members', mod: true },
+  { key: 'announcements', label: 'News', mod: true },
+  { key: 'ranks', label: 'Ranks' },
+  { key: 'awards', label: 'Medals' },
+  { key: 'stat-defs', label: 'Stats' },
+  { key: 'channels', label: 'Chat channels' },
+  { key: 'games', label: 'Games' },
+  { key: 'profile-fields', label: 'Profile fields' },
+  { key: 'settings', label: 'Settings' },
+  { key: 'audit', label: 'Audit log', mod: true },
+];
+
+// Field types: text, number, textarea, check, color, select, insignia, colors
+const RESOURCES = {
+  announcements: {
+    title: 'News & announcements',
+    help: 'Shown on everyone\'s HQ page. Pinned posts stay at the top.',
+    fields: [
+      { k: 'title', label: 'Title' },
+      { k: 'body', label: 'Message', type: 'textarea' },
+      { k: 'pinned', label: 'Pin to top', type: 'check' },
+    ],
+    row: (r) => `<div class="grow"><b>${r.pinned ? '📌 ' : ''}${esc(r.title)}</b><div class="muted small">${fmtDate(r.created_at)}</div></div>`,
+  },
+  ranks: {
+    title: 'Ranks',
+    help: 'Order sets seniority (bigger number = more senior). Ranks with “Earned by XP” ticked are given automatically when a member reaches that XP. Others are appointed by hand from the Members tab.',
+    fields: [
+      { k: 'name', label: 'Rank name' },
+      { k: 'abbr', label: 'Short name (e.g. SGT)' },
+      { k: 'sort_order', label: 'Order (seniority)', type: 'number' },
+      { k: 'min_xp', label: 'XP needed', type: 'number' },
+      { k: 'auto', label: 'Earned by XP (automatic promotion)', type: 'check' },
+      { k: 'color', label: 'Stripe colour', type: 'color' },
+      { k: 'description', label: 'Description', type: 'textarea' },
+      { k: 'insignia', label: 'Insignia', type: 'insignia' },
+    ],
+    defaults: { auto: false, color: '#c9a227', insignia: {}, sort_order: 999, min_xp: 0 },
+    row: (r) => `${rankBadge(r, 48)}<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${esc(r.abbr)}</span><div class="muted small">${r.auto ? `Earned at ${fmtNum(r.min_xp)} XP` : 'Appointed'} · order ${r.sort_order}</div></div>`,
+  },
+  awards: {
+    title: 'Medals & ribbons',
+    help: 'Create medals here, then give them to members from the Members tab.',
+    fields: [
+      { k: 'name', label: 'Medal name' },
+      { k: 'description', label: 'What it is for', type: 'textarea' },
+      { k: 'colors', label: 'Ribbon stripes', type: 'colors' },
+      { k: 'sort_order', label: 'Order', type: 'number' },
+    ],
+    defaults: { colors: '#1f3a93,#ffffff,#b22234' },
+    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b><div class="muted small">${esc(r.description)}</div></div>`,
+  },
+  'stat-defs': {
+    title: 'Server stats',
+    help: 'Stats you track for each member (matches, wins…). Mods type them in on the Members tab, or your Discord bot can send them in automatically. “XP each” gives WPG XP per 1 of this stat. Kills and deaths come from WARDOGS Tracker, but adding a stat with key “kills” or “deaths” lets you override them.',
+    key: 'key',
+    fields: [
+      { k: 'key', label: 'Key (used by bots, e.g. wins)' },
+      { k: 'label', label: 'Label shown in app' },
+      { k: 'format', label: 'Format', type: 'select', options: [['number', 'Number'], ['minutes', 'Time (minutes)'], ['money', 'Money ($)'], ['ratio', 'Ratio']] },
+      { k: 'xp_each', label: 'XP each', type: 'number', step: 'any' },
+      { k: 'sort_order', label: 'Order', type: 'number' },
+    ],
+    defaults: { format: 'number', xp_each: 0 },
+    row: (r) => `<div class="grow"><b>${esc(r.label)}</b> <span class="pill">${esc(r.key)}</span><div class="muted small">${esc(r.format)} · ${Number(r.xp_each)} XP each</div></div>`,
+  },
+  channels: {
+    title: 'Chat channels',
+    help: 'Who can see: Members = everyone, Mods = mods and admins, Admins = admins only.',
+    fields: [
+      { k: 'name', label: 'Channel name' },
+      { k: 'description', label: 'Description' },
+      { k: 'min_role', label: 'Who can see it', type: 'select', options: [['member', 'Members'], ['mod', 'Mods'], ['admin', 'Admins']] },
+      { k: 'read_only', label: 'Only staff can post', type: 'check' },
+      { k: 'sort_order', label: 'Order', type: 'number' },
+    ],
+    defaults: { min_role: 'member', sort_order: 100 },
+    row: (r) => `<div class="grow"><b># ${esc(r.name)}</b> ${r.min_role !== 'member' ? `<span class="pill mod">${esc(r.min_role)}s</span>` : ''} ${r.read_only ? '<span class="pill">read only</span>' : ''}<div class="muted small">${esc(r.description)}</div></div>`,
+  },
+  games: {
+    title: 'Tracked Steam games',
+    help: 'Steam App ID is the number in the game\'s Steam store link (Wardogs = 1867240). Playtime and achievements from these games earn WPG XP. “Steam stats to show” is one per line: statKey=Label.',
+    key: 'app_id',
+    fields: [
+      { k: 'app_id', label: 'Steam App ID', type: 'number', createOnly: true },
+      { k: 'name', label: 'Game name' },
+      { k: 'enabled', label: 'Track this game', type: 'check' },
+      { k: 'featured', label: 'Featured (shown first)', type: 'check' },
+      { k: 'xp_per_hour', label: 'XP per hour played', type: 'number' },
+      { k: 'xp_per_achievement', label: 'XP per achievement', type: 'number' },
+      { k: 'stat_labels', label: 'Steam stats to show (key=Label per line)', type: 'textarea' },
+    ],
+    defaults: { enabled: true, xp_per_hour: 10, xp_per_achievement: 25 },
+    row: (r) => `<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${r.app_id}</span> ${r.enabled ? '' : '<span class="pill banned">off</span>'}<div class="muted small">${r.xp_per_hour} XP/hour · ${r.xp_per_achievement} XP/achievement</div></div>`,
+  },
+  'profile-fields': {
+    title: 'Profile fields',
+    help: 'Extra boxes members fill in on their profile. “Choice list” shows a drop-down: put the choices in Options, separated by commas.',
+    fields: [
+      { k: 'label', label: 'Label' },
+      { k: 'key', label: 'Key (short, no spaces)' },
+      { k: 'type', label: 'Type', type: 'select', options: [['text', 'Free text'], ['select', 'Choice list']] },
+      { k: 'options', label: 'Options (comma separated)' },
+      { k: 'sort_order', label: 'Order', type: 'number' },
+    ],
+    defaults: { type: 'text' },
+    row: (r) => `<div class="grow"><b>${esc(r.label)}</b> <span class="pill">${esc(r.key)}</span><div class="muted small">${r.type === 'select' ? `Choices: ${esc(r.options)}` : 'Free text'}</div></div>`,
+  },
+};
+
+export async function viewAdmin(main, [tabParam]) {
+  if (!['mod', 'admin'].includes(state.me.role)) {
+    main.innerHTML = '<div class="panel empty">Staff only.</div>';
+    return;
+  }
+  const tabs = TABS.filter((t) => t.mod || isAdmin());
+  const tab = tabs.find((t) => t.key === (tabParam || '').split('?')[0]) || tabs[0];
+  main.innerHTML = `<h1>${icon('shield', 'width="26" height="26" style="vertical-align:-4px;color:var(--accent)"')} Command panel</h1>
+    <div class="tabs">${tabs.map((t) => `<a href="#/admin/${t.key}" class="${t.key === tab.key ? 'active' : ''}">${t.label}</a>`).join('')}</div>
+    <div id="adminBody"><div class="spinner"></div></div>`;
+  const body = document.getElementById('adminBody');
+  if (tab.key === 'users') return usersTab(body);
+  if (tab.key === 'settings') return settingsTab(body);
+  if (tab.key === 'audit') return auditTab(body);
+  return resourceTab(body, tab.key);
+}
+
+// ---------- Generic editor ----------
+async function resourceTab(body, name) {
+  const cfg = RESOURCES[name];
+  const key = cfg.key || 'id';
+  const rows = await api(`admin/${name}`);
+  body.innerHTML = `
+    <div class="panel">
+      <div class="row between"><div class="panel-title" style="margin:0">${esc(cfg.title)}</div><button class="btn primary" id="addBtn">${icon('plus')} Add new</button></div>
+      <p class="muted small">${esc(cfg.help)}</p>
+      <div class="list">${rows.map((r) => `<div class="item">${cfg.row(r)}<button class="btn small" data-edit="${esc(r[key])}">${icon('edit')} Edit</button></div>`).join('') || '<p class="empty">Nothing here yet.</p>'}</div>
+    </div>`;
+  document.getElementById('addBtn').onclick = () => openEditor(cfg, name, key, null, () => resourceTab(body, name));
+  body.querySelectorAll('[data-edit]').forEach((b) => {
+    b.onclick = () => openEditor(cfg, name, key, rows.find((r) => String(r[key]) === b.dataset.edit), () => resourceTab(body, name));
+  });
+}
+
+function fieldHtml(f, v, isNew) {
+  const id = `f_${f.k}`;
+  if (f.createOnly && !isNew) return `<label class="field"><span>${esc(f.label)}</span><input type="text" value="${esc(v)}" disabled></label>`;
+  switch (f.type) {
+    case 'textarea':
+      return `<label class="field" style="grid-column:1/-1"><span>${esc(f.label)}</span><textarea name="${f.k}" id="${id}">${esc(v ?? '')}</textarea></label>`;
+    case 'number':
+      return `<label class="field"><span>${esc(f.label)}</span><input type="number" step="${f.step || '1'}" name="${f.k}" value="${esc(v ?? 0)}"></label>`;
+    case 'check':
+      return `<label class="check field" style="grid-column:1/-1"><input type="checkbox" name="${f.k}" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
+    case 'color':
+      return `<label class="field"><span>${esc(f.label)}</span><input type="color" name="${f.k}" value="${esc(v || '#c9a227')}"></label>`;
+    case 'select':
+      return `<label class="field"><span>${esc(f.label)}</span><select name="${f.k}">${f.options.map(([o, l]) => `<option value="${o}" ${String(v) === o ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+    case 'colors': {
+      const list = String(v || '#1f3a93,#ffffff,#b22234').split(',');
+      return `<div class="field" style="grid-column:1/-1"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;margin-bottom:5px">${esc(f.label)}</span>
+        <div class="row" id="stripeRow">${list.map((c) => `<input type="color" data-stripe value="${esc(c.trim())}">`).join('')}
+        <button type="button" class="btn small" id="addStripe">+</button><button type="button" class="btn small ghost" id="rmStripe">−</button>
+        <span id="ribbonPreview"></span></div></div>`;
+    }
+    case 'insignia': {
+      const s = typeof v === 'string' ? JSON.parse(v || '{}') : v || {};
+      return `<div class="panel" style="grid-column:1/-1;background:#06101c">
+        <div class="row" style="align-items:flex-start;gap:20px">
+          <div id="insPreview" style="text-align:center"></div>
+          <div class="grow form-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+            ${INSIGNIA_PARTS.map((p) => (p.bool
+              ? `<label class="check"><input type="checkbox" data-ins="${p.key}" ${s[p.key] ? 'checked' : ''}> ${esc(p.label)}</label>`
+              : `<label class="field"><span>${esc(p.label)}</span><select data-ins="${p.key}">${Array.from({ length: p.max + 1 }, (_, i) => `<option ${Number(s[p.key] || 0) === i ? 'selected' : ''}>${i}</option>`).join('')}</select></label>`)).join('')}
+            <label class="field"><span>Metal</span><select data-ins="metal"><option value="gold" ${s.metal !== 'silver' ? 'selected' : ''}>Gold</option><option value="silver" ${s.metal === 'silver' ? 'selected' : ''}>Silver</option></select></label>
+          </div>
+        </div></div>`;
+    }
+    default:
+      return `<label class="field"><span>${esc(f.label)}</span><input type="text" name="${f.k}" value="${esc(v ?? '')}"></label>`;
+  }
+}
+
+function openEditor(cfg, name, key, row, done) {
+  const isNew = !row;
+  const data = row || { ...(cfg.defaults || {}) };
+  const m = modal(`
+    <form id="edForm" class="stack">
+      <div class="row between"><h2 style="margin:0">${isNew ? 'Add' : 'Edit'} ${esc(cfg.title.toLowerCase())}</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
+      <div class="form-grid">${cfg.fields.map((f) => fieldHtml(f, data[f.k], isNew)).join('')}</div>
+      <div class="row between">
+        <div class="row"><button class="btn primary">Save</button><button type="button" class="btn ghost" data-close>Cancel</button></div>
+        ${isNew ? '' : `<button type="button" class="btn danger" id="delBtn">${icon('trash')} Delete</button>`}
+      </div>
+    </form>`);
+  const form = m.el.querySelector('#edForm');
+  m.el.querySelectorAll('[data-close]').forEach((b) => { b.onclick = m.close; });
+
+  const readInsignia = () => {
+    const s = {};
+    form.querySelectorAll('[data-ins]').forEach((el) => {
+      if (el.type === 'checkbox') { if (el.checked) s[el.dataset.ins] = true; } else if (el.dataset.ins === 'metal') s.metal = el.value;
+      else if (Number(el.value)) s[el.dataset.ins] = Number(el.value);
+    });
+    return s;
+  };
+  const insPrev = form.querySelector('#insPreview');
+  const drawIns = () => {
+    if (!insPrev) return;
+    insPrev.innerHTML = insigniaSVG(readInsignia(), { size: 140, color: form.color?.value, abbr: form.abbr?.value }) + `<div class="muted small">Live preview</div>`;
+  };
+  const stripes = () => [...form.querySelectorAll('[data-stripe]')].map((i) => i.value).join(',');
+  const drawRibbon = () => {
+    const p = form.querySelector('#ribbonPreview');
+    if (p) p.innerHTML = ribbon(stripes()).replace('class="ribbon"', 'class="ribbon" style="width:110px;height:30px;display:inline-block;vertical-align:middle"');
+  };
+  form.addEventListener('input', () => { drawIns(); drawRibbon(); });
+  form.querySelector('#addStripe')?.addEventListener('click', () => {
+    const row2 = form.querySelector('#stripeRow');
+    const all = row2.querySelectorAll('[data-stripe]');
+    if (all.length >= 7) return;
+    all[all.length - 1].insertAdjacentHTML('afterend', '<input type="color" data-stripe value="#ffffff">');
+    drawRibbon();
+  });
+  form.querySelector('#rmStripe')?.addEventListener('click', () => {
+    const all = form.querySelectorAll('[data-stripe]');
+    if (all.length > 1) all[all.length - 1].remove();
+    drawRibbon();
+  });
+  drawIns();
+  drawRibbon();
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const out = {};
+    for (const f of cfg.fields) {
+      if (f.createOnly && !isNew) continue;
+      if (f.type === 'insignia') out[f.k] = readInsignia();
+      else if (f.type === 'colors') out[f.k] = stripes();
+      else if (f.type === 'check') out[f.k] = form[f.k].checked;
+      else out[f.k] = form[f.k].value;
+    }
+    try {
+      if (isNew) await api(`admin/${name}`, { method: 'POST', body: out });
+      else await api(`admin/${name}/${encodeURIComponent(row[key])}`, { method: 'PUT', body: out });
+      toast('Saved');
+      m.close();
+      done();
+    } catch (x) { fail(x); }
+  };
+  m.el.querySelector('#delBtn')?.addEventListener('click', async () => {
+    if (!(await confirmBox('Delete this for good? This cannot be undone.'))) return;
+    try {
+      await api(`admin/${name}/${encodeURIComponent(row[key])}`, { method: 'DELETE' });
+      toast('Deleted');
+      m.close();
+      done();
+    } catch (x) { fail(x); }
+  });
+}
+
+// ---------- Members ----------
+async function usersTab(body) {
+  const q = query();
+  let status = q.get('status') ?? '';
+  const [ranks, awards] = await Promise.all([api('ranks'), api('awards')]);
+  const pendingCount = (await api('admin/users?status=pending')).length;
+  if (!q.has('status') && pendingCount) status = 'pending';
+
+  body.innerHTML = `
+    <div class="panel">
+      <div class="row" style="margin-bottom:12px">
+        <div class="tabs" style="margin:0;padding:0">
+          ${[['pending', `Waiting approval${pendingCount ? ` (${pendingCount})` : ''}`], ['active', 'Active'], ['banned', 'Banned'], ['', 'All']].map(([k, l]) => `<a href="#" data-status="${k}" class="${status === k ? 'active' : ''}">${l}</a>`).join('')}
+        </div>
+        <input type="search" id="usearch" placeholder="Search name / Steam ID" class="grow" style="min-width:180px">
+      </div>
+      <div class="list" id="ulist"><div class="spinner"></div></div>
+    </div>`;
+  const list = document.getElementById('ulist');
+  const search = document.getElementById('usearch');
+
+  async function load() {
+    const users = await api(`admin/users?status=${status}&search=${encodeURIComponent(search.value)}`);
+    list.innerHTML = users.map((u) => `
+      <div class="item">
+        <div class="grow">${userLine(u, `${fmtNum(u.xp)} XP · joined ${timeAgo(u.joined_at)}`)}</div>
+        <div class="row">
+          ${u.status === 'pending' ? `<button class="btn primary small" data-approve="${u.id}">Approve</button><button class="btn danger small" data-deny="${u.id}">Deny</button>` : ''}
+          <button class="btn small" data-uedit="${u.id}">${icon('edit')} Edit</button>
+        </div>
+      </div>`).join('') || '<p class="empty">No members here.</p>';
+  }
+  body.querySelectorAll('[data-status]').forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); location.hash = `#/admin/users?status=${a.dataset.status}`; };
+  });
+  let t;
+  search.oninput = () => { clearTimeout(t); t = setTimeout(load, 250); };
+  list.onclick = async (e) => {
+    const ap = e.target.closest('[data-approve]');
+    const dn = e.target.closest('[data-deny]');
+    const ed = e.target.closest('[data-uedit]');
+    try {
+      if (ap) { await api(`admin/users/${ap.dataset.approve}`, { method: 'PATCH', body: { status: 'active' } }); toast('Approved'); load(); }
+      if (dn && (await confirmBox('Deny and ban this sign-up?'))) { await api(`admin/users/${dn.dataset.deny}`, { method: 'PATCH', body: { status: 'banned' } }); load(); }
+      if (ed) editUser(Number(ed.dataset.uedit), ranks, awards, load);
+    } catch (x) { fail(x); }
+  };
+  await load();
+  if (q.get('edit')) editUser(Number(q.get('edit')), ranks, awards, load);
+}
+
+async function editUser(id, ranks, awards, reload) {
+  const [d, fields, defs] = await Promise.all([api(`admin/users/${id}`), api('profile-fields'), api('stat-defs')]);
+  const u = d.user;
+  const m = modal(`
+    <div class="row between"><div class="grow">${userLine(u)}</div><button class="btn ghost small" data-close>✕</button></div>
+    <form id="uform" class="stack" style="margin-top:14px">
+      <h3>Rank & access</h3>
+      <div class="form-grid">
+        <label class="field"><span>Rank</span><select name="rank_id"><option value="">No rank</option>${[...ranks].reverse().map((r) => `<option value="${r.id}" ${u.rank_id === r.id ? 'selected' : ''}>${esc(r.name)} (${esc(r.abbr)})</option>`).join('')}</select></label>
+        <label class="field"><span>Status</span><select name="status">${[['active', 'Active'], ['pending', 'Waiting approval'], ['banned', 'Banned']].map(([k, l]) => `<option value="${k}" ${u.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        ${isAdmin() ? `<label class="field"><span>Role</span><select name="role">${[['member', 'Member'], ['mod', 'Moderator'], ['admin', 'Admin']].map(([k, l]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : ''}
+        <label class="field"><span>Bonus XP (+/-)</span><input type="number" name="bonus_xp" value="${u.bonus_xp}"></label>
+        <label class="field"><span>Mute for (minutes, 0 = unmute)</span><input type="number" name="mute_minutes" placeholder="${u.muted_until && new Date(u.muted_until) > new Date() ? `Muted until ${new Date(u.muted_until).toLocaleString('en-GB')}` : 'Not muted'}"></label>
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" name="rank_locked" ${u.rank_locked ? 'checked' : ''}> Lock rank (no automatic promotions)</label>
+      </div>
+      <h3>Profile</h3>
+      <div class="form-grid">
+        <label class="field"><span>Callsign</span><input type="text" name="callsign" value="${esc(u.callsign)}"></label>
+        <label class="field"><span>Country</span><select name="country">${COUNTRIES.map(([c, n]) => `<option value="${c}" ${u.country === c ? 'selected' : ''}>${flag(c)} ${n}</option>`).join('')}</select></label>
+        ${fields.map((f) => `<label class="field"><span>${esc(f.label)}</span><input type="text" name="cf_${esc(f.key)}" value="${esc(u.custom_fields?.[f.key] || '')}"></label>`).join('')}
+        <label class="field" style="grid-column:1/-1"><span>Bio</span><textarea name="bio">${esc(u.bio)}</textarea></label>
+      </div>
+      <h3>Server stats</h3>
+      <p class="muted small">Leave a box empty to clear it. Kills & deaths normally come from WARDOGS Tracker.</p>
+      <div class="form-grid">${defs.map((s) => `<label class="field"><span>${esc(s.label)}${s.format === 'minutes' ? ' (minutes)' : ''}</span><input type="number" step="any" data-stat="${esc(s.key)}" value="${d.stats[s.key] ?? ''}"></label>`).join('')}</div>
+      <div class="row"><button class="btn primary">Save changes</button><button type="button" class="btn" id="usync">${icon('refresh')} Sync stats now</button></div>
+    </form>
+    <div class="stack" style="margin-top:20px">
+      <h3>Medals</h3>
+      <div class="list">${d.awards.map((a) => `<div class="item"><div class="grow"><b>${esc(a.name)}</b><div class="muted small">${esc(a.reason)} · ${fmtDate(a.given_at)}</div></div><button class="btn ghost small" data-rmaward="${a.id}">Remove</button></div>`).join('') || '<p class="muted">None yet.</p>'}</div>
+      <form class="row" id="awardForm">
+        <select name="award_id" style="max-width:220px">${awards.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select>
+        <input type="text" name="reason" placeholder="Reason (optional)" class="grow">
+        <button class="btn">${icon('medal')} Give medal</button>
+      </form>
+      ${isAdmin() ? `<div style="border-top:1px solid var(--line);padding-top:14px"><button class="btn danger" id="udel">${icon('trash')} Delete account</button> <span class="muted small">Removes them and all their messages.</span></div>` : ''}
+    </div>`);
+  const close = () => { m.close(); reload(); };
+  m.el.querySelectorAll('[data-close]').forEach((b) => { b.onclick = close; });
+  const f = m.el.querySelector('#uform');
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const patch = {
+      rank_id: f.rank_id.value ? Number(f.rank_id.value) : null,
+      rank_locked: f.rank_locked.checked,
+      bonus_xp: Number(f.bonus_xp.value) || 0,
+      callsign: f.callsign.value,
+      country: f.country.value,
+      bio: f.bio.value,
+      custom_fields: Object.fromEntries(fields.map((fd) => [fd.key, f[`cf_${fd.key}`].value])),
+    };
+    if (f.status.value !== u.status) patch.status = f.status.value;
+    if (f.role && f.role.value !== u.role) patch.role = f.role.value;
+    if (f.mute_minutes.value !== '') patch.mute_minutes = Number(f.mute_minutes.value);
+    const stats = {};
+    f.querySelectorAll('[data-stat]').forEach((i) => { stats[i.dataset.stat] = i.value; });
+    try {
+      await api(`admin/users/${u.id}`, { method: 'PATCH', body: patch });
+      if (defs.length) await api(`admin/users/${u.id}/stats`, { method: 'PUT', body: stats });
+      toast('Saved', `${u.name} updated.`);
+      if (u.id === state.me.id) refreshMe();
+      close();
+    } catch (x) { fail(x); }
+  };
+  m.el.querySelector('#usync').onclick = async () => {
+    try {
+      const r = await api(`admin/users/${u.id}/sync`, { method: 'POST', body: {} });
+      toast('Sync finished', [r.reason, r.steam?.reason, r.wardogs?.reason].filter(Boolean).join(' · ') || 'Stats updated.');
+    } catch (x) { fail(x); }
+  };
+  m.el.querySelector('#awardForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api(`admin/users/${u.id}/awards`, { method: 'POST', body: { award_id: Number(e.target.award_id.value), reason: e.target.reason.value } });
+      toast('Medal given');
+      m.close();
+      editUser(id, ranks, awards, reload);
+    } catch (x) { fail(x); }
+  };
+  m.el.querySelectorAll('[data-rmaward]').forEach((b) => {
+    b.onclick = async () => {
+      await api(`admin/user-awards/${b.dataset.rmaward}`, { method: 'DELETE' }).catch(fail);
+      m.close();
+      editUser(id, ranks, awards, reload);
+    };
+  });
+  m.el.querySelector('#udel')?.addEventListener('click', async () => {
+    if (!(await confirmBox(`Delete ${u.name}'s account for good?`))) return;
+    try { await api(`admin/users/${u.id}`, { method: 'DELETE' }); toast('Deleted'); close(); } catch (x) { fail(x); }
+  });
+}
+
+// ---------- Settings ----------
+const SETTINGS = [
+  ['General', [
+    ['clan_name', 'Clan name'],
+    ['clan_tag', 'Clan tag (short)'],
+    ['motto', 'Motto'],
+    ['welcome_message', 'Welcome message on HQ', 'textarea'],
+    ['logo_url', 'Logo picture link (https or /img/…)'],
+    ['accent_color', 'Accent colour', 'color'],
+    ['discord_invite', 'Discord invite link'],
+  ]],
+  ['Members', [
+    ['require_approval', 'New sign-ups need approval (members only)', 'check'],
+    ['dm_friends_only', 'Private messages only between friends', 'check'],
+  ]],
+  ['Ranks & XP', [
+    ['auto_promote', 'Promote members automatically by XP', 'check'],
+    ['announce_promotions', 'Post promotions in chat', 'check'],
+    ['xp_per_server_kill', 'XP per kill on the WPG server', 'number'],
+  ]],
+  ['Stats syncing', [
+    ['tracker_enabled', 'Get Wardogs stats from WARDOGS Tracker', 'check'],
+    ['tracker_server', 'WPG server name on WARDOGS Tracker (the part after /servers/ in the link)'],
+    ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
+  ]],
+];
+
+async function settingsTab(body) {
+  const s = await api('admin/settings');
+  const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
+  const extra = Object.keys(s).filter((k) => !known.has(k));
+  const input = ([k, label, type]) => {
+    const v = s[k] ?? '';
+    if (type === 'check') return `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="${k}" ${v === 'true' ? 'checked' : ''}> ${esc(label)}</label>`;
+    if (type === 'textarea') return `<label class="field" style="grid-column:1/-1"><span>${esc(label)}</span><textarea name="${k}">${esc(v)}</textarea></label>`;
+    if (type === 'color') return `<label class="field"><span>${esc(label)}</span><input type="color" name="${k}" value="${esc(v || '#29b6f6')}"></label>`;
+    return `<label class="field"><span>${esc(label)}</span><input type="${type === 'number' ? 'number' : 'text'}" name="${k}" value="${esc(v)}"></label>`;
+  };
+  body.innerHTML = `
+    <form id="sform" class="stack">
+      ${SETTINGS.map(([title, list]) => `<div class="panel"><div class="panel-title">${esc(title)}</div><div class="form-grid">${list.map(input).join('')}</div></div>`).join('')}
+      ${extra.length ? `<div class="panel"><div class="panel-title">Other</div><div class="form-grid">${extra.map((k) => input([k, k])).join('')}</div></div>` : ''}
+      <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now</button></div>
+    </form>`;
+  const form = document.getElementById('sform');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const out = {};
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      out[el.name] = el.type === 'checkbox' ? String(el.checked) : el.value;
+    }
+    try {
+      await api('admin/settings', { method: 'PUT', body: out });
+      toast('Settings saved', 'Reloading to apply.');
+      setTimeout(() => location.reload(), 800);
+    } catch (x) { fail(x); }
+  };
+  document.getElementById('syncAll').onclick = async () => {
+    try {
+      const r = await api('admin/sync-all', { method: 'POST', body: {} });
+      toast('Sync started', `Updating ${r.queued} members in the background.`);
+    } catch (x) { fail(x); }
+  };
+}
+
+// ---------- Audit ----------
+async function auditTab(body) {
+  const rows = await api('admin/audit');
+  body.innerHTML = `<div class="panel"><div class="panel-title">Audit log <span class="sub">last 200 actions</span></div>
+    <div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Details</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td class="small">${timeAgo(r.created_at)}</td><td>${esc(r.actor || '—')}</td><td><span class="pill">${esc(r.action)}</span></td><td>${esc(r.target)}</td>
+      <td class="small muted" style="max-width:320px;overflow-wrap:anywhere">${esc(JSON.stringify(r.details)).slice(0, 200)}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
