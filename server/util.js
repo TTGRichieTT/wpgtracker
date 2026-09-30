@@ -123,6 +123,7 @@ export function publicUser(u, rank) {
     role: u.role,
     developer: isOwner(u),
     status: u.status,
+    membership: u.membership || 'member',
     xp: u.xp,
     rank_id: u.rank_id,
     rank: rank || null,

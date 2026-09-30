@@ -37,6 +37,8 @@ export const users = pgTable('users', {
   banner_color: text().notNull().default('#3b4a2f'),
   role: text().notNull().default('member'),
   status: text().notNull().default('pending'),
+  // 'member' = WPG member, 'pmc' = guest (Private Military Contractor)
+  membership: text().notNull().default('member'),
   rank_id: integer().references(() => ranks.id, { onDelete: 'set null' }),
   rank_locked: boolean().notNull().default(false),
   xp: integer().notNull().default(0),

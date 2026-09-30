@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { rankBadge } from './insignia.js';
+import { rankBadge, insigniaSVG } from './insignia.js';
 
 // ---------- Shared helpers ----------
 export const state = {
@@ -91,26 +91,39 @@ const FLAGS = { US: '🇺🇸', GB: '🇬🇧', CA: '🇨🇦', AU: '🇦🇺', 
 export const COUNTRIES = [['', 'Not set'], ['US', 'United States'], ['GB', 'United Kingdom'], ['CA', 'Canada'], ['AU', 'Australia'], ['IE', 'Ireland'], ['NZ', 'New Zealand'], ['DE', 'Germany'], ['FR', 'France'], ['NL', 'Netherlands']];
 export const flag = (c) => FLAGS[c] || '';
 
-const FALLBACK_AVATAR = '/img/logo.svg';
+const FALLBACK_AVATAR = '/img/icon-192.png';
 export function avatar(u, cls = '') {
   const on = state.online.has(u?.id);
   return `<span class="av-wrap"><img class="avatar ${cls}" src="${esc(u?.avatar || FALLBACK_AVATAR)}" alt="" loading="lazy" referrerpolicy="no-referrer"><span class="dot ${on ? 'on' : ''}" data-online="${u?.id}"></span></span>`;
 }
 export function rolePill(u) {
-  const dev = u.developer ? ' <span class="pill dev">Developer</span>' : '';
+  const dev = (u.developer ? ' <span class="pill dev">Developer</span>' : '') + (u.membership === 'pmc' ? ' <span class="pill pmc">PMC</span>' : '');
   if (u.status === 'pending') return `<span class="pill pending">Pending</span>${dev}`;
   if (u.status === 'banned') return `<span class="pill banned">Banned</span>${dev}`;
   if (u.role === 'admin') return `<span class="pill admin">Admin</span>${dev}`;
   if (u.role === 'mod') return `<span class="pill mod">Mod</span>${dev}`;
   return dev.trim();
 }
+const isPmc = (u) => u?.membership === 'pmc';
+// PMCs (guests) have no rank, so they get a PMC badge instead.
+export function badgeFor(u, size) {
+  return isPmc(u) ? insigniaSVG({}, { size, abbr: 'PMC', color: '#f5a524', title: 'PMC (guest)' }) : rankBadge(u?.rank, size);
+}
+const rankName = (u) => (isPmc(u) ? 'PMC · Guest' : u?.rank ? u.rank.name : 'No rank');
 export function userLine(u, meta = '') {
-  return `<div class="user-line">${avatar(u)}${rankBadge(u.rank, 34)}
+  return `<div class="user-line">${avatar(u)}${badgeFor(u, 34)}
     <div class="grow"><div class="name">${esc(u.name)} ${rolePill(u)}</div>
-    <div class="meta">${u.rank ? esc(u.rank.name) : 'No rank'}${u.callsign ? ` · “${esc(u.callsign)}”` : ''}${meta ? ` · ${meta}` : ''}</div></div></div>`;
+    <div class="meta">${esc(rankName(u))}${u.callsign ? ` · “${esc(u.callsign)}”` : ''}${meta ? ` · ${meta}` : ''}</div></div></div>`;
 }
 
 const isStaff = () => ['mod', 'admin'].includes(state.me?.role);
+
+// The clan's artwork logo, unless an admin has set a different one in Settings.
+const brandLogo = () => {
+  const u = state.settings.logo_url;
+  return !u || u === '/img/logo.svg' ? '/img/brand/wpg-logo.webp' : u;
+};
+const footerArt = () => `<footer class="site-footer"><img src="/img/brand/footer.webp" alt="Same game, bigger brotherhood. Wasted Prodigy Gamers. Play harder together." loading="lazy"></footer>`;
 
 // ---------- View lifecycle ----------
 let viewListeners = [];
@@ -168,9 +181,9 @@ async function renderLogin(reason = '') {
   const msg = { steam: 'Steam sign-in did not complete. Please try again.', banned: 'This account has been banned.', server: 'Server error during sign-in. Try again.' }[err];
   document.getElementById('app').innerHTML = `
     <div class="login"><div class="box">
-      <img class="logo" src="${esc(s.logo_url || '/img/logo.svg')}" alt="">
-      <h1>${esc(s.clan_name || 'WPG')}</h1>
-      <p class="accent" style="font:600 18px var(--head);letter-spacing:1px;text-transform:uppercase">${esc(s.motto || '')}</p>
+      <img class="logo" src="${esc(brandLogo())}" alt="${esc(s.clan_name || 'WPG')}">
+      <div class="tagline" style="margin-top:6px">Real players <b>•</b> Real squads <b>•</b> Real community</div>
+      ${s.motto ? `<p class="accent" style="font:600 18px var(--head);letter-spacing:1px;text-transform:uppercase;margin:10px 0 0">${esc(s.motto)}</p>` : ''}
       <div class="panel glow stack" style="margin-top:24px">
         <p>Members only. Sign in with your Steam account. Your Steam name is your name here.</p>
         ${msg ? `<p style="color:var(--red)">${esc(msg)}</p>` : ''}
@@ -180,6 +193,7 @@ async function renderLogin(reason = '') {
             <button class="btn">Test login</button></form>
             <p class="small muted">Test login is on (DEV_LOGIN). Turn it off before going live.</p>` : ''}
       </div>
+      <div class="scripts"><span class="script">More than a game</span><span class="script">Play harder together</span></div>
     </div></div>`;
   document.getElementById('dev')?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -194,7 +208,7 @@ async function renderLogin(reason = '') {
 function renderPending() {
   document.getElementById('app').innerHTML = `
     <div class="login"><div class="box">
-      <img class="logo" src="${esc(state.settings.logo_url || '/img/logo.svg')}" alt="">
+      <img class="logo" src="${esc(brandLogo())}" alt="">
       <div class="panel glow stack" style="margin-top:20px">
         <h2>Awaiting orders</h2>
         <p>Thanks, <b>${esc(state.me.name)}</b>. Your account is waiting for a mod or admin to approve it.</p>
@@ -242,16 +256,18 @@ function renderShell() {
   document.getElementById('app').innerHTML = `
     <div class="shell">
       <aside class="sidebar" id="sidebar">
-        <div class="brand"><img src="${esc(s.logo_url || '/img/logo.svg')}" alt=""><div><div class="name">${esc(s.clan_tag || 'WPG')}</div><div class="tag">Barracks</div></div></div>
+        <div class="brand"><img class="brand-logo" src="${esc(brandLogo())}" alt="${esc(s.clan_name || 'WPG')}"><div class="tag">Barracks</div></div>
         <nav class="nav" id="nav"></nav>
+        <div class="sidebar-art"><span class="script">More than a game</span></div>
         <div class="me-card" id="mecard"></div>
       </aside>
-      <div>
+      <div style="min-width:0">
         <header class="topbar">
           <button class="btn ghost small" id="menuBtn" aria-label="Menu">${icon('menu')}</button>
-          <img src="${esc(s.logo_url || '/img/logo.svg')}" alt=""><div class="title" id="topTitle">${esc(s.clan_tag || 'WPG')}</div>
+          <img src="/img/icon-192.png" alt=""><div class="title" id="topTitle">${esc(s.clan_name || 'WPG')}</div>
         </header>
         <main class="main" id="main"></main>
+        <div class="main footer-wrap">${footerArt()}</div>
       </div>
       <nav class="bottomnav" id="bottomnav"></nav>
     </div>`;
@@ -385,7 +401,9 @@ async function viewHome(main) {
   const next = ranks.filter((r) => r.auto && r.min_xp > me.xp).sort((a, b) => a.min_xp - b.min_xp)[0];
   const cur = me.rank;
   let progress = '';
-  if (cur && !cur.auto) {
+  if (isPmc(me)) {
+    progress = `<p class="muted small">You're a PMC (guest) — PMCs don't hold a ${esc(state.settings.clan_tag || 'WPG')} rank. You still earn XP (${fmtNum(me.xp)}).</p>`;
+  } else if (cur && !cur.auto) {
     progress = '<p class="muted small">Appointed rank — promotions from here are given by command.</p>';
   } else if (next) {
     const base = cur?.auto ? cur.min_xp : 0;
@@ -402,18 +420,20 @@ async function viewHome(main) {
   };
   main.innerHTML = `
     <div class="stack">
-      <div class="panel glow">
-        <div class="profile-head">
-          ${rankBadge(cur, 96)}
-          <div class="who">
-            <div class="muted small" style="text-transform:uppercase;letter-spacing:1px">Welcome back</div>
-            <div class="pname">${esc(me.name)}</div>
-            <div class="accent" style="font:700 18px var(--head);text-transform:uppercase">${cur ? `${esc(cur.name)} · ${esc(cur.abbr)}` : 'Unranked'}</div>
+      <div class="panel glow hero">
+        <div class="hero-art"></div>
+        <div class="hero-script script">Play harder<br>together</div>
+        <div class="hero-body">
+          ${badgeFor(me, 110)}
+          <div class="who grow" style="min-width:220px">
+            <div class="tagline">Welcome back, soldier</div>
+            <div class="metal" style="font-size:34px;line-height:1.1;overflow-wrap:anywhere">${esc(me.name)}</div>
+            <div class="accent" style="font:700 19px var(--head);text-transform:uppercase;letter-spacing:1px">${isPmc(me) ? 'PMC · Guest' : cur ? `${esc(cur.name)} · ${esc(cur.abbr)}` : 'Unranked'}</div>
             <div style="margin-top:10px;max-width:520px">${progress}</div>
+            ${state.settings.welcome_message ? `<p class="muted" style="margin:10px 0 0;max-width:560px">${esc(state.settings.welcome_message)}</p>` : ''}
+            <div class="row" style="margin-top:14px"><a class="btn primary" href="#/u/${me.id}">${icon('user')} My career</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button></div>
           </div>
-          <div class="row"><a class="btn primary" href="#/u/${me.id}">${icon('user')} My career</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button></div>
         </div>
-        ${state.settings.welcome_message ? `<p class="muted" style="margin:14px 0 0">${esc(state.settings.welcome_message)}</p>` : ''}
       </div>
       <div class="grid two">
         <div class="panel">
@@ -462,15 +482,17 @@ async function syncMine(e) {
 }
 
 // ---------- Career profile ----------
+// [colour, fallback icon, artwork] — artwork is from the WPG career card.
 const ROLE_STYLE = {
-  recon: ['#ff4545', 'recon'],
-  assault: ['#3d8bff', 'assault'],
-  medic: ['#22d38a', 'medic'],
-  support: ['#f5a524', 'support'],
-  engineer: ['#b04bff', 'engineer'],
-  driver: ['#e8d23a', 'driver'],
-  pilot: ['#29b6f6', 'pilot'],
+  recon: ['#ff4545', 'recon', 'recon'],
+  assault: ['#3d8bff', 'assault', 'assault'],
+  medic: ['#22d38a', 'medic', 'medic'],
+  support: ['#f5a524', 'support', 'support'],
+  engineer: ['#b04bff', 'engineer', 'engineer'],
+  driver: ['#b04bff', 'driver', 'engineer'],
+  pilot: ['#29b6f6', 'pilot', 'pilot'],
 };
+const ROLE_ORDER = ['recon', 'assault', 'medic', 'support', 'engineer', 'driver', 'pilot'];
 function tile(ic, label, value, cls = '') {
   return `<div class="tile"><div class="ic">${icon(ic)}</div><div class="grow"><div class="lbl">${esc(label)}</div><div class="val ${cls}">${esc(value)}</div></div></div>`;
 }
@@ -513,7 +535,8 @@ async function viewProfile(main, [id]) {
 
   let officialHtml;
   if (off) {
-    const roles = Object.entries(off.roles || {});
+    const rank = (n) => { const i = ROLE_ORDER.indexOf(n.toLowerCase()); return i < 0 ? 99 : i; };
+    const roles = Object.entries(off.roles || {}).sort(([a], [b]) => rank(a) - rank(b));
     officialHtml = `
       <div class="tiles">
         ${tile('trophy', 'Public rank', off.leaderboardRank ? `#${fmtNum(off.leaderboardRank)}` : '—')}
@@ -526,8 +549,9 @@ async function viewProfile(main, [id]) {
       </div>
       ${roles.length ? `<h4 style="margin:18px 0 10px" class="row">${icon('chevrons', 'width="18" height="18" style="color:var(--gold)"')} Official role progression</h4>
       <div class="roles">${roles.map(([name, r]) => {
-        const [c, ic] = ROLE_STYLE[name.toLowerCase()] || ['#29b6f6', 'star'];
-        return `<div class="role-card" style="--rc:${c}">${icon(ic)}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(r?.level ?? r)}</div></div>`;
+        const [c, ic, art] = ROLE_STYLE[name.toLowerCase()] || ['#29b6f6', 'star', ''];
+        const pic = art ? `<img class="art" src="/img/brand/roles/${art}.webp" alt="" loading="lazy">` : `<div style="padding-top:10px">${icon(ic)}</div>`;
+        return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(r?.level ?? r)}</div></div>`;
       }).join('')}</div>` : ''}
       <div class="credit">Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
   } else {
@@ -549,17 +573,18 @@ async function viewProfile(main, [id]) {
 
   main.innerHTML = `
     <div class="stack">
+      <img class="banner-img" src="/img/brand/header-career.webp" alt="Wardogs player career profile">
       <div class="panel glow">
         <div class="banner" style="background:linear-gradient(90deg, ${esc(u.banner_color)}, transparent)"></div>
         <div class="profile-head">
-          <img class="avatar lg" src="${esc(u.avatar || '/img/logo.svg')}" alt="" referrerpolicy="no-referrer">
+          <img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">
           <div class="who">
             <div class="pname">${esc(u.name)} ${flag(u.country)}</div>
             ${u.callsign ? `<div class="accent">“${esc(u.callsign)}”</div>` : ''}
             <div class="row" style="margin-top:6px">${rolePill(u)} <span class="muted small">${state.online.has(u.id) ? '<span style="color:var(--green)">● Online</span>' : `Last seen ${timeAgo(u.last_seen)}`} · Joined ${fmtDate(u.joined_at)}</span></div>
             ${customFields ? `<div class="row" style="margin-top:8px">${customFields}</div>` : ''}
           </div>
-          <div style="text-align:center">${rankBadge(u.rank, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${u.rank ? esc(u.rank.name) : 'Unranked'}</div></div>
+          <div style="text-align:center">${badgeFor(u, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${esc(isPmc(u) ? 'PMC' : u.rank ? u.rank.name : 'Unranked')}</div></div>
         </div>
         ${u.bio ? `<p style="white-space:pre-wrap;margin:14px 0 0">${esc(u.bio)}</p>` : ''}
         <div class="row" style="margin-top:14px">
@@ -569,29 +594,34 @@ async function viewProfile(main, [id]) {
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-title">${icon('user')} Player <span class="sub">information</span></div>
-        <div class="tiles">
-          ${tile('user', 'Player name', u.name)}
-          ${tile('steam', 'Steam ID', /^\d{17}$/.test(u.steam_id) ? u.steam_id : 'Test account', 'fit')}
-          ${u.custom_fields?.discord ? tile('discord', 'Discord', u.custom_fields.discord) : ''}
-          ${tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
+      <div class="panel player-info">
+        <img class="emblem" src="/img/brand/wolf-emblem.webp" alt="WPG Wardogs private server">
+        <div>
+          <div class="panel-title">${icon('user')} Player <span class="sub">information</span></div>
+          <div class="tiles">
+            ${tile('user', 'Player name', u.name)}
+            ${tile('steam', 'Steam ID', /^\d{17}$/.test(u.steam_id) ? u.steam_id : 'Test account', 'fit')}
+            ${u.custom_fields?.discord ? tile('discord', 'Discord', u.custom_fields.discord) : ''}
+            ${u.membership === 'pmc'
+            ? tile('swords', `${state.settings.clan_tag || 'WPG'} member`, 'PMC', 'pmc')
+            : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
+          </div>
         </div>
       </div>
 
       <div class="grid two">
         <div class="panel">
-          <div class="panel-title">${icon('target')} Official Wardogs <span class="sub">(global)</span></div>
+          <div class="panel-title">${icon('target')} Official Wardogs <span class="sub">(global server)</span></div>
           ${officialHtml}
         </div>
         <div class="panel">
-          <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private)</span></div>
+          <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
           <div class="tiles">
             ${tile('trophy', 'Server rank', `#${fmtNum(p.wpg_position)}`)}
-            ${tile('chevrons', `${state.settings.clan_tag || 'WPG'} rank`, u.rank ? u.rank.name : '—')}
+            ${tile('chevrons', `${state.settings.clan_tag || 'WPG'} rank`, isPmc(u) ? 'PMC — no rank' : u.rank ? u.rank.name : '—', isPmc(u) ? 'pmc' : '')}
             ${tile('star', `${state.settings.clan_tag || 'WPG'} XP`, fmtNum(u.xp))}
           </div>
-          <h4 style="margin:18px 0 10px" class="row">${icon('skull', 'width="18" height="18"')} Server stats <span class="accent">(all time)</span></h4>
+          <h4 style="margin:18px 0 10px" class="row">${icon('skull', 'width="18" height="18"')} ${esc(state.settings.clan_tag || 'WPG')} server stats <span class="accent">(all time)</span></h4>
           <div class="tiles" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr))">
             ${statBox('crosshair', 'Kills', fmtNum(kills))}
             ${statBox('skull', 'Deaths', fmtNum(deaths))}
@@ -701,7 +731,7 @@ async function viewChat(main, [idParam], alive) {
     const u = state.users.get(m.user_id) || { name: 'Unknown', id: m.user_id };
     const canDel = m.user_id === state.me.id || isStaff();
     return `<div class="msg" data-id="${m.id}"><a href="#/u/${u.id}">${avatar(u)}</a><div class="grow">
-      <div><a class="who" href="#/u/${u.id}" style="color:${esc(u.rank?.color || 'var(--text)')}">${u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Developer</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
+      <div><a class="who" href="#/u/${u.id}" style="color:${isPmc(u) ? '#ffb347' : esc(u.rank?.color || 'var(--text)')}">${isPmc(u) ? '[PMC] ' : u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Developer</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
       <div class="body">${esc(m.body)}</div></div>
       ${canDel ? `<button class="btn ghost small del" data-del="${m.id}" title="Delete" aria-label="Delete">${icon('trash')}</button>` : ''}</div>`;
   };

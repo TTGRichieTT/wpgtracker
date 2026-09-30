@@ -137,3 +137,16 @@ With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no St
 ---
 
 Global Wardogs stats are provided by [WARDOGS Tracker](https://wardogstracker.gg).
+
+---
+
+### Member types
+
+- **WPG member:** a full clan member with a rank.
+- **PMC (guest):** a friend of the clan using the app. PMCs have **no rank** and show an orange **PMC** badge.
+  Approve new sign-ups with **Approve as member** or **Approve as PMC**, or change it later in Admin → Members → Edit → *Member type*.
+
+### Artwork
+
+The WPG logo, wolf badge, soldier, role pictures and banners are in `public/img/brand/`.
+They were cut from the WPG Discord career card. The mountain background is `public/img/brand/scene.svg`.

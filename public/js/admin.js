@@ -387,7 +387,7 @@ async function usersTab(body) {
       <div class="item">
         <div class="grow">${userLine(u, `${fmtNum(u.xp)} XP · joined ${timeAgo(u.joined_at)}`)}</div>
         <div class="row">
-          ${u.status === 'pending' ? `<button class="btn primary small" data-approve="${u.id}">Approve</button><button class="btn danger small" data-deny="${u.id}">Deny</button>` : ''}
+          ${u.status === 'pending' ? `<button class="btn primary small" data-approve="${u.id}">Approve as member</button><button class="btn small" data-approve="${u.id}" data-pmc="1">Approve as PMC</button><button class="btn danger small" data-deny="${u.id}">Deny</button>` : ''}
           <button class="btn small" data-uedit="${u.id}">${icon('edit')} Edit</button>
         </div>
       </div>`).join('') || '<p class="empty">No members here.</p>';
@@ -402,7 +402,12 @@ async function usersTab(body) {
     const dn = e.target.closest('[data-deny]');
     const ed = e.target.closest('[data-uedit]');
     try {
-      if (ap) { await api(`admin/users/${ap.dataset.approve}`, { method: 'PATCH', body: { status: 'active' } }); toast('Approved'); load(); }
+      if (ap) {
+        const pmc = !!ap.dataset.pmc;
+        await api(`admin/users/${ap.dataset.approve}`, { method: 'PATCH', body: { status: 'active', membership: pmc ? 'pmc' : 'member' } });
+        toast('Approved', pmc ? 'Joined as a PMC (guest).' : 'Joined as a WPG member.');
+        load();
+      }
       if (dn && (await confirmBox('Deny and ban this sign-up?'))) { await api(`admin/users/${dn.dataset.deny}`, { method: 'PATCH', body: { status: 'banned' } }); load(); }
       if (ed) editUser(Number(ed.dataset.uedit), ranks, awards, load);
     } catch (x) { fail(x); }
@@ -420,6 +425,7 @@ async function editUser(id, ranks, awards, reload) {
       <h3>Rank & access</h3>
       <div class="form-grid">
         <label class="field"><span>Rank</span><select name="rank_id"><option value="">No rank</option>${[...ranks].reverse().map((r) => `<option value="${r.id}" ${u.rank_id === r.id ? 'selected' : ''}>${esc(r.name)} (${esc(r.abbr)})</option>`).join('')}</select></label>
+        <label class="field"><span>Member type</span><select name="membership">${[['member', 'WPG member'], ['pmc', 'PMC (guest)']].map(([k, l]) => `<option value="${k}" ${(u.membership || 'member') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="field"><span>Status</span><select name="status">${[['active', 'Active'], ['pending', 'Waiting approval'], ['banned', 'Banned']].map(([k, l]) => `<option value="${k}" ${u.status === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         ${isAdmin() ? `<label class="field"><span>Role</span><select name="role">${[['member', 'Member'], ['mod', 'Moderator'], ['admin', 'Admin']].map(([k, l]) => `<option value="${k}" ${u.role === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>` : ''}
         <label class="field"><span>Bonus XP (+/-)</span><input type="number" name="bonus_xp" value="${u.bonus_xp}"></label>
@@ -451,6 +457,12 @@ async function editUser(id, ranks, awards, reload) {
   const close = () => { m.close(); reload(); };
   m.el.querySelectorAll('[data-close]').forEach((b) => { b.onclick = close; });
   const f = m.el.querySelector('#uform');
+  const syncRankBox = () => {
+    f.rank_id.disabled = f.membership.value === 'pmc';
+    f.rank_id.title = f.rank_id.disabled ? 'PMCs (guests) have no rank' : '';
+  };
+  f.membership.onchange = syncRankBox;
+  syncRankBox();
   f.onsubmit = async (e) => {
     e.preventDefault();
     const patch = {
@@ -463,6 +475,7 @@ async function editUser(id, ranks, awards, reload) {
       custom_fields: Object.fromEntries(fields.map((fd) => [fd.key, f[`cf_${fd.key}`].value])),
     };
     if (f.status.value !== u.status) patch.status = f.status.value;
+    if (f.membership.value !== (u.membership || 'member')) patch.membership = f.membership.value;
     if (f.role && f.role.value !== u.role) patch.role = f.role.value;
     if (f.mute_minutes.value !== '') patch.mute_minutes = Number(f.mute_minutes.value);
     const stats = {};

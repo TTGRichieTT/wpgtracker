@@ -170,7 +170,7 @@ export async function recalcXp(userId) {
 
 // Promotes (never demotes) through ranks marked "auto" once the member has enough XP.
 export async function autoPromote(user) {
-  if (!user || user.rank_locked || user.status !== 'active' || !(await flag('auto_promote'))) return;
+  if (!user || user.rank_locked || user.status !== 'active' || user.membership === 'pmc' || !(await flag('auto_promote'))) return;
   const current = user.rank_id ? await one('SELECT * FROM ranks WHERE id=$1', [user.rank_id]) : null;
   if (current && !current.auto) return;
   const target = await one(

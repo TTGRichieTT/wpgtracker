@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
   sync_minutes: '60',
   discord_invite: '',
   accent_color: '#29b6f6',
-  logo_url: '/img/logo.svg',
+  logo_url: '/img/brand/wpg-logo.webp',
   tracker_enabled: 'true',
   tracker_server: '',
   xp_per_server_kill: '2',

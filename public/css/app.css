@@ -277,3 +277,135 @@ th { font: 700 13px var(--head); color: var(--accent2); text-transform: uppercas
 .rank-row:last-child { border-bottom: 0; }
 .spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin: 40px auto; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* =====================================================================
+   WPG ARTWORK THEME — matches the WPG Discord career card
+   (night mountains + forest, cyan glow, HUD corners, metal headings)
+   ===================================================================== */
+:root { --display: 'Black Ops One', 'Rajdhani', Impact, sans-serif; --script: 'Permanent Marker', 'Segoe Print', cursive; }
+
+body { background: #03070d; }
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 45% at 75% 0%, rgba(41,182,246,.16), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 10% 10%, rgba(31,58,147,.25), transparent 70%),
+    linear-gradient(#03070d, #061120 60%, #03070d);
+}
+body::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: 75vh; z-index: -1; pointer-events: none;
+  background: url('/img/brand/scene.svg') center bottom / cover no-repeat;
+  opacity: .85;
+}
+
+/* Metal headings like "WARDOGS" on the card */
+h1, .metal {
+  font-family: var(--display); font-weight: 400; letter-spacing: 1.5px;
+  background: linear-gradient(180deg, #ffffff 0%, #dfe8f1 38%, #8ea3b8 55%, #e9f0f6 72%, #9fb1c3 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 0 #0b1624) drop-shadow(0 0 14px rgba(41,182,246,.35));
+}
+h1 { font-size: 34px; margin-bottom: 14px; }
+.script { font-family: var(--script); color: #fff; transform: rotate(-6deg); display: inline-block; line-height: 1.05; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.script::after { content: ''; display: block; height: 4px; margin-top: 4px; border-radius: 4px; background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent)); box-shadow: 0 0 10px var(--accent); }
+.tagline { font: 600 13px var(--body); letter-spacing: 3px; text-transform: uppercase; color: #cfe3f5; }
+.tagline b { color: var(--accent); margin: 0 6px; }
+
+/* Panels: glassy dark with cyan HUD corner brackets */
+.panel {
+  background: linear-gradient(180deg, rgba(14,32,54,.88), rgba(6,15,27,.9));
+  border: 1px solid rgba(58,120,180,.35);
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(127,220,255,.12);
+}
+.panel::before, .panel::after {
+  content: ''; position: absolute; width: 18px; height: 18px; pointer-events: none;
+  border-color: var(--accent); border-style: solid; filter: drop-shadow(0 0 4px var(--accent));
+}
+.panel::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; border-top-left-radius: 6px; }
+.panel::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; border-bottom-right-radius: 6px; }
+.panel.glow { border-color: rgba(41,182,246,.55); box-shadow: 0 0 26px rgba(41,182,246,.18), 0 12px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(127,220,255,.18); }
+.panel-title {
+  font-size: 22px; letter-spacing: 1px; padding-bottom: 10px; margin-bottom: 16px;
+  border-bottom: 1px solid transparent;
+  border-image: linear-gradient(90deg, rgba(41,182,246,.7), rgba(41,182,246,.05) 70%) 1;
+}
+.panel-title .sub { font-family: var(--head); }
+.tile .val { background: linear-gradient(180deg, #0d2034, #081523); border-color: rgba(58,120,180,.35); box-shadow: inset 0 1px 0 rgba(127,220,255,.08); }
+.tile .ic { filter: drop-shadow(0 0 6px rgba(41,182,246,.6)); }
+
+/* Sidebar with the real WPG logo */
+.sidebar { background: linear-gradient(180deg, rgba(8,22,39,.96), rgba(3,7,13,.96)); border-right: 1px solid rgba(41,182,246,.25); box-shadow: 4px 0 30px rgba(0,0,0,.5); }
+.brand { display: block; padding: 0 0 10px; text-align: center; }
+.brand img.brand-logo { width: 100%; height: auto; border-radius: 6px;
+  -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 45%, #000 60%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 45%, #000 60%, transparent 100%); }
+.brand .tag { margin-top: -4px; }
+.nav a { border-radius: 4px; }
+.nav a.active { background: linear-gradient(90deg, rgba(41,182,246,.28), rgba(41,182,246,.02)); box-shadow: inset 3px 0 0 var(--accent), 0 0 18px rgba(41,182,246,.12); }
+.sidebar-art { margin-top: 10px; text-align: center; }
+.sidebar-art .script { font-size: 22px; }
+
+/* Hero banners */
+.hero {
+  position: relative; overflow: hidden; padding: 0;
+  min-height: 230px; display: flex; align-items: stretch;
+}
+.hero .hero-art {
+  position: absolute; inset: 0; z-index: 0;
+  background:
+    linear-gradient(90deg, rgba(4,10,18,.96) 0%, rgba(4,10,18,.75) 45%, rgba(4,10,18,.15) 75%, rgba(4,10,18,.55) 100%),
+    url('/img/brand/soldier.webp') right center / auto 100% no-repeat,
+    url('/img/brand/scene.svg') center bottom / cover no-repeat;
+}
+.hero .hero-body { position: relative; z-index: 1; padding: 22px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; width: 100%; }
+.hero .hero-script { position: absolute; right: 22px; top: 18px; z-index: 1; font-size: 26px; text-align: right; }
+.banner-img { display: block; width: 100%; height: auto; border-radius: 6px; border: 1px solid rgba(41,182,246,.35); box-shadow: 0 0 26px rgba(41,182,246,.15); }
+.site-footer { margin-top: 30px; }
+.site-footer img { display: block; width: 100%; height: auto; border-radius: 6px; opacity: .95;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+
+/* Career profile: emblem column like the card */
+.player-info { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; }
+.player-info .emblem { width: 100%; border-radius: 6px; border: 1px solid rgba(41,182,246,.5); box-shadow: 0 0 22px rgba(41,182,246,.3); }
+@media (max-width: 700px) { .player-info { grid-template-columns: 1fr; } .player-info .emblem { max-width: 200px; margin: 0 auto; } }
+
+/* Role cards with the real artwork */
+.roles { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+.role-card { padding: 0 0 8px; border-width: 1px; border-radius: 6px; background: #050b13; box-shadow: 0 0 14px color-mix(in srgb, var(--rc) 35%, transparent); }
+.role-card .art { display: block; width: 100%; aspect-ratio: 118 / 108; object-fit: cover; }
+.role-card .rn { margin-top: 4px; }
+.role-card .rl { margin: 4px 8px 0; border: 1px solid rgba(255,255,255,.08); }
+
+/* Login */
+.login { position: relative; }
+.login img.logo { width: min(420px, 90vw); height: auto; filter: drop-shadow(0 0 30px rgba(41,182,246,.45));
+  -webkit-mask-image: radial-gradient(ellipse 72% 70% at 50% 45%, #000 62%, transparent 100%);
+  mask-image: radial-gradient(ellipse 72% 70% at 50% 45%, #000 62%, transparent 100%); }
+.login .box { max-width: 520px; }
+.login .scripts { display: flex; justify-content: space-between; margin-top: 26px; gap: 10px; }
+.login .scripts .script { font-size: 20px; }
+
+.btn.primary { background: linear-gradient(180deg, #45c8ff, #0f8fd0); box-shadow: 0 0 16px rgba(41,182,246,.35); }
+.steam-btn { box-shadow: 0 0 18px rgba(102,192,244,.25); }
+@media (max-width: 860px) {
+  h1 { font-size: 26px; }
+  .hero .hero-script { display: none; }
+  .hero .hero-art { background:
+    linear-gradient(180deg, rgba(4,10,18,.55), rgba(4,10,18,.95) 70%),
+    url('/img/brand/soldier.webp') right top / auto 70% no-repeat,
+    url('/img/brand/scene.svg') center bottom / cover no-repeat; }
+}
+.main#main { padding-bottom: 10px; }
+.main.footer-wrap { padding-top: 0; }
+.main.footer-wrap .site-footer { margin-top: 10px; }
+/* PMC = guest (Private Military Contractor) */
+.pill.pmc { color: #ffc27a; border-color: #8a5a1c; background: rgba(245,165,36,.12); }
+.tile .val.pmc { color: #ffb347; letter-spacing: 2px; }
+/* Fade the logo artwork's rectangular edges into the background */
+.login img.logo, .brand img.brand-logo {
+  -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 58%, transparent 100%);
+  mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 58%, transparent 100%);
+}

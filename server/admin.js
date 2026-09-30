@@ -71,12 +71,25 @@ admin.patch('/users/:id', role('mod'), async (req, res) => {
     }
     set('role', b.role);
   }
+  if ('membership' in b && !['member', 'pmc'].includes(b.membership)) {
+    throw new HttpError(400, 'Membership must be member or pmc.');
+  }
+  const membership = b.membership || target.membership || 'member';
   let newRank;
-  if ('rank_id' in b) {
+  if (membership === 'pmc') {
+    // PMCs (guests) never hold a rank.
+    delete b.rank_id;
+    if (target.rank_id !== null) set('rank_id', null);
+  } else if ('rank_id' in b) {
     newRank = b.rank_id ? await one('SELECT * FROM ranks WHERE id=$1', [int(b.rank_id)]) : null;
     if (b.rank_id && !newRank) throw new HttpError(400, 'Rank not found.');
     set('rank_id', newRank ? newRank.id : null);
+  } else if (target.membership === 'pmc' && !target.rank_id) {
+    // A PMC who becomes a member starts at the lowest rank.
+    const lowest = await one('SELECT id FROM ranks ORDER BY sort_order LIMIT 1');
+    if (lowest) set('rank_id', lowest.id);
   }
+  if ('membership' in b) set('membership', b.membership);
   if ('rank_locked' in b) set('rank_locked', bool(b.rank_locked));
   if ('bonus_xp' in b) set('bonus_xp', int(b.bonus_xp));
   if ('callsign' in b) set('callsign', str(b.callsign, 40));
@@ -106,7 +119,7 @@ admin.patch('/users/:id', role('mod'), async (req, res) => {
     const from = target.rank_id ? await one('SELECT * FROM ranks WHERE id=$1', [target.rank_id]) : null;
     await announceRankChange(updated, from, newRank);
   }
-  if ('bonus_xp' in b) await recalcXp(target.id);
+  if ('bonus_xp' in b || (target.membership === 'pmc' && membership === 'member')) await recalcXp(target.id);
   bus.emit('user:changed', target.id);
   res.json({ ok: true });
 });
