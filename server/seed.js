@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS = {
   announce_promotions: 'true',
   dm_friends_only: 'false',
   sync_minutes: '60',
-  discord_invite: '',
+  discord_invite: 'https://discord.gg/wxMWWQNxUJ',
   discord_server_id: '',
   discord_voice_enabled: 'true',
   accent_color: '#29b6f6',
@@ -58,6 +58,12 @@ export async function seed({ q, one }) {
        ON CONFLICT (join_code) DO NOTHING`,
     );
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_servers', 'true') ON CONFLICT DO NOTHING");
+  }
+
+  // Fill in the WPG Discord invite once for databases made before it was the default.
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
+    await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");
   }
 
   const done = await one("SELECT value FROM settings WHERE key = '_seeded'");

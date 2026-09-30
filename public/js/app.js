@@ -805,14 +805,15 @@ function voiceHtml(v, compact) {
   const person = (m) => `<div class="vc-user"><img src="${esc(m.avatar || '/img/icon-192.png')}" alt="" loading="lazy" referrerpolicy="no-referrer">
     <span class="grow">${esc(m.name)}${m.game && !compact ? `<span class="muted small"> · ${esc(m.game)}</span>` : ''}</span>
     ${m.deafened ? `<span class="vc-flag" title="Deafened">${icon('deaf')}</span>` : m.muted ? `<span class="vc-flag" title="Muted">${icon('micoff')}</span>` : ''}</div>`;
-  const chan = (c) => `<div class="vc-chan${c.members.length ? ' live' : ''}"><div class="vc-name">${icon('headset')} ${esc(c.name)}${c.members.length ? ` <span class="pill mod">${c.members.length}</span>` : ''}</div>${c.members.map(person).join('')}</div>`;
+  const chan = (c) => `<div class="vc-chan${c.members.length ? ' live' : ''}"><div class="vc-name">${icon(c.hidden ? 'lock' : 'headset')} ${esc(c.name)}${c.members.length ? ` <span class="pill mod">${c.members.length}</span>` : ''}</div>${c.members.map(person).join('')}</div>`;
   if (compact) {
     return `<h3 style="margin-top:14px">Voice <span class="muted small">${v.inVoice} in voice</span></h3>
       ${busy.length ? busy.map(chan).join('') : '<p class="muted small">Nobody in voice right now.</p>'}
       ${joinDiscordBtn(invite, 'btn small discord-join')}`;
   }
   return `<div class="row between" style="margin-bottom:10px"><span class="muted">${fmtNum(v.online)} online on Discord · <b style="color:var(--text)">${v.inVoice}</b> in voice</span>${joinDiscordBtn(invite)}</div>
-    <div class="vc-grid">${v.channels.map(chan).join('') || '<p class="muted">No voice channels are visible. Discord only shows channels that @everyone can see.</p>'}</div>`;
+    <div class="vc-grid">${v.channels.map(chan).join('') || '<p class="muted">Nobody is in voice right now.</p>'}</div>
+    ${v.hiddenChannels && isStaff() ? '<p class="muted small" style="margin:10px 0 0">Tip for staff: Discord hides the names of voice channels that @everyone cannot see. To show the real names here, let @everyone <b>View Channel</b> on those voice channels in Discord (you can still block <b>Connect</b> so only members can join).</p>' : ''}`;
 }
 
 // Loads and refreshes the voice list every 30 seconds while the element is on screen.
