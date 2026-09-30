@@ -97,11 +97,12 @@ export function avatar(u, cls = '') {
   return `<span class="av-wrap"><img class="avatar ${cls}" src="${esc(u?.avatar || FALLBACK_AVATAR)}" alt="" loading="lazy" referrerpolicy="no-referrer"><span class="dot ${on ? 'on' : ''}" data-online="${u?.id}"></span></span>`;
 }
 export function rolePill(u) {
-  if (u.status === 'pending') return '<span class="pill pending">Pending</span>';
-  if (u.status === 'banned') return '<span class="pill banned">Banned</span>';
-  if (u.role === 'admin') return '<span class="pill admin">Admin</span>';
-  if (u.role === 'mod') return '<span class="pill mod">Mod</span>';
-  return '';
+  const dev = u.developer ? ' <span class="pill dev">Developer</span>' : '';
+  if (u.status === 'pending') return `<span class="pill pending">Pending</span>${dev}`;
+  if (u.status === 'banned') return `<span class="pill banned">Banned</span>${dev}`;
+  if (u.role === 'admin') return `<span class="pill admin">Admin</span>${dev}`;
+  if (u.role === 'mod') return `<span class="pill mod">Mod</span>${dev}`;
+  return dev.trim();
 }
 export function userLine(u, meta = '') {
   return `<div class="user-line">${avatar(u)}${rankBadge(u.rank, 34)}
@@ -698,7 +699,7 @@ async function viewChat(main, [idParam], alive) {
     const u = state.users.get(m.user_id) || { name: 'Unknown', id: m.user_id };
     const canDel = m.user_id === state.me.id || isStaff();
     return `<div class="msg" data-id="${m.id}"><a href="#/u/${u.id}">${avatar(u)}</a><div class="grow">
-      <div><a class="who" href="#/u/${u.id}" style="color:${esc(u.rank?.color || 'var(--text)')}">${u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a><span class="time">${fmtTime(m.created_at)}</span></div>
+      <div><a class="who" href="#/u/${u.id}" style="color:${esc(u.rank?.color || 'var(--text)')}">${u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Developer</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
       <div class="body">${esc(m.body)}</div></div>
       ${canDel ? `<button class="btn ghost small del" data-del="${m.id}" title="Delete" aria-label="Delete">${icon('trash')}</button>` : ''}</div>`;
   };

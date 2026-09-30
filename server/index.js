@@ -11,13 +11,16 @@ import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop 
 import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
 import { startRealtime } from './realtime.js';
-import { PgSessionStore, HttpError, str } from './util.js';
+import { PgSessionStore, HttpError, str, OWNER_IDS } from './util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const PROD = process.env.NODE_ENV === 'production' || !!process.env.REPLIT_DEPLOYMENT;
 
 await initDb();
+if (OWNER_IDS.size) {
+  await q("UPDATE users SET role='admin', status='active' WHERE steam_id = ANY($1)", [[...OWNER_IDS]]);
+}
 
 // Keep the session secret in the database so logins survive restarts without extra setup.
 async function sessionSecret() {
@@ -67,7 +70,7 @@ app.use(sessionMiddleware);
 
 // Blocks cross-site form posts: every state-changing API call must be JSON from our own page.
 app.use('/api', (req, _res, next) => {
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !req.path.startsWith('/ingest') && !req.is('application/json')) {
+  if (!['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(req.method) && !req.path.startsWith('/ingest') && !req.is('application/json')) {
     throw new HttpError(415, 'Requests must be JSON.');
   }
   next();
@@ -80,10 +83,11 @@ function baseUrl(req) {
 // ---------- Login ----------
 async function loginSteamId(req, steamId, fallbackName) {
   let user = await one('SELECT * FROM users WHERE steam_id=$1', [steamId]);
-  const summary = /^\d{17}$/.test(steamId) && process.env.STEAM_API_KEY ? await fetchSummary(steamId).catch(() => null) : null;
+  const summary = /^\d{17}$/.test(steamId) ? await fetchSummary(steamId).catch(() => null) : null;
+  const owner = OWNER_IDS.has(steamId);
   if (!user) {
     const count = await one('SELECT COUNT(*)::int AS n FROM users');
-    const first = count.n === 0;
+    const first = count.n === 0 || owner;
     const needsApproval = !first && (await flag('require_approval'));
     const lowest = await one('SELECT id FROM ranks ORDER BY sort_order LIMIT 1');
     user = await one(
@@ -104,8 +108,11 @@ async function loginSteamId(req, steamId, fallbackName) {
     }
   } else if (summary) {
     user = await one('UPDATE users SET persona_name=$2, avatar=$3, profile_url=$4, last_seen=now() WHERE id=$1 RETURNING *', [
-      user.id, summary.persona_name, summary.avatar, summary.profile_url,
+      user.id, summary.persona_name, summary.avatar || user.avatar, summary.profile_url,
     ]);
+  }
+  if (owner && (user.role !== 'admin' || user.status !== 'active')) {
+    user = await one("UPDATE users SET role='admin', status='active' WHERE id=$1 RETURNING *", [user.id]);
   }
   if (user.status === 'banned') throw new HttpError(403, 'This account has been banned.');
   await new Promise((resolve, reject) => req.session.regenerate((e) => (e ? reject(e) : resolve())));

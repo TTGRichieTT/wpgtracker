@@ -4,7 +4,7 @@ import { q, one, audit, getSettings, clearSettingsCache } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
-import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl } from './util.js';
+import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
 
@@ -47,6 +47,9 @@ admin.patch('/users/:id', role('mod'), async (req, res) => {
     throw new HttpError(403, 'Mods can only edit regular members.');
   }
   const b = req.body || {};
+  if (isOwner(target) && (('status' in b && b.status !== 'active') || ('role' in b && b.role !== 'admin'))) {
+    throw new HttpError(403, 'This is a main admin. They cannot be demoted or banned.');
+  }
   const sets = [];
   const vals = [target.id];
   const set = (col, v) => {
@@ -166,6 +169,7 @@ admin.delete('/users/:id', role('admin'), async (req, res) => {
   const target = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
   if (!target) throw new HttpError(404, 'Member not found.');
   if (target.id === req.user.id) throw new HttpError(400, 'You cannot delete yourself.');
+  if (isOwner(target)) throw new HttpError(403, 'This is a main admin. They cannot be deleted.');
   await q('DELETE FROM users WHERE id=$1', [target.id]);
   await audit(req.user.id, 'user.delete', `${target.persona_name} (${target.steam_id})`);
   bus.emit('user:kick', target.id);

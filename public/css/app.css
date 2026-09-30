@@ -169,6 +169,7 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
 .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font: 700 12px var(--head); letter-spacing: .6px; text-transform: uppercase; border: 1px solid var(--line2); color: var(--accent2); }
 .pill.admin { color: #ffd479; border-color: #7a5b16; }
 .pill.mod { color: #b0ffcf; border-color: #1f6a44; }
+.pill.dev { color: #d9b8ff; border-color: #6b3fa0; background: rgba(140, 80, 220, .15); }
 .pill.pending { color: #ffcf7a; border-color: #7a5316; }
 .pill.banned { color: #ffb4b7; border-color: #6e2328; }
 .insignia { flex: none; display: block; }

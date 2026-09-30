@@ -31,7 +31,12 @@ It runs as a website on Replit, and as an Android app (APK) that opens the same 
    Add the same secrets to the deployment if Replit asks.
 6. Copy your live address, e.g. `https://wpgtracker-yourname.replit.app`.
 
-**The first person to sign in becomes the admin.** So sign in yourself first!
+**Main admin:** Richie's Steam account (`76561198809535860`) is always admin, shows a **Developer** tag, and can't be demoted, banned or deleted.
+To add more main admins later, add a Secret called `OWNER_STEAM_IDS` with Steam IDs separated by commas (include Richie's too).
+Everyone else needs approval, except the very first person to sign in, who also becomes admin.
+
+**No Steam API key?** The app still works. Names and pictures come from public Steam profiles.
+Only Steam playtime and achievements need the key. Any clan member's Steam account can make the key.
 
 ---
 

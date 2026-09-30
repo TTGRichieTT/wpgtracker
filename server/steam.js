@@ -53,17 +53,38 @@ async function steamGet(path, params) {
   return res.json();
 }
 
+// Name + picture. Uses the Web API when a key is set, otherwise the public profile page (no key needed).
 export async function fetchSummary(steamId) {
-  const data = await steamGet('/ISteamUser/GetPlayerSummaries/v2/', { steamids: steamId });
-  const p = data?.response?.players?.[0];
-  if (!p) return null;
-  return { persona_name: p.personaname, avatar: p.avatarfull, profile_url: p.profileurl };
+  if (process.env.STEAM_API_KEY) {
+    const data = await steamGet('/ISteamUser/GetPlayerSummaries/v2/', { steamids: steamId }).catch(() => null);
+    const p = data?.response?.players?.[0];
+    if (p) return { persona_name: p.personaname, avatar: p.avatarfull, profile_url: p.profileurl };
+  }
+  const res = await fetch(`https://steamcommunity.com/profiles/${steamId}/?xml=1`, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) return null;
+  const xml = await res.text();
+  const field = (tag) => new RegExp(`<${tag}><!\\[CDATA\\[([\\s\\S]*?)\\]\\]></${tag}>`).exec(xml)?.[1]?.trim();
+  const name = field('steamID');
+  if (!name) return null;
+  const avatar = field('avatarFull') || '';
+  return {
+    persona_name: name.slice(0, 64),
+    avatar: avatar.startsWith('https://') ? avatar : '',
+    profile_url: `https://steamcommunity.com/profiles/${steamId}`,
+  };
 }
 
 export async function syncUser(userId) {
   const user = await one('SELECT * FROM users WHERE id = $1', [userId]);
   if (!user) return { ok: false, reason: 'User not found' };
   if (!/^\d{17}$/.test(user.steam_id)) return { ok: false, reason: 'Test account (not a real Steam ID)' };
+
+  const summary = await fetchSummary(user.steam_id).catch(() => null);
+  if (summary) {
+    await q('UPDATE users SET persona_name=$2, avatar=$3, profile_url=$4 WHERE id=$1', [
+      userId, summary.persona_name, summary.avatar || user.avatar, summary.profile_url,
+    ]);
+  }
 
   const result = { ok: true };
   if (process.env.STEAM_API_KEY) {
@@ -79,13 +100,6 @@ export async function syncUser(userId) {
 
 async function syncSteam(user) {
   const userId = user.id;
-  const summary = await fetchSummary(user.steam_id).catch(() => null);
-  if (summary) {
-    await q('UPDATE users SET persona_name=$2, avatar=$3, profile_url=$4 WHERE id=$1', [
-      userId, summary.persona_name, summary.avatar, summary.profile_url,
-    ]);
-  }
-
   const owned = await steamGet('/IPlayerService/GetOwnedGames/v1/', {
     steamid: user.steam_id,
     include_appinfo: 'false',

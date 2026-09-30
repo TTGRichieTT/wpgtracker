@@ -2,6 +2,13 @@ import session from 'express-session';
 import { q, one } from './db.js';
 
 export const ROLE_LEVEL = { member: 1, mod: 2, admin: 3 };
+
+// Main admins: always admin, always approved, and nobody can demote, ban or delete them.
+// Add more by setting OWNER_STEAM_IDS in Replit Secrets (comma separated Steam IDs).
+export const OWNER_IDS = new Set(
+  (process.env.OWNER_STEAM_IDS || '76561198809535860').split(',').map((s) => s.trim()).filter((s) => /^\d{17}$/.test(s)),
+);
+export const isOwner = (u) => !!u && OWNER_IDS.has(u.steam_id);
 export const roleAtLeast = (role, min) => (ROLE_LEVEL[role] || 0) >= (ROLE_LEVEL[min] || 99);
 
 export class PgSessionStore extends session.Store {
@@ -108,6 +115,7 @@ export function publicUser(u, rank) {
     country: u.country,
     banner_color: u.banner_color,
     role: u.role,
+    developer: isOwner(u),
     status: u.status,
     xp: u.xp,
     rank_id: u.rank_id,
