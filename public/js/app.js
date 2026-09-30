@@ -160,6 +160,8 @@ function applyMe(me) {
   state.me = me.user;
   state.unread = me.unread_dms;
   state.friendReq = me.friend_requests;
+  state.trackerLinked = !!me.tracker_linked;
+  state.realSteam = !!me.real_steam;
   state.users.set(me.user.id, me.user);
 }
 
@@ -436,6 +438,7 @@ async function viewHome(main) {
           </div>
         </div>
       </div>
+      ${needsTracker() ? trackerCardHtml() : ''}
       <div class="grid two">
         <div class="panel">
           <div class="panel-title">${icon('bell')} Orders & news</div>
@@ -482,6 +485,76 @@ async function syncMine(e) {
     if (btn) btn.disabled = false;
   }
 }
+
+// ---------- WARDOGS Tracker linking ----------
+// Players must sign in on WARDOGS Tracker themselves (their Steam login can't be done for them).
+// We open the tracker's own "Sync my stats" page and then keep checking until their stats appear.
+const TRACKER_CONNECT = 'https://wardogstracker.gg/api/wardogs/connect?redirect=/';
+const needsTracker = () => state.realSteam && !state.trackerLinked;
+
+function trackerCardHtml() {
+  return `<div class="panel glow tracker-card" data-tracker-card>
+    <div class="row" style="align-items:flex-start;gap:16px">
+      <img src="/img/brand/wolf-emblem.webp" alt="" style="width:74px;border-radius:6px">
+      <div class="grow" style="min-width:220px">
+        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Link your <span class="sub">Wardogs stats</span></div>
+        <p style="margin:0 0 6px">One-time, about a minute: sign in to <b>WARDOGS Tracker</b> with Steam and press <b>Sync</b>.
+          Your level, XP, cash and role levels then show here and <b>update by themselves</b>.</p>
+        <p class="muted small" data-tracker-status style="margin:0 0 10px">We'll spot it automatically when you're done.</p>
+        <div class="row">
+          <a class="btn primary" href="${TRACKER_CONNECT}" target="_blank" rel="noopener" data-tracker-link>${icon('steam')} Link WARDOGS Tracker</a>
+          <button class="btn ghost" type="button" data-tracker-check>I've done it — check now</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+let trackerWatch = null;
+function stopTrackerWatch() {
+  if (!trackerWatch) return;
+  clearInterval(trackerWatch.timer);
+  document.removeEventListener('visibilitychange', trackerWatch.onVisible);
+  trackerWatch = null;
+}
+async function trackerCheck(manual) {
+  const status = document.querySelector('[data-tracker-status]');
+  try {
+    const r = await api('me/tracker-check', { method: 'POST', body: {} });
+    if (r.linked) {
+      state.trackerLinked = true;
+      stopTrackerWatch();
+      toast('Wardogs stats linked!', 'Your global stats are now on your career profile.', { link: `#/u/${state.me.id}` });
+      route();
+      return;
+    }
+    if (status) {
+      status.textContent = manual
+        ? 'Not found yet — make sure you signed in and pressed Sync on WARDOGS Tracker, then try again.'
+        : 'Waiting for WARDOGS Tracker… finish signing in there, then come back here.';
+    }
+  } catch (x) {
+    if (manual && x.status !== 429) fail(x);
+  }
+}
+function startTrackerWatch() {
+  stopTrackerWatch();
+  const until = Date.now() + 10 * 60 * 1000;
+  const onVisible = () => { if (document.visibilityState === 'visible') trackerCheck(false); };
+  const timer = setInterval(() => {
+    if (Date.now() > until || state.trackerLinked) return stopTrackerWatch();
+    trackerCheck(false);
+  }, 15000);
+  document.addEventListener('visibilitychange', onVisible);
+  trackerWatch = { timer, onVisible };
+  const status = document.querySelector('[data-tracker-status]');
+  if (status) status.textContent = 'Waiting for WARDOGS Tracker… finish signing in there, then come back here.';
+}
+// One listener for every link card, wherever it appears.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-tracker-link]')) startTrackerWatch();
+  else if (e.target.closest('[data-tracker-check]')) trackerCheck(true);
+});
 
 // ---------- Career profile ----------
 // [colour, fallback icon, artwork] — artwork is from the WPG career card.
@@ -557,7 +630,9 @@ async function viewProfile(main, [id]) {
       }).join('')}</div>` : ''}
       <div class="credit">Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
   } else {
-    officialHtml = `<p class="muted">No global Wardogs stats yet.${mine ? ' Sign in once at <a href="https://wardogstracker.gg" target="_blank" rel="noopener">wardogstracker.gg</a> with Steam so your stats are shared, then press <b>Sync stats</b>.' : ''}</p>`;
+    officialHtml = mine && state.realSteam
+      ? `<p class="muted" style="margin-top:0">No global Wardogs stats yet.</p>${trackerCardHtml()}`
+      : '<p class="muted">No global Wardogs stats yet. They show once this player links WARDOGS Tracker.</p>';
   }
 
   const games = p.games.map((g) => {

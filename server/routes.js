@@ -1,7 +1,8 @@
 import express from 'express';
 import { q, one, getSettings, flag } from './db.js';
 import { bus } from './bus.js';
-import { syncUser } from './steam.js';
+import { syncUser, recalcXp } from './steam.js';
+import { syncWardogs } from './wardogs.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
   HttpError, signedIn, member, roleAtLeast, publicUser, str, int, color, safeUrl,
@@ -31,7 +32,25 @@ api.get('/settings/public', async (_req, res) => {
 api.get('/me', signedIn, async (req, res) => {
   const unread = await one('SELECT COUNT(*)::int AS n FROM dms WHERE recipient_id=$1 AND read_at IS NULL', [req.user.id]);
   const requests = await one("SELECT COUNT(*)::int AS n FROM friends WHERE addressee_id=$1 AND status='pending'", [req.user.id]);
-  res.json({ user: await userOut(req.user), unread_dms: unread.n, friend_requests: requests.n });
+  const tracker = await one('SELECT official IS NOT NULL AS linked FROM wardogs_stats WHERE user_id=$1', [req.user.id]);
+  res.json({
+    user: await userOut(req.user),
+    unread_dms: unread.n,
+    friend_requests: requests.n,
+    tracker_linked: !!tracker?.linked,
+    real_steam: /^\d{17}$/.test(req.user.steam_id),
+  });
+});
+
+// Checks WARDOGS Tracker for my stats (used while someone is linking their account there).
+const trackerChecks = new Map();
+api.post('/me/tracker-check', member, async (req, res) => {
+  const last = trackerChecks.get(req.user.id) || 0;
+  if (Date.now() - last < 10 * 1000) throw new HttpError(429, 'Checking too often.');
+  trackerChecks.set(req.user.id, Date.now());
+  const r = await syncWardogs(req.user).catch((e) => ({ ok: false, reason: e.message }));
+  if (r.official) await recalcXp(req.user.id);
+  res.json({ linked: !!r.official, reason: r.ok ? '' : r.reason });
 });
 
 // ---------- Profile ----------
