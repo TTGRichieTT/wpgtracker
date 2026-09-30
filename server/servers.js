@@ -135,6 +135,11 @@ const spaceCamel = (t) => String(t || '').replace(/_/g, ' ').replace(/([a-z0-9])
 const isModifier = (id) => /^KOTH_(InfantryOnly|Hardcore)|infantry|hardcore/i.test(String(id)) && !/_KOTH_\d+$/i.test(String(id));
 const modeLabel = (id) => (!id ? '' : /koth|kingofthehill/i.test(String(id).replace(/[_\s]/g, '')) ? 'King of the Hill' : spaceCamel(id));
 const modLabel = (id) => (/infantry/i.test(id) ? 'Infantry only' : /hardcore/i.test(id) ? 'Hardcore' : spaceCamel(id));
+// Servers only report internal map IDs; these are the names players see (same as the official RCON console).
+const MAP_NAMES = { Kavkazi: 'Bakurani', Europe: 'Ozeti', NorthAmerica: 'Zestafona', Madrid: 'Ozeti', Detroit: 'Zestafona' };
+const expLabel = (id) => (isModifier(id) ? modLabel(id) : modeLabel(id));
+// "ZoneAlternator.Ozeti.Church.Circle" -> "Church Circle"
+const zoneLabel = (z) => { const parts = String(z || '').replace(/^ZoneAlternator./, '').split('.').slice(1); return parts.includes('Default') ? '' : spaceCamel(parts.join(' ')); };
 
 const catalogCache = new Map();
 async function catalog(s) {
@@ -159,7 +164,7 @@ servers.get('/servers/:id/live', member, async (req, res) => {
     catalog(s),
     rcon(s, 'GET', '/rotation').catch(() => null),
   ]);
-  const mapName = (id) => cat.maps.get(id) || spaceCamel(id) || '—';
+  const mapName = (id) => MAP_NAMES[id] || (cat.maps.get(id) !== id && cat.maps.get(id)) || spaceCamel(id) || '—';
   const exps = Array.isArray(st?.experiences) ? st.experiences : [];
   const entries = Array.isArray(rot?.entries) ? rot.entries : [];
   const next = rot?.enabled ? entries.find((e) => e.status === 'next') : null;
@@ -171,14 +176,15 @@ servers.get('/servers/:id/live', member, async (req, res) => {
     lighting: spaceCamel(st?.lighting) || '—',
     players: Number(st?.players?.current ?? 0),
     maxPlayers: Number(st?.players?.max ?? 0),
-    matchSeconds: Number(st?.matchSeconds) || 0,
+    matchSeconds: Number.isFinite(Number(st?.matchSeconds)) && st?.matchSeconds !== undefined ? Number(st.matchSeconds) : null,
+    zone: zoneLabel(st?.alternator),
     scoreCap: Number(st?.scoreCap) || 100,
     scores: (Array.isArray(st?.factionScores) ? st.factionScores : []).slice(0, 6).map((f) => ({
       name: str(f?.name, 40),
       score: Number(f?.score) || 0,
       color: /^#?[0-9a-f]{6}$/i.test(String(f?.colorHex || '')) ? `#${String(f.colorHex).replace('#', '')}` : '',
     })),
-    next: next ? { map: mapName(next.map), mode: modeLabel((next.experiences || []).find((e) => !isModifier(e))) || '', lighting: spaceCamel(next.lighting) } : null,
+    next: next ? { map: mapName(next.map), mode: modeLabel((next.experiences || []).find((e) => !isModifier(e))) || '', lighting: spaceCamel(next.lighting), zone: zoneLabel(next.zoneAlternator) } : null,
   };
   liveCacheRcon.set(s.id, { at: Date.now(), data });
   res.json(data);
@@ -193,7 +199,7 @@ servers.get('/admin/servers/:id/status', role('mod'), async (req, res) => {
 servers.get('/admin/servers/:id/maps', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   const data = await rcon(s, 'GET', '/catalog/maps');
-  res.json((data?.maps || []).map((m) => ({ id: m.id, name: m.displayName || m.id })));
+  res.json((data?.maps || []).map((m) => ({ id: m.id, name: MAP_NAMES[m.id] || m.displayName || m.id })));
 });
 
 servers.get('/admin/servers/:id/maps/:mapId/modes', role('admin'), async (req, res) => {
@@ -204,7 +210,7 @@ servers.get('/admin/servers/:id/maps/:mapId/modes', role('admin'), async (req, r
     rcon(s, 'GET', '/catalog/experiences').catch(() => ({})),
   ]);
   const names = new Map((all?.experiences || []).map((e) => [e.id, e.displayName || e.id]));
-  res.json((forMap?.experiences || []).map((id) => ({ id: String(id), name: names.get(id) || String(id) })));
+  res.json((forMap?.experiences || []).map((id) => ({ id: String(id), name: expLabel(id) || names.get(id) || String(id) })));
 });
 
 servers.get('/admin/servers/:id/bans', role('admin'), async (req, res) => {

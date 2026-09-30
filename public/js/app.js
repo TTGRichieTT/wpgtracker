@@ -1123,7 +1123,7 @@ async function changeMapBox(sid, act) {
 }
 
 // The public server list reports internal map names; show what players see in game.
-const MAP_NAMES = { Madrid: 'Ozeti' };
+const MAP_NAMES = { Madrid: 'Ozeti', Detroit: 'Zestafona', Europe: 'Ozeti', NorthAmerica: 'Zestafona', Kavkazi: 'Bakurani' };
 const mapDisplay = (m) => MAP_NAMES[m] || m || '—';
 
 const regionName = (r) => String(r || '').split('-').map((p) => (p.length <= 2 ? p.toUpperCase() : p[0].toUpperCase() + p.slice(1))).join(' ');
@@ -1244,15 +1244,15 @@ async function viewServers(main, _r, alive) {
       const pl = main.querySelector(`[data-live-players="${s.id}"]`);
       if (pl && m.maxPlayers) pl.textContent = `${m.players} / ${m.maxPlayers} players`;
       if (modeTile) modeTile.innerHTML = tile('swords', 'Mode', [m.mode, ...m.modifiers].join(' + '));
-      const mins = Math.floor(m.matchSeconds / 60);
+      const clock = m.matchSeconds === null ? '' : ` · ${Math.floor(m.matchSeconds / 60)}m ${m.matchSeconds % 60}s`;
       box.innerHTML = `
-        <h4 class="row" style="margin:0 0 10px">${icon('crosshair', 'width="18" height="18"')} Live match <span class="muted small">· ${esc(m.lighting)} · ${mins}m ${m.matchSeconds % 60}s · first to ${m.scoreCap}</span></h4>
+        <h4 class="row" style="margin:0 0 10px">${icon('crosshair', 'width="18" height="18"')} Live match <span class="muted small">· ${esc(m.lighting)}${m.zone ? ` · ${esc(m.zone)}` : ''}${clock} · first to ${m.scoreCap}</span></h4>
         ${m.scores.length ? `<div class="grid three" style="gap:10px">${m.scores.map((f) => `
           <div class="score-tile" style="--fc:${esc(f.color || '#29b6f6')}">
             <div class="row between"><b>${esc(f.name)}</b><b style="font:700 20px var(--head)">${fmtNum(f.score)}</b></div>
             <div class="xpbar"><div style="width:${Math.min(100, (f.score / Math.max(1, m.scoreCap)) * 100).toFixed(1)}%;background:var(--fc);box-shadow:0 0 10px var(--fc)"></div></div>
           </div>`).join('')}</div>` : ''}
-        ${m.next ? `<p class="muted small" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}</p>` : ''}`;
+        ${m.next ? `<p class="muted small" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}${m.next.zone ? ` · ${esc(m.next.zone)}` : ''}</p>` : ''}`;
     } catch (e) {
       box.innerHTML = staff ? `<p class="muted small">Live match unavailable: ${esc(e.message)}</p>` : '';
     }
