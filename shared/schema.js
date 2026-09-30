@@ -1,0 +1,192 @@
+// The WPG database layout (Drizzle ORM). This file is the single source of truth:
+// the app syncs the database to it on every start (adding only, never deleting),
+// and `npm run db:push` does the same by hand.
+import {
+  pgTable, serial, text, integer, boolean, jsonb, timestamp, numeric, primaryKey, index,
+} from 'drizzle-orm/pg-core';
+
+const now = () => timestamp({ withTimezone: true }).notNull().defaultNow();
+
+export const settings = pgTable('settings', {
+  key: text().primaryKey(),
+  value: text(),
+});
+
+export const ranks = pgTable('ranks', {
+  id: serial().primaryKey(),
+  name: text().notNull(),
+  abbr: text().notNull(),
+  sort_order: integer().notNull().default(0),
+  min_xp: integer().notNull().default(0),
+  auto: boolean().notNull().default(true),
+  color: text().notNull().default('#c9a227'),
+  insignia: jsonb().notNull().default({}),
+  description: text().notNull().default(''),
+});
+
+export const users = pgTable('users', {
+  id: serial().primaryKey(),
+  steam_id: text().notNull().unique('users_steam_id_key'),
+  persona_name: text().notNull(),
+  avatar: text().notNull().default(''),
+  profile_url: text().notNull().default(''),
+  callsign: text().notNull().default(''),
+  bio: text().notNull().default(''),
+  country: text().notNull().default(''),
+  custom_avatar: text().notNull().default(''),
+  banner_color: text().notNull().default('#3b4a2f'),
+  role: text().notNull().default('member'),
+  status: text().notNull().default('pending'),
+  rank_id: integer().references(() => ranks.id, { onDelete: 'set null' }),
+  rank_locked: boolean().notNull().default(false),
+  xp: integer().notNull().default(0),
+  bonus_xp: integer().notNull().default(0),
+  muted_until: timestamp({ withTimezone: true }),
+  custom_fields: jsonb().notNull().default({}),
+  steam_private: boolean().notNull().default(false),
+  joined_at: now(),
+  last_seen: now(),
+  last_sync: timestamp({ withTimezone: true }),
+});
+
+export const friends = pgTable('friends', {
+  requester_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  addressee_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text().notNull().default('pending'),
+  created_at: now(),
+}, (t) => [primaryKey({ name: 'friends_pkey', columns: [t.requester_id, t.addressee_id] })]);
+
+export const channels = pgTable('channels', {
+  id: serial().primaryKey(),
+  name: text().notNull(),
+  description: text().notNull().default(''),
+  min_role: text().notNull().default('member'),
+  read_only: boolean().notNull().default(false),
+  sort_order: integer().notNull().default(0),
+});
+
+export const messages = pgTable('messages', {
+  id: serial().primaryKey(),
+  channel_id: integer().notNull().references(() => channels.id, { onDelete: 'cascade' }),
+  user_id: integer().references(() => users.id, { onDelete: 'cascade' }),
+  body: text().notNull(),
+  deleted: boolean().notNull().default(false),
+  created_at: now(),
+}, (t) => [index('messages_channel_idx').on(t.channel_id, t.id.desc())]);
+
+export const dms = pgTable('dms', {
+  id: serial().primaryKey(),
+  sender_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  recipient_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  body: text().notNull(),
+  read_at: timestamp({ withTimezone: true }),
+  created_at: now(),
+}, (t) => [
+  index('dms_pair_idx').on(t.sender_id, t.recipient_id, t.id.desc()),
+  index('dms_recipient_idx').on(t.recipient_id, t.read_at),
+]);
+
+export const games = pgTable('games', {
+  app_id: integer().primaryKey(),
+  name: text().notNull(),
+  enabled: boolean().notNull().default(true),
+  featured: boolean().notNull().default(false),
+  xp_per_hour: integer().notNull().default(10),
+  xp_per_achievement: integer().notNull().default(25),
+  stat_labels: text().notNull().default(''),
+});
+
+export const userGames = pgTable('user_games', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  app_id: integer().notNull().references(() => games.app_id, { onDelete: 'cascade' }),
+  playtime_forever: integer().notNull().default(0),
+  playtime_2weeks: integer().notNull().default(0),
+  ach_unlocked: integer().notNull().default(0),
+  ach_total: integer().notNull().default(0),
+  stats: jsonb().notNull().default({}),
+  updated_at: now(),
+}, (t) => [primaryKey({ name: 'user_games_pkey', columns: [t.user_id, t.app_id] })]);
+
+export const awards = pgTable('awards', {
+  id: serial().primaryKey(),
+  name: text().notNull(),
+  description: text().notNull().default(''),
+  colors: text().notNull().default('#1f3a93,#ffffff,#b22234'),
+  sort_order: integer().notNull().default(0),
+});
+
+export const userAwards = pgTable('user_awards', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  award_id: integer().notNull().references(() => awards.id, { onDelete: 'cascade' }),
+  given_by: integer().references(() => users.id, { onDelete: 'set null' }),
+  reason: text().notNull().default(''),
+  given_at: now(),
+});
+
+export const announcements = pgTable('announcements', {
+  id: serial().primaryKey(),
+  title: text().notNull(),
+  body: text().notNull().default(''),
+  pinned: boolean().notNull().default(false),
+  author_id: integer().references(() => users.id, { onDelete: 'set null' }),
+  created_at: now(),
+});
+
+export const profileFields = pgTable('profile_fields', {
+  id: serial().primaryKey(),
+  key: text().notNull().unique('profile_fields_key_key'),
+  label: text().notNull(),
+  type: text().notNull().default('text'),
+  options: text().notNull().default(''),
+  sort_order: integer().notNull().default(0),
+});
+
+export const auditLog = pgTable('audit_log', {
+  id: serial().primaryKey(),
+  actor_id: integer().references(() => users.id, { onDelete: 'set null' }),
+  action: text().notNull(),
+  target: text().notNull().default(''),
+  details: jsonb().notNull().default({}),
+  created_at: now(),
+});
+
+export const wardogsStats = pgTable('wardogs_stats', {
+  user_id: integer().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  official: jsonb(),
+  official_synced: timestamp({ withTimezone: true }),
+  server: jsonb(),
+  server_synced: timestamp({ withTimezone: true }),
+});
+
+export const statDefs = pgTable('stat_defs', {
+  key: text().primaryKey(),
+  label: text().notNull(),
+  format: text().notNull().default('number'),
+  xp_each: numeric().notNull().default('0'),
+  sort_order: integer().notNull().default(0),
+});
+
+export const userStats = pgTable('user_stats', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  key: text().notNull().references(() => statDefs.key, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  value: numeric().notNull().default('0'),
+  updated_at: now(),
+}, (t) => [primaryKey({ name: 'user_stats_pkey', columns: [t.user_id, t.key] })]);
+
+export const gameServers = pgTable('game_servers', {
+  id: serial().primaryKey(),
+  join_code: text().notNull().unique('game_servers_join_code_key'),
+  name: text().notNull().default(''),
+  description: text().notNull().default(''),
+  rcon_url: text().notNull().default(''),
+  rcon_password: text().notNull().default(''),
+  enabled: boolean().notNull().default(true),
+  sort_order: integer().notNull().default(0),
+});
+
+export const sessions = pgTable('sessions', {
+  sid: text().primaryKey(),
+  sess: jsonb().notNull(),
+  expire: timestamp({ withTimezone: true }).notNull(),
+});

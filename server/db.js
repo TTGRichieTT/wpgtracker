@@ -1,33 +1,42 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { SCHEMA, seed } from './schema.js';
+import * as schema from '../shared/schema.js';
+import { seed } from './seed.js';
+import { syncSchema } from './migrate.js';
 
 let impl;
+
+// Drizzle ORM instance (typed queries against shared/schema.js). Most of the app uses q()/one() below.
+export let db;
 
 export async function initDb() {
   if (process.env.DATABASE_URL) {
     const pg = (await import('pg')).default;
+    const { drizzle } = await import('drizzle-orm/node-postgres');
     const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
     impl = {
       query: (text, params) => pool.query(text, params),
       exec: (text) => pool.query(text),
       close: () => pool.end(),
     };
+    db = drizzle(pool, { schema });
     console.log('[db] Using PostgreSQL (DATABASE_URL)');
   } else {
     const { PGlite } = await import('@electric-sql/pglite');
+    const { drizzle } = await import('drizzle-orm/pglite');
     const dir = path.resolve(process.env.LOCAL_DB_DIR || './data/pglite');
     fs.mkdirSync(dir, { recursive: true });
-    const db = new PGlite(dir);
-    await db.waitReady;
+    const client = new PGlite(dir);
+    await client.waitReady;
     impl = {
-      query: (text, params) => db.query(text, params),
-      exec: (text) => db.exec(text),
-      close: () => db.close(),
+      query: (text, params) => client.query(text, params),
+      exec: (text) => client.exec(text),
+      close: () => client.close(),
     };
+    db = drizzle(client, { schema });
     console.log('[db] Using local PGlite database at', dir);
   }
-  await impl.exec(SCHEMA);
+  await syncSchema(impl.exec);
   await seed({ q, one });
 }
 

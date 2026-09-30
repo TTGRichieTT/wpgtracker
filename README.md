@@ -126,6 +126,9 @@ With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no St
 
 ## 8. If something goes wrong
 
+- **Updating the live site:** pull the new code → press **Stop** then **Run** in the workspace → **Republish**.
+  If the publish screen shows a red **DROP TABLE** or "delete" warning, press **Cancel**, restart the workspace app and try again.
+
 - **Site down:** Replit → Deployments → check the logs → press **Redeploy**.
 - **Stats not updating:** check `STEAM_API_KEY` in Secrets. Check the member has public Steam game details and a WARDOGS Tracker profile.
 - **Locked out of admin:** another admin can fix your role in Admin → Members.
