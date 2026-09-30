@@ -167,7 +167,11 @@ app.use('/api', (_req, _res) => {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-app.use(express.static(PUBLIC_DIR, { index: 'index.html', maxAge: PROD ? '1h' : 0 }));
+// Browsers must re-check files every time (cheap thanks to ETags), so updates show straight away.
+app.use(express.static(PUBLIC_DIR, {
+  index: 'index.html',
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));

@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly; live data always comes from the network.
-const CACHE = 'wpg-shell-v1';
+const CACHE = 'wpg-shell-v2';
 const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/admin.js', '/js/insignia.js', '/js/icons.js', '/img/logo.svg'];
 
 self.addEventListener('install', (e) => {
@@ -18,7 +18,7 @@ self.addEventListener('fetch', (e) => {
   if (url.pathname.startsWith('/api') || url.pathname.startsWith('/auth') || url.pathname.startsWith('/socket.io')) return;
   // Network first so updates show straight away; fall back to cache when offline.
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
