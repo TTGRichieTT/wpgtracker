@@ -169,7 +169,7 @@ app.use('/api', (_req, _res) => {
   throw new HttpError(404, 'Not found');
 });
 
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
+app.get('/healthz', (_req, res) => res.json({ ok: true, version: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7) }));
 
 // Map pictures, unlock pictures and artwork never change, so browsers keep them for 30 days
 // (saves bandwidth on free hosting). Everything else is re-checked every time so updates show straight away.
