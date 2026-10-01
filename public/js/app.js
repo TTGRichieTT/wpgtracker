@@ -693,8 +693,7 @@ async function viewProfile(main, [id]) {
         const lvl = Number(r?.level ?? r) || 0;
         return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(lvl)}</div>${unlockLinesHtml(unlockList, name.toLowerCase(), lvl)}</div>`;
       }).join('')}</div>` : ''}
-      ${careerUnlockHtml(unlockList, Number(off.wardogLevel) || 0)}
-      <div class="credit">Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
+      ${careerUnlockHtml(unlockList, Number(off.wardogLevel) || 0)}`;
   } else {
     officialHtml = worldRanksHtml + (mine && state.realSteam
       ? `<p class="muted" style="margin-top:0">No global Wardogs stats yet.</p>${trackerCardHtml()}`
@@ -1266,7 +1265,8 @@ async function changeMapBox(sid, act) {
       <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;margin-bottom:6px">Game mode + modifications</span><div id="modeList" class="stack"></div></div>
       <label class="field"><span>Time of day</span><select name="lighting"><option value="">Server default</option></select></label>
       <label class="field"><span>Control zone</span><select name="alternator"><option value="">Server default</option></select></label>
-      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Change map now</button></div>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn" value="queue">Queue as next map</button><button type="submit" class="btn primary" value="now">Change map now</button></div>
+      <p class="muted small" style="margin:0">Queue = plays after this match ends, then the normal rotation carries on.</p>
     </form>`;
   const form = body.querySelector('#mapForm');
   form.querySelector('[data-close]').onclick = m.close;
@@ -1296,7 +1296,9 @@ async function changeMapBox(sid, act) {
     const experiences = [...form.querySelectorAll('[name=mode]:checked')].map((c) => c.value);
     const name = form.map.options[form.map.selectedIndex].text;
     m.close();
-    act(sid, { action: 'map', map: form.map.value, experiences, lighting: form.lighting.value, alternator: form.alternator.value }, `Changing map to ${name}.`);
+    const queue = e.submitter?.value === 'queue';
+    act(sid, { action: queue ? 'queue' : 'map', map: form.map.value, experiences, lighting: form.lighting.value, alternator: form.alternator.value },
+      queue ? `${name} is queued as the next map.` : `Changing map to ${name}.`);
   };
 }
 
@@ -1446,7 +1448,8 @@ async function viewServers(main, _r, alive) {
             <div class="row between"><b>${esc(f.name)}</b><b style="font:700 20px var(--head)">${fmtNum(f.score)}</b></div>
             <div class="xpbar"><div style="width:${Math.min(100, (f.score / Math.max(1, m.scoreCap)) * 100).toFixed(1)}%;background:var(--fc);box-shadow:0 0 10px var(--fc)"></div></div>
           </div>`).join('')}</div>` : ''}
-        ${m.next ? `<p class="muted small" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}${m.next.zone ? ` · ${esc(m.next.zone)}` : ''}</p>` : ''}`;
+        ${m.next ? `<p class="muted small row" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}${m.next.zone ? ` · ${esc(m.next.zone)}` : ''}${m.queued ? ' <span class="accent">(queued)</span>' : ''}
+          ${m.queued && admin ? `<button class="btn small ghost" data-act="unqueue" data-sid="${s.id}">Cancel queue</button>` : ''}</p>` : ''}`;
     } catch (e) {
       box.innerHTML = staff ? `<p class="muted small">Live match unavailable: ${esc(e.message)}</p>` : '';
     }
@@ -1458,7 +1461,7 @@ async function viewServers(main, _r, alive) {
       await api(`admin/servers/${sid}/action`, { method: 'POST', body });
       toast('Done', done);
       const s = servers.find((x) => x.id === Number(sid));
-      if (s) loadPlayers(s);
+      if (s) { loadPlayers(s); loadLive(s); }
     } catch (x) { fail(x); }
   }
 
@@ -1486,6 +1489,8 @@ async function viewServers(main, _r, alive) {
       if (await confirmBox('Restart the current match for everyone?')) act(sid, { action: 'restart' }, 'Match restarting.');
     } else if (a === 'end') {
       if (await confirmBox('End the current match now? The server moves on once the match-end screen finishes.')) act(sid, { action: 'end' }, 'Match ended.');
+    } else if (a === 'unqueue') {
+      if (await confirmBox('Cancel the queued map and put the normal rotation back?')) act(sid, { action: 'unqueue' }, 'Queue cancelled.');
     } else if (a === 'next') {
       if (await confirmBox('End this round and go to the next map in the rotation?')) act(sid, { action: 'next' }, 'Going to the next map.');
     } else if (a === 'whisper') {

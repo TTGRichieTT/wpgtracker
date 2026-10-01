@@ -278,6 +278,14 @@ export const serverTrackState = pgTable('server_track_state', {
   updated_at: now(),
 });
 
+// A queued map: the server's full rotation is saved here while the rotation is set to just the
+// queued map, and put back once that map starts.
+export const rotationQueue = pgTable('rotation_queue', {
+  server_id: integer().primaryKey(),
+  data: jsonb().notNull().default({}),
+  created_at: now(),
+});
+
 export const gameServers = pgTable('game_servers', {
   id: serial().primaryKey(),
   join_code: text().notNull().unique('game_servers_join_code_key'),

@@ -202,6 +202,7 @@ servers.get('/servers/:id/live', member, async (req, res) => {
       score: Number(f?.score) || 0,
       color: /^#?[0-9a-f]{6}$/i.test(String(f?.colorHex || '')) ? `#${String(f.colorHex).replace('#', '')}` : '',
     })),
+    queued: !!(await queuedMap(s.id)),
     next: next ? { map: mapName(next.map), mode: modeLabel((next.experiences || []).find((e) => !isModifier(e))) || '', lighting: spaceCamel(next.lighting), zone: zoneLabel(next.zoneAlternator) } : null,
   };
   liveCacheRcon.set(s.id, { at: Date.now(), data });
@@ -257,6 +258,84 @@ servers.get('/admin/servers/:id/bans', role('admin'), async (req, res) => {
   res.json(await rcon(s, 'GET', '/bans'));
 });
 
+// ---------- Map queue ----------
+// The rotation is random, so a map can't simply be slotted in "next". Instead the rotation is
+// saved, set to just the queued map, and put back by the tracker as soon as that map starts.
+// Only the rotation lines are touched; the rest of the config is left exactly as it is.
+const ROT_SECTION = '[/Script/WDGame.WDServerMapRotationSettings]';
+const SAFE_ID = /^[A-Za-z0-9_.+-]+$/;
+
+function rotationLines(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim() === ROT_SECTION);
+  if (start < 0) throw new HttpError(502, "The server's config has no map rotation.");
+  let end = lines.findIndex((l, i) => i > start && l.trim().startsWith('['));
+  if (end < 0) end = lines.length;
+  const entries = [];
+  for (let i = start + 1; i < end; i++) if (lines[i].trim().startsWith('.RotationEntries=')) entries.push(i);
+  return { lines, start, end, entries, eol: String(text).includes('\r\n') ? '\r\n' : '\n' };
+}
+function withEntries(text, newEntries) {
+  const r = rotationLines(text);
+  const at = r.entries.length ? r.entries[0] : r.end;
+  const kept = r.lines.filter((_, i) => !r.entries.includes(i));
+  kept.splice(at, 0, ...newEntries);
+  return kept.join(r.eol);
+}
+async function saveConfig(s, text, revision) {
+  const check = await rcon(s, 'POST', '/config/validate', { text, revision });
+  if (!check?.ok || check.errors?.length) {
+    const why = (check?.errors || []).map((e) => e?.message || e).join(' ');
+    throw new HttpError(502, `The server would not accept the change${why ? `: ${why}` : '.'}`);
+  }
+  return rcon(s, 'PUT', '/config', { text, revision });
+}
+
+export async function queuedMap(serverId) {
+  const row = await one('SELECT data FROM rotation_queue WHERE server_id=$1', [serverId]);
+  return row?.data?.original ? row.data : null;
+}
+
+async function queueMap(s, b) {
+  const map = need(str(b.map, 80), 'Pick a map.');
+  const exps = (Array.isArray(b.experiences) ? b.experiences : []).map((e) => str(e, 80)).filter(Boolean).slice(0, 10);
+  const lighting = str(b.lighting, 60);
+  const alternator = str(b.alternator, 120);
+  for (const v of [map, ...exps, lighting, alternator]) {
+    if (v && !SAFE_ID.test(v)) throw new HttpError(400, 'That map choice has odd characters in it.');
+  }
+  const rot = await rcon(s, 'GET', '/rotation');
+  if (!rot?.enabled) throw new HttpError(400, 'Map rotation is turned off on this server, so nothing can be queued.');
+  const cfg = await rcon(s, 'GET', '/config');
+  if (!cfg?.writable) throw new HttpError(400, "This server's config can't be changed over RCON.");
+  const saved = await queuedMap(s.id);
+  const r = rotationLines(cfg.text);
+  if (!saved && !r.entries.length) throw new HttpError(502, 'The rotation has no maps in it to save.');
+  const original = saved ? saved.original : r.entries.map((i) => r.lines[i]);
+  const fields = [`Map="${map}"`];
+  if (exps.length) fields.push(`Experience="${exps.join('+')}"`);
+  if (lighting) fields.push(`Lighting="${lighting}"`);
+  if (alternator) fields.push(`ZoneAlternator="${alternator}"`);
+  await saveConfig(s, withEntries(cfg.text, [`.RotationEntries=(${fields.join(',')})`]), cfg.revision);
+  // Saved only after the server took the change, so a failed queue never leaves a stale copy.
+  await q(
+    `INSERT INTO rotation_queue (server_id, data, created_at) VALUES ($1,$2,now())
+     ON CONFLICT (server_id) DO UPDATE SET data=EXCLUDED.data, created_at=now()`,
+    [s.id, JSON.stringify({ original, map, alternator, at: Date.now() })],
+  );
+}
+
+// Puts the saved rotation back. Safe to call when nothing is queued.
+export async function restoreRotation(s) {
+  const saved = await queuedMap(s.id);
+  if (!saved) return false;
+  const cfg = await rcon(s, 'GET', '/config');
+  await saveConfig(s, withEntries(cfg.text, saved.original), cfg.revision);
+  await q('DELETE FROM rotation_queue WHERE server_id=$1', [s.id]);
+  liveCacheRcon.delete(s.id);
+  return true;
+}
+
 // Mods: broadcast, whisper, kick, kill, move faction. Admins: also ban, unban, restart, end/next, map, time of day.
 const ACTIONS = {
   broadcast: { min: 'mod', run: (s, b) => rcon(s, 'POST', '/broadcast', { message: need(str(b.message, 300), 'Type a message.') }) },
@@ -281,6 +360,13 @@ const ACTIONS = {
       const st = await rcon(s, 'GET', '/status');
       if (st?.rotation?.nextIndex === null || st?.rotation?.nextIndex === undefined) throw new HttpError(400, 'There is no next map in the rotation.');
       return rcon(s, 'POST', '/match/end');
+    },
+  },
+  queue: { min: 'admin', run: (s, b) => queueMap(s, b) },
+  unqueue: {
+    min: 'admin',
+    run: async (s) => {
+      if (!(await restoreRotation(s))) throw new HttpError(400, 'Nothing is queued.');
     },
   },
   lighting: { min: 'admin', run: (s, b) => rcon(s, 'PUT', '/world/lighting', { lighting: need(str(b.lighting, 60), 'Pick a time of day.') }) },

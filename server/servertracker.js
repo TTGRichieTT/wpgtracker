@@ -5,7 +5,7 @@
 //    players who were in the finished match get a win (their team had the top score) or a loss.
 //  - Members' totals also go to their career page and WPG XP.
 import { q, one } from './db.js';
-import { rcon } from './servers.js';
+import { rcon, queuedMap, restoreRotation } from './servers.js';
 import { recalcXp } from './steam.js';
 import { bus } from './bus.js';
 
@@ -50,6 +50,11 @@ export async function pollServer(server) {
 
   const now = Date.now();
   const newMatch = state.key !== matchKey(status) || totalScore(status) + 5 < (state.total || 0);
+  // A queued map has started (or it's been hours): put the server's normal rotation back.
+  const queued = await queuedMap(server.id);
+  if (queued && ((newMatch && status.map === queued.map && now - queued.at > 60 * 1000) || now - queued.at > 6 * 60 * 60 * 1000)) {
+    await restoreRotation(server).catch((e) => console.warn('[tracker] rotation restore failed', e.message));
+  }
   if (newMatch) {
     await finishMatch(server.id, state);
     state = { key: matchKey(status), total: 0, scores: [], players: {}, at: now };
