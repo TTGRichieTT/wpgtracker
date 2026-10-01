@@ -1552,7 +1552,6 @@ async function viewTools(main) {
             <span class="small cost">${u.cost ? fmtMoney(u.cost) : 'Free'}</span>
             <span class="small state">${got ? '<span style="color:var(--green)">✓ Unlocked</span>' : level === null ? '' : `${u.level - level} to go`}</span></div>`;
         }).join('') || '<p class="muted">No unlocks listed for this class yet.</p>'}</div>
-        <p class="muted small" style="margin:12px 0 0">Unlock list originally from <a href="https://wardogstracker.gg/progression" target="_blank" rel="noopener">WARDOGS Tracker</a> (used with permission), kept up to date by WPG admins.</p>
       </div>
     </div>`;
   onLive('config', (name) => { if (name === 'unlocks') route(); });
