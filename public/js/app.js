@@ -666,7 +666,7 @@ async function viewProfile(main, [id]) {
     const roles = Object.entries(off.roles || {}).sort(([a], [b]) => rank(a) - rank(b));
     officialHtml = `
       <div class="tiles">
-        ${tile('trophy', 'Public rank', off.leaderboardRank ? `#${fmtNum(off.leaderboardRank)}` : '—')}
+        ${tile('trophy', 'Tracker rank', off.leaderboardRank ? `#${fmtNum(off.leaderboardRank)}${off.leaderboardTotal ? ` of ${fmtNum(off.leaderboardTotal)}` : ''}` : '—')}
         ${tile('chevrons', 'Wardog level', fmtNum(off.wardogLevel))}
         ${tile('xp', 'Total XP', fmtNum(off.careerXp))}
         ${tile('coins', 'Cash on hand', fmtMoney(off.cash))}
@@ -682,7 +682,7 @@ async function viewProfile(main, [id]) {
         return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(lvl)}</div>${unlockLinesHtml(unlockList, name.toLowerCase(), lvl)}</div>`;
       }).join('')}</div>` : ''}
       ${careerUnlockHtml(unlockList, Number(off.wardogLevel) || 0)}
-      <div class="credit">Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
+      <div class="credit">Tracker rank is among players signed up to WARDOGS Tracker, by Wardog level · Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
   } else {
     officialHtml = mine && state.realSteam
       ? `<p class="muted" style="margin-top:0">No global Wardogs stats yet.</p>${trackerCardHtml()}`

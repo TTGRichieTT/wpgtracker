@@ -24,6 +24,15 @@ async function serverLeaderboard(slug) {
   return players;
 }
 
+// How many players are on the tracker's leaderboard (its ranks only count those players). Cached 1 hour.
+let totalCache = { at: 0, n: null };
+async function trackerPlayerCount() {
+  if (Date.now() - totalCache.at < 3600 * 1000) return totalCache.n;
+  const data = await get('/leaderboard?limit=1');
+  totalCache = { at: Date.now(), n: Number(data?.total) || null };
+  return totalCache.n;
+}
+
 export async function syncWardogs(user) {
   if (!(await flag('tracker_enabled'))) return { ok: false, reason: 'WARDOGS Tracker is switched off in settings' };
   if (!/^\d{17}$/.test(user.steam_id)) return { ok: false, reason: 'Test account (not a real Steam ID)' };
@@ -32,7 +41,8 @@ export async function syncWardogs(user) {
   const data = await get(`/players/${user.steam_id}`);
   if (data?.player) {
     const p = data.player;
-    const official = { ...(p.stats || {}), achievements: p.achievements, leaderboardRank: p.leaderboardRank, trackerUrl: p.profileUrl };
+    const total = await trackerPlayerCount().catch(() => null);
+    const official = { ...(p.stats || {}), achievements: p.achievements, leaderboardRank: p.leaderboardRank, leaderboardTotal: total, trackerUrl: p.profileUrl };
     await q(
       `INSERT INTO wardogs_stats (user_id, official, official_synced) VALUES ($1,$2,now())
        ON CONFLICT (user_id) DO UPDATE SET official=EXCLUDED.official, official_synced=now()`,
