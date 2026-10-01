@@ -119,6 +119,8 @@ export const awards = pgTable('awards', {
   description: text().notNull().default(''),
   colors: text().notNull().default('#1f3a93,#ffffff,#b22234'),
   sort_order: integer().notNull().default(0),
+  // Automatic medal rule, e.g. 'class:assault:20' (class level) or 'hours:300' (hours played). Empty = given by hand.
+  auto_rule: text().notNull().default(''),
 });
 
 export const userAwards = pgTable('user_awards', {

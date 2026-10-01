@@ -4,6 +4,7 @@ import { q, one, audit, getSettings, clearSettingsCache } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
+import { giveAutoMedalsToAll } from './medals.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -212,6 +213,13 @@ const RESOURCES = {
       description: (v) => str(v, 300),
       colors: (v) => str(v, 200).split(',').map((c) => color(c.trim(), '#888888')).slice(0, 7).join(','),
       sort_order: (v) => int(v),
+      auto_rule: (v) => {
+        const r = str(v, 60).toLowerCase().replace(/\s+/g, '');
+        if (r && !/^(class:(recon|assault|medic|support|driver|pilot):\d{1,3}|career:\d{1,3}|hours:\d{1,5})$/.test(r)) {
+          throw new HttpError(400, 'Automatic rule must look like class:assault:20, career:50 or hours:300 (or be empty).');
+        }
+        return r;
+      },
     },
   },
   channels: {
@@ -366,6 +374,7 @@ for (const [name, r] of Object.entries(RESOURCES)) {
       Object.values(data),
     ).catch(dbError);
     await audit(req.user.id, `${name}.create`, row[r.key], redact(r, req.body));
+    if (name === 'awards') giveAutoMedalsToAll().catch(() => {});
     bus.emit('config:changed', name);
     res.json(hideSecrets(r, row));
   });
@@ -390,6 +399,7 @@ for (const [name, r] of Object.entries(RESOURCES)) {
     const row = await one(`UPDATE ${r.table} SET ${sets.join(', ')} WHERE ${r.key}::text=$1 RETURNING *`, vals).catch(dbError);
     if (!row) throw new HttpError(404, 'Not found.');
     await audit(req.user.id, `${name}.edit`, req.params.key, redact(r, b));
+    if (name === 'awards') giveAutoMedalsToAll().catch(() => {});
     bus.emit('config:changed', name);
     res.json(hideSecrets(r, row));
   });

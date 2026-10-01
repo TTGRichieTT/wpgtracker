@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import session from 'express-session';
 import { initDb, closeDb, q, one, flag } from './db.js';
+import { giveAutoMedalsToAll } from './medals.js';
 import { bus } from './bus.js';
 import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop } from './steam.js';
 import { api } from './routes.js';
@@ -20,6 +21,7 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const PROD = process.env.NODE_ENV === 'production' || !!process.env.REPLIT_DEPLOYMENT;
 
 await initDb();
+giveAutoMedalsToAll().then((r) => r.given && console.log(`[medals] Gave ${r.given} automatic medals`)).catch(() => {});
 if (OWNER_IDS.size) {
   await q("UPDATE users SET role='admin', status='active' WHERE steam_id = ANY($1)", [[...OWNER_IDS]]);
 }

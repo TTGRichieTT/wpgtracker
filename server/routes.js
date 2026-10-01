@@ -143,8 +143,8 @@ api.get('/users/:id', member, async (req, res) => {
       [u.id],
     ),
     q(
-      `SELECT ua.id, ua.reason, ua.given_at, a.name, a.description, a.colors
-         FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY ua.given_at`,
+      `SELECT ua.id, ua.reason, ua.given_at, a.name, a.description, a.colors, a.auto_rule, a.sort_order
+         FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY a.sort_order, ua.given_at`,
       [u.id],
     ),
     one(`SELECT ws.*, CASE WHEN ws.official IS NULL THEN NULL ELSE ${ACCOUNT_WORTH_SQL} END AS account_worth FROM wardogs_stats ws WHERE ws.user_id=$1`, [u.id]),
@@ -178,7 +178,7 @@ api.get('/users/:id', member, async (req, res) => {
   res.json({
     user: await userOut(u),
     games,
-    awards,
+    awards: topTierOnly(awards),
     medals,
     wardogs: wardogs?.official ? { ...wardogs, official: { ...wardogs.official, accountWorth: Number(wardogs.account_worth) } } : wardogs || {},
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
@@ -186,6 +186,20 @@ api.get('/users/:id', member, async (req, res) => {
     friend,
   });
 });
+
+// Automatic medals in the same series (e.g. every Recon level medal, or every hours medal) only show
+// the highest one held, so a new tier replaces the old one on the ribbon rack.
+function topTierOnly(awards) {
+  const series = (rule) => { const [kind, a] = String(rule || '').split(':'); return kind === 'class' ? `class:${a}` : kind; };
+  const level = (rule) => Number(String(rule).split(':').pop()) || 0;
+  const best = new Map();
+  for (const a of awards) {
+    if (!a.auto_rule) continue;
+    const k = series(a.auto_rule);
+    if (!best.has(k) || level(a.auto_rule) > level(best.get(k).auto_rule)) best.set(k, a);
+  }
+  return awards.filter((a) => !a.auto_rule || best.get(series(a.auto_rule)) === a);
+}
 
 // Account worth = cash on hand + cost of every unlock the player's levels have reached
 // (WARDOGS Tracker gives levels and cash, our unlock list gives the costs). Needs "ws" = wardogs_stats.

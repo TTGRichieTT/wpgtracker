@@ -568,3 +568,9 @@ body::after { display: none; }
 .steam-medal.earned .nm { color: var(--text); }
 .steam-medal .sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
 .steam-medal.earned.rare .sub { color: var(--gold); }
+
+/* Ribbon rack (WPG medals) */
+.ribbon-rack { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.rack-item { display: flex; flex-direction: column; gap: 4px; padding: 8px; background: #07121f; border: 1px solid rgba(58,120,180,.2); border-radius: 6px; min-width: 0; }
+.rack-item .ribbon { width: 100%; height: 18px; }
+.rack-item b { font: 700 13px var(--head); text-transform: uppercase; letter-spacing: .3px; line-height: 1.2; }

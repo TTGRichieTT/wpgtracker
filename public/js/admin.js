@@ -53,15 +53,16 @@ const RESOURCES = {
   awards: {
     one: 'medal',
     title: 'Medals & ribbons',
-    help: 'Create medals here, then give them to members from the Members tab.',
+    help: 'Create medals here, then give them to members from the Members tab. Medals with an automatic rule are given by themselves when members sync their stats (e.g. class:recon:30 = Recon level 30, hours:200 = 200 hours played).',
     fields: [
       { k: 'name', label: 'Medal name' },
       { k: 'description', label: 'What it is for', type: 'textarea' },
       { k: 'colors', label: 'Ribbon stripes', type: 'colors' },
+      { k: 'auto_rule', label: 'Give automatically (optional): class:assault:20 · career:50 · hours:300 — leave empty to give by hand' },
       { k: 'sort_order', label: 'Order', type: 'number' },
     ],
     defaults: { colors: '#1f3a93,#ffffff,#b22234' },
-    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b><div class="muted small">${esc(r.description)}</div></div>`,
+    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b> ${r.auto_rule ? `<span class="pill mod">auto · ${esc(r.auto_rule)}</span>` : ''}<div class="muted small">${esc(r.description)}</div></div>`,
   },
   'stat-defs': {
     one: 'stat',

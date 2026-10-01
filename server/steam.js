@@ -2,6 +2,7 @@ import { q, one, flag, setting } from './db.js';
 import { bus } from './bus.js';
 import { syncWardogs } from './wardogs.js';
 import { syncAchievements } from './achievements.js';
+import { giveAutoMedals } from './medals.js';
 
 const OPENID = 'https://steamcommunity.com/openid/login';
 const API = 'https://api.steampowered.com';
@@ -110,6 +111,7 @@ export async function syncUser(userId) {
   }
   await q('UPDATE users SET last_sync=now() WHERE id=$1', [userId]);
   await recalcXp(userId);
+  result.autoMedals = await giveAutoMedals(userId).catch(() => []);
   return result;
 }
 

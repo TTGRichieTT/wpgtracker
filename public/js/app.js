@@ -753,8 +753,9 @@ async function viewProfile(main, [id]) {
         </div>
         <div class="panel">
           <div class="panel-title">${icon('medal')} Medals & ribbons</div>
-          ${p.awards.length ? `<div class="list">${p.awards.map((a) => `
-            <div class="item">${ribbon(a.colors)}<div class="grow"><b>${esc(a.name)}</b><div class="muted small">${esc(a.reason || a.description)} · ${fmtDate(a.given_at)}</div></div></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
+          ${p.awards.length ? `<div class="ribbon-rack">${p.awards.map((a) => `
+            <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}">
+              ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>

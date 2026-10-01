@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { starterMedals } from './medals.js';
 
 // Starter data for a new database: settings, ranks, channels, medals, stats and the WPG server.
 // The table layout itself lives in shared/schema.js.
@@ -111,6 +112,15 @@ export async function seed({ q, one }) {
     }
     await q("INSERT INTO settings (key, value) VALUES ('_imported_artillery', 'true') ON CONFLICT DO NOTHING");
     }
+  }
+
+  // Automatic medals: class levels 10-50 and 100-500 hours played (added once; admins can edit them).
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_auto_medals'"))) {
+    for (const m of starterMedals()) {
+      await q('INSERT INTO awards (name, description, colors, sort_order, auto_rule) VALUES ($1,$2,$3,$4,$5)',
+        [m.name, m.description, m.colors, m.sort_order, m.auto_rule]);
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_auto_medals', 'true') ON CONFLICT DO NOTHING");
   }
 
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
