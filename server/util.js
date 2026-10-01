@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import session from 'express-session';
 import { q, one } from './db.js';
 
@@ -133,4 +134,12 @@ export function publicUser(u, rank) {
     last_sync: u.last_sync,
     steam_private: u.steam_private,
   };
+}
+
+// "Remember me" keys (see /auth/resume). Only a hash of each key is stored.
+export const hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+export async function issueRememberToken(userId) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await q('INSERT INTO remember_tokens (user_id, token_hash) VALUES ($1,$2)', [userId, hashToken(token)]);
+  return token;
 }

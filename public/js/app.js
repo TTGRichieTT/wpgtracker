@@ -141,7 +141,14 @@ async function boot() {
   if (state.settings.accent_color) document.documentElement.style.setProperty('--accent', state.settings.accent_color);
   document.title = state.settings.clan_tag ? `${state.settings.clan_tag} Barracks` : 'WPG Barracks';
   try {
-    const me = await api('me');
+    let me;
+    try {
+      me = await api('me');
+    } catch (e) {
+      // Sign-in cookie lost (e.g. the Android app closed too quickly)? Use this device's remember key.
+      if (e.status !== 401 || !(await resumeSignIn())) throw e;
+      me = await api('me');
+    }
     applyMe(me);
   } catch (e) {
     if (e.status === 401 || e.code === 'banned') return renderLogin(e.code === 'banned' ? 'banned' : '');
@@ -156,7 +163,23 @@ async function boot() {
   route();
 }
 
+const REMEMBER_KEY = 'wpg.remember';
+const getRemember = () => { try { return localStorage.getItem(REMEMBER_KEY) || ''; } catch { return ''; } };
+const setRemember = (t) => { try { if (t) localStorage.setItem(REMEMBER_KEY, t); else localStorage.removeItem(REMEMBER_KEY); } catch { /* storage blocked */ } };
+async function resumeSignIn() {
+  const token = getRemember();
+  if (!token) return false;
+  try {
+    await api('/auth/resume', { method: 'POST', body: { token } });
+    return true;
+  } catch (e) {
+    if (e.status === 401) setRemember('');
+    return false;
+  }
+}
+
 function applyMe(me) {
+  if (me.remember_token) setRemember(me.remember_token);
   state.me = me.user;
   state.unread = me.unread_dms;
   state.friendReq = me.friend_requests;
@@ -225,7 +248,8 @@ function renderPending() {
 }
 
 async function logout() {
-  await api('/auth/logout', { method: 'POST', body: {} }).catch(() => {});
+  await api('/auth/logout', { method: 'POST', body: { token: getRemember() } }).catch(() => {});
+  setRemember('');
   location.hash = '#/';
   location.reload();
 }

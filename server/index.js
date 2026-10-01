@@ -14,7 +14,7 @@ import { admin, ingest } from './admin.js';
 import { servers } from './servers.js';
 import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
-import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS } from './util.js';
+import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS, hashToken } from './util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -152,7 +152,26 @@ app.post('/auth/dev', express.json(), async (req, res) => {
   res.json({ ok: true, id: user.id });
 });
 
-app.post('/auth/logout', (req, res) => {
+// "Remember me": a device-held key that signs a member back in if their sign-in cookie is lost.
+app.post('/auth/resume', express.json(), async (req, res) => {
+  const token = str(req.body?.token, 100);
+  if (!token) throw new HttpError(400, 'Missing key.');
+  const row = await one(
+    `SELECT rt.id, u.id AS user_id, u.status FROM remember_tokens rt JOIN users u ON u.id = rt.user_id
+      WHERE rt.token_hash = $1 AND rt.last_used > now() - interval '120 days'`,
+    [hashToken(token)],
+  );
+  if (!row || row.status === 'banned') throw new HttpError(401, 'Please sign in with Steam.', 'signed_out');
+  await q('UPDATE remember_tokens SET last_used = now() WHERE id = $1', [row.id]);
+  await new Promise((resolve, reject) => req.session.regenerate((e) => (e ? reject(e) : resolve())));
+  req.session.userId = row.user_id;
+  req.session.rememberSent = true; // this device already has its key
+  res.json({ ok: true });
+});
+
+app.post('/auth/logout', async (req, res) => {
+  const token = str(req.body?.token, 100);
+  if (token) await q('DELETE FROM remember_tokens WHERE token_hash = $1', [hashToken(token)]).catch(() => {});
   req.session.destroy(() => {
     res.clearCookie('wpg.sid');
     res.json({ ok: true });
@@ -198,7 +217,10 @@ app.use((err, _req, res, _next) => {
 const server = http.createServer(app);
 startRealtime(server, sessionMiddleware);
 startSyncLoop();
-setInterval(() => store.prune().catch(() => {}), 6 * 60 * 60 * 1000);
+setInterval(() => {
+  store.prune().catch(() => {});
+  q("DELETE FROM remember_tokens WHERE last_used < now() - interval '120 days'").catch(() => {});
+}, 6 * 60 * 60 * 1000);
 
 let stopping = false;
 async function shutdown(signal) {

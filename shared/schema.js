@@ -226,6 +226,15 @@ export const artillery = pgTable('artillery', {
   sort_order: integer().notNull().default(0),
 });
 
+// "Remember me" keys: let a device sign back in if its sign-in cookie is lost. Only a hash is stored.
+export const rememberTokens = pgTable('remember_tokens', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token_hash: text().notNull().unique('remember_tokens_token_hash_key'),
+  created_at: now(),
+  last_used: now(),
+});
+
 // Last counted total for each XP source per user (e.g. 'kills', 'stat:wins', 'game:1867240:minutes').
 export const xpCounters = pgTable('xp_counters', {
   user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),

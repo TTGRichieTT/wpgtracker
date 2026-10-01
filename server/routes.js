@@ -6,6 +6,7 @@ import { syncWardogs } from './wardogs.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
   HttpError, signedIn, member, roleAtLeast, publicUser, str, int, color, safeUrl,
+  issueRememberToken,
 } from './util.js';
 
 export const api = express.Router();
@@ -33,12 +34,19 @@ api.get('/me', signedIn, async (req, res) => {
   const unread = await one('SELECT COUNT(*)::int AS n FROM dms WHERE recipient_id=$1 AND read_at IS NULL', [req.user.id]);
   const requests = await one("SELECT COUNT(*)::int AS n FROM friends WHERE addressee_id=$1 AND status='pending'", [req.user.id]);
   const tracker = await one('SELECT official IS NOT NULL AS linked FROM wardogs_stats WHERE user_id=$1', [req.user.id]);
+  // Hand this device a "remember me" key once per sign-in, so it can sign back in if the cookie is lost.
+  let rememberToken;
+  if (!req.session.rememberSent) {
+    rememberToken = await issueRememberToken(req.user.id);
+    req.session.rememberSent = true;
+  }
   res.json({
     user: await userOut(req.user),
     unread_dms: unread.n,
     friend_requests: requests.n,
     tracker_linked: !!tracker?.linked,
     real_steam: /^\d{17}$/.test(req.user.steam_id),
+    ...(rememberToken ? { remember_token: rememberToken } : {}),
   });
 });
 
