@@ -5,9 +5,11 @@
 import { pgConfig } from '../server/db.js';
 import { syncSchema } from '../server/migrate.js';
 
-const [fromUrl, toUrl] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const replace = args.includes('--replace');
+const [fromUrl, toUrl] = args.filter((a) => a !== '--replace');
 if (!fromUrl || !toUrl) {
-  console.log('Usage: node scripts/copy-db.mjs "<FROM url>" "<TO url>"');
+  console.log('Usage: node scripts/copy-db.mjs "<FROM url>" "<TO url>" [--replace]');
   process.exit(1);
 }
 
@@ -32,6 +34,13 @@ const from = await open(fromUrl);
 const to = await open(toUrl);
 try {
   await syncSchema((t) => to.exec(t));
+  if (replace) {
+    // Empty the target first so it becomes an exact copy of the source.
+    const have = new Set((await to.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'")).rows.map((r) => r.table_name));
+    const wipe = ORDER.filter((t) => have.has(t));
+    await to.exec(`TRUNCATE ${wipe.map((t) => `"${t}"`).join(', ')} CASCADE`);
+    console.log(`Emptied ${wipe.length} tables in the target.`);
+  }
   const existing = new Set((await from.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'")).rows.map((r) => r.table_name));
   for (const table of ORDER) {
     if (!existing.has(table)) { console.log(`- ${table}: not in source, skipped`); continue; }
