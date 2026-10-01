@@ -123,6 +123,12 @@ export async function seed({ q, one }) {
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_auto_medals', 'true') ON CONFLICT DO NOTHING");
   }
 
+  // Profile box used to find a member's worldwide rank when their in-game name differs from Steam.
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_wardogs_name'"))) {
+    await q("INSERT INTO profile_fields (key, label, type, options, sort_order) VALUES ('wardogs_name', 'Wardogs in-game name (e.g. Richie_TT#6201)', 'text', '', 3) ON CONFLICT (key) DO NOTHING");
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_wardogs_name', 'true') ON CONFLICT DO NOTHING");
+  }
+
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
     await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");

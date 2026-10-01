@@ -660,13 +660,24 @@ async function viewProfile(main, [id]) {
     friends: `<button class="btn ghost" data-friend="remove">Friends ✓ · Remove</button>`,
   }[p.friend];
 
+  // Worldwide ranks (out of every ranked Wardogs player).
+  const wr = p.wardogs.ranks;
+  const of = (n) => (n ? `#${fmtNum(n)}${wr?.total ? ` of ${fmtNum(wr.total)}` : ''}` : '—');
+  const worldRanksHtml = wr?.level ? `<div class="tiles" style="margin-bottom:12px">
+      ${tile('trophy', 'World rank', of(wr.level))}
+      ${tile('growth', 'Worth rank', of(wr.worth))}
+      ${tile('coins', 'Cash rank', of(wr.cash))}
+    </div>` : '';
+  const rankHint = !wr?.level && mine && state.realSteam
+    ? '<p class="muted small" style="margin:0 0 10px">No world rank found yet. If your in-game name is different from your Steam name, add it in <a href="#/profile/edit">Edit profile</a> as Name#1234, then press Sync stats.</p>'
+    : '';
+
   let officialHtml;
   if (off) {
     const rank = (n) => { const i = ROLE_ORDER.indexOf(n.toLowerCase()); return i < 0 ? 99 : i; };
     const roles = Object.entries(off.roles || {}).sort(([a], [b]) => rank(a) - rank(b));
-    officialHtml = `
+    officialHtml = `${worldRanksHtml}${rankHint}
       <div class="tiles">
-        ${tile('trophy', 'Tracker rank', off.leaderboardRank ? `#${fmtNum(off.leaderboardRank)}${off.leaderboardTotal ? ` of ${fmtNum(off.leaderboardTotal)}` : ''}` : '—')}
         ${tile('chevrons', 'Wardog level', fmtNum(off.wardogLevel))}
         ${tile('xp', 'Total XP', fmtNum(off.careerXp))}
         ${tile('coins', 'Cash on hand', fmtMoney(off.cash))}
@@ -682,11 +693,11 @@ async function viewProfile(main, [id]) {
         return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(lvl)}</div>${unlockLinesHtml(unlockList, name.toLowerCase(), lvl)}</div>`;
       }).join('')}</div>` : ''}
       ${careerUnlockHtml(unlockList, Number(off.wardogLevel) || 0)}
-      <div class="credit">Tracker rank is among players signed up to WARDOGS Tracker, by Wardog level · Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
+      <div class="credit">Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
   } else {
-    officialHtml = mine && state.realSteam
+    officialHtml = worldRanksHtml + (mine && state.realSteam
       ? `<p class="muted" style="margin-top:0">No global Wardogs stats yet.</p>${trackerCardHtml()}`
-      : '<p class="muted">No global Wardogs stats yet. They show once this player links WARDOGS Tracker.</p>';
+      : '<p class="muted">No global Wardogs stats yet. They show once this player links WARDOGS Tracker.</p>');
   }
 
   const games = p.games.map((g) => {

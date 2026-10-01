@@ -165,6 +165,9 @@ export const wardogsStats = pgTable('wardogs_stats', {
   official_synced: timestamp({ withTimezone: true }),
   server: jsonb(),
   server_synced: timestamp({ withTimezone: true }),
+  // Worldwide ranks: { id, name, tag, level, worth, cash, total }
+  ranks: jsonb(),
+  ranks_synced: timestamp({ withTimezone: true }),
 });
 
 export const statDefs = pgTable('stat_defs', {
