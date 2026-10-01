@@ -12,6 +12,7 @@ const TABS = [
   { key: 'stat-defs', label: 'Stats' },
   { key: 'game-servers', label: 'Game servers' },
   { key: 'unlocks', label: 'Unlocks' },
+  { key: 'artillery', label: 'Artillery' },
   { key: 'channels', label: 'Chat channels' },
   { key: 'games', label: 'Games' },
   { key: 'profile-fields', label: 'Profile fields' },
@@ -80,7 +81,7 @@ const RESOURCES = {
   unlocks: {
     one: 'unlock',
     title: 'Wardogs unlocks',
-    help: 'What each class unlocks at each level. Members see their last and next unlock under each class on their career page, and the full list on the Tools page. Started from the unlock levels published in game guides — please check them in game and keep them up to date after game updates. "Career" means the overall Wardog level.',
+    help: 'What each class unlocks at each level, stored in our own database. The full list was imported once from WARDOGS Tracker (used with permission). Add, change or remove items here after game updates. Members see their last and next unlock under each class, and the full list on the Tools page. "Career" is the overall Wardog level.',
     fields: [
       { k: 'role', label: 'Class', type: 'select', options: [['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot'], ['career', 'Career (Wardog level)']] },
       { k: 'level', label: 'Level', type: 'number' },
@@ -89,7 +90,24 @@ const RESOURCES = {
       { k: 'cost', label: 'Cost in cash (0 if free / unknown)', type: 'number' },
     ],
     defaults: { role: 'assault', level: 1, kind: 'Weapon', cost: 0 },
-    row: (r) => `<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${esc(r.role)} · level ${r.level}</span><div class="muted small">${esc(r.kind)}${r.cost ? ` · ${fmtNum(r.cost)}` : ''}</div></div>`,
+    row: (r) => `<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${esc(r.role)} · level ${r.level}</span> <div class="muted small">${esc(r.kind)}${r.cost ? ` · ${fmtNum(r.cost)}` : ''}</div></div>`,
+  },
+  artillery: {
+    one: 'gun',
+    title: 'Artillery firing tables',
+    help: 'Used by the artillery calculator on the Tools page. Each line of the firing table is "distance in metres,elevation in mils". Tables originally from wardogs-calculator by Apollyon (MIT licence). If a game update changes a gun, edit its table here.',
+    key: 'id',
+    fields: [
+      { k: 'id', label: 'Short ID (no spaces)', createOnly: true },
+      { k: 'label', label: 'Name shown on the button' },
+      { k: 'note', label: 'Small note (e.g. "Over cover")' },
+      { k: 'min_m', label: 'Shortest range (m)', type: 'number' },
+      { k: 'max_m', label: 'Longest range (m)', type: 'number' },
+      { k: 'table_data', label: 'Firing table — one "metres,mils" per line', type: 'textarea' },
+      { k: 'sort_order', label: 'Order', type: 'number' },
+    ],
+    defaults: { sort_order: 100 },
+    row: (r) => `<div class="grow"><b>${esc(r.label)}</b> <span class="pill">${esc(r.id)}</span><div class="muted small">${fmtNum(r.min_m)}–${fmtNum(r.max_m)} m · ${String(r.table_data || '').split('\n').filter(Boolean).length} table rows</div></div>`,
   },
   'game-servers': {
     one: 'server',

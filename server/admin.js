@@ -266,6 +266,19 @@ const RESOURCES = {
       cost: (v) => Math.max(0, int(v)),
     },
   },
+  artillery: {
+    table: 'artillery', key: 'id', min: 'admin', order: 'sort_order, id',
+    fields: {
+      id: (v) => str(v, 30).toLowerCase().replace(/[^a-z0-9-]+/g, '-') || `gun-${Date.now()}`,
+      label: (v) => str(v, 60) || 'Gun',
+      note: (v) => str(v, 60),
+      min_m: (v) => Math.max(0, int(v)),
+      max_m: (v) => Math.max(0, int(v)),
+      table_data: (v) => String(v ?? '').split(/\r?\n/).map((l) => l.trim())
+        .filter((l) => /^\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(l)).slice(0, 500).join('\n'),
+      sort_order: (v) => int(v),
+    },
+  },
   'game-servers': {
     table: 'game_servers', key: 'id', min: 'admin', order: 'sort_order, id',
     secrets: ['rcon_password'],

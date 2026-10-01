@@ -493,3 +493,17 @@ body::after { display: none; }
 .unlock .lv { width: 44px; font: 700 16px var(--head); color: var(--accent2); }
 .unlock.got { border-color: rgba(61,220,132,.4); }
 .unlock.got .lv { color: var(--green); }
+
+/* Artillery calculator */
+.arty-weapons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.arty-weapons .btn .muted { text-transform: none; font-weight: 500; }
+.arty-weapons .btn.primary .muted { color: #02304a; }
+.arty-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 24px; }
+.arty-result { min-width: 240px; }
+.arty-big { font: 400 54px var(--display); line-height: 1; color: #fff; text-shadow: 0 0 18px rgba(41,182,246,.6); }
+.arty-big span { font: 700 18px var(--head); color: var(--accent2); margin-left: 8px; letter-spacing: 1px; text-transform: uppercase; }
+/* Unlock item pictures */
+.unlock .ui { width: 64px; height: 32px; object-fit: contain; flex: none; }
+.unlock .cost { width: 80px; text-align: right; color: var(--gold); }
+.unlock .state { width: 92px; text-align: right; }
+@media (max-width: 600px) { .unlock { flex-wrap: wrap; } .unlock .ui { width: 48px; } .unlock .cost, .unlock .state { width: auto; } }

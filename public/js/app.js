@@ -1439,12 +1439,28 @@ async function viewLeaderboard(main) {
 }
 
 // ---------- Tools: progression + artillery ----------
-const TOOL_ROLES = [['career', 'Career'], ['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot']];
+const TOOL_ROLES = [['career', 'Career'], ['recon', 'Recon'], ['assault', 'Assault (Infantry)'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot']];
+
+// Artillery firing tables live in our database (Admin → Artillery); originally from wardogs-calculator by Apollyon (MIT licence).
+// Straight-line interpolation in a [range m, elevation mil] table. Returns null when out of range.
+function elevationFor(table, minM, maxM, range) {
+  if (!(range >= minM && range <= maxM)) return null;
+  for (let i = 0; i < table.length - 1; i++) {
+    const [r1, m1] = table[i];
+    const [r2, m2] = table[i + 1];
+    if ((range >= r1 && range <= r2) || (range <= r1 && range >= r2)) {
+      if (r1 === r2) return Math.round((m1 + m2) / 2);
+      return Math.round(m1 + ((range - r1) / (r2 - r1)) * (m2 - m1));
+    }
+  }
+  return null;
+}
 
 async function viewTools(main) {
-  const [list, mine] = await Promise.all([
+  const [list, mine, guns] = await Promise.all([
     api('unlocks'),
     api(`users/${state.me.id}`).catch(() => null),
+    api('artillery').catch(() => []),
   ]);
   const off = mine?.wardogs?.official;
   const levelOf = (role) => {
@@ -1455,43 +1471,86 @@ async function viewTools(main) {
   };
   const tab = query().get('role') || 'career';
   const level = levelOf(tab);
-  const items = list.filter((u) => u.role === tab).sort((a, b) => a.level - b.level);
+  const items = list.filter((u) => u.role === tab).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
   const [c, , art] = ROLE_STYLE[tab] || ['#29b6f6', 'star', ''];
+  const totalCost = items.reduce((sum, u) => sum + (u.cost || 0), 0);
 
   main.innerHTML = `<h1>Tools</h1>
     <div class="stack">
+      <div class="panel" id="arty">
+        <div class="panel-title">${icon('target')} Artillery <span class="sub">firing calculator</span></div>
+        <div class="arty-weapons">${guns.map((w, i) => `<button type="button" class="btn${i === 0 ? ' primary' : ''}" data-arty="${esc(w.id)}">${esc(w.label)}${w.note ? `<span class="muted small"> · ${esc(w.note)}</span>` : ''}</button>`).join('') || '<p class="muted">No guns set up yet (Admin → Artillery).</p>'}</div>
+        <div class="arty-body">
+          <label class="field" style="max-width:260px"><span>Distance to target (metres)</span>
+            <input type="number" inputmode="numeric" id="artyRange" min="0" max="3000" step="1" placeholder="e.g. 420"></label>
+          <div class="row" style="gap:6px">${[-50, -10, 10, 50].map((d) => `<button type="button" class="btn small" data-adjust="${d}">${d > 0 ? `Add ${d}` : `Drop ${-d}`} m</button>`).join('')}</div>
+          <div class="arty-result" id="artyResult"></div>
+        </div>
+        <p class="muted small" style="margin:12px 0 0">Sight = in-game elevation in mils. Assumes gun and target are at the same height — treat the first round as a ranging shot,
+          then use Add / Drop to correct. Measure the distance with the in-game map. Want to plan on the map? Try the
+          <a href="https://wardogstracker.gg/maps/mortar-calculator" target="_blank" rel="noopener">WARDOGS Tracker</a> or
+          <a href="https://wardogs.tools/map/bakurani?mode=artillery" target="_blank" rel="noopener">wardogs.tools</a> map calculators.<br>
+          Firing tables originally from <a href="https://github.com/apollyon-sys/wardogs-calculator" target="_blank" rel="noopener">wardogs-calculator</a> by Apollyon
+          (<a href="/data/LICENSE-wardogs-calculator.txt" target="_blank" rel="noopener">MIT licence</a>).</p>
+      </div>
+
       <div class="panel">
         <div class="panel-title">${icon('unlock')} Progression <span class="sub">unlocks by class</span></div>
         <div class="tabs">${TOOL_ROLES.map(([k, l]) => `<a href="#/tools?role=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div>
         <div class="row" style="align-items:flex-start;gap:16px">
-          ${art ? `<img src="/img/brand/roles/${art}.webp" alt="" style="width:96px;border-radius:6px;border:1px solid ${c}">` : `<img src="/img/brand/wolf-emblem.webp" alt="" style="width:96px;border-radius:6px">`}
+          ${art ? `<img src="/img/brand/roles/${art}.webp" alt="" style="width:96px;border-radius:6px;border:1px solid ${c}">` : '<img src="/img/brand/wolf-emblem.webp" alt="" style="width:96px;border-radius:6px">'}
           <div class="grow" style="min-width:240px">
             <div style="font:700 20px var(--head);text-transform:uppercase">${esc(TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab)}${tab === 'career' ? ' (Wardog level)' : ''}</div>
+            <div class="muted">${items.length} unlocks${totalCost ? ` · ${fmtMoney(totalCost)} to unlock everything` : ''}</div>
             <div class="muted">${level === null
               ? (state.realSteam && !state.trackerLinked ? 'Link WARDOGS Tracker on HQ to see your progress here.' : 'Your level for this class is not known yet.')
-              : `You are level <b style="color:var(--text)">${level}</b>.`}</div>
+              : `You are level <b style="color:var(--text)">${level}</b> — ${items.filter((u) => u.level <= level).length} of ${items.length} unlocked.`}</div>
           </div>
         </div>
         <div class="unlock-list">${items.map((u) => {
           const got = level !== null && u.level <= level;
-          return `<div class="unlock ${got ? 'got' : ''}"><b class="lv">L${u.level}</b><span class="grow">${esc(u.name)} <span class="muted small">· ${esc(u.kind || 'Unlock')}${u.cost ? ` · ${fmtMoney(u.cost)}` : ''}</span></span>
-            <span class="small">${got ? '<span style="color:var(--green)">✓ Unlocked</span>' : level === null ? '' : `${u.level - level} level${u.level - level === 1 ? '' : 's'} to go`}</span></div>`;
+          return `<div class="unlock ${got ? 'got' : ''}"><b class="lv">L${u.level}</b>
+            ${u.image ? `<img class="ui" src="${esc(u.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="ui"></span>'}
+            <span class="grow">${esc(u.name)} <span class="muted small">· ${esc(u.kind || 'Unlock')}</span></span>
+            <span class="small cost">${u.cost ? fmtMoney(u.cost) : 'Free'}</span>
+            <span class="small state">${got ? '<span style="color:var(--green)">✓ Unlocked</span>' : level === null ? '' : `${u.level - level} to go`}</span></div>`;
         }).join('') || '<p class="muted">No unlocks listed for this class yet.</p>'}</div>
-        <p class="muted small" style="margin:12px 0 0">This list is kept by WPG admins (Admin → Unlocks) and may miss some items.
-          For every unlock and its cost see <a href="https://wardogs.tools/progression" target="_blank" rel="noopener">wardogs.tools progression</a>.</p>
-      </div>
-
-      <div class="panel">
-        <div class="panel-title">${icon('target')} Artillery <span class="sub">mortar &amp; howitzer</span></div>
-        <p style="margin-top:0">Place your gun and the target on the map, and the calculator gives you the bearing and elevation (mils) for the L81 mortar and SPH-2 howitzer.
-          These open in your browser — they're run by other Wardogs fans, so they stay up to date after game patches.</p>
-        <div class="row">
-          <a class="btn primary" href="https://wardogs.tools/map/bakurani?mode=artillery" target="_blank" rel="noopener">${icon('target')} Artillery map (wardogs.tools)</a>
-          <a class="btn" href="https://wardogstracker.gg/maps/mortar-calculator" target="_blank" rel="noopener">${icon('crosshair')} Mortar calculator (WARDOGS Tracker)</a>
-        </div>
+        <p class="muted small" style="margin:12px 0 0">Unlock list originally from <a href="https://wardogstracker.gg/progression" target="_blank" rel="noopener">WARDOGS Tracker</a> (used with permission), kept up to date by WPG admins.</p>
       </div>
     </div>`;
   onLive('config', (name) => { if (name === 'unlocks') route(); });
+
+  // ----- artillery calculator -----
+  const result = main.querySelector('#artyResult');
+  const input = main.querySelector('#artyRange');
+  if (!result || !input) return;
+  let pick = guns[0];
+  const draw = () => {
+    if (!pick) { result.innerHTML = ''; return; }
+    const table = pick.table;
+    const minM = pick.min;
+    const maxM = pick.max;
+    const range = Number(input.value);
+    const mil = input.value === '' ? null : elevationFor(table, minM, maxM, range);
+    let status = ` · ${fmtNum(range)} m`;
+    if (input.value === '') status = ' · type a distance';
+    else if (mil === null) status = ` · <b style="color:var(--red)">${fmtNum(range)} m is out of range</b>`;
+    result.innerHTML = `
+      <div class="arty-big">${mil === null ? '—' : mil}<span>mil</span></div>
+      <div class="muted">${esc(pick.label)} · range ${fmtNum(minM)}–${fmtNum(maxM)} m${status}</div>`;
+  };
+  main.querySelectorAll('[data-arty]').forEach((b) => {
+    b.onclick = () => {
+      pick = guns.find((w) => w.id === b.dataset.arty);
+      main.querySelectorAll('[data-arty]').forEach((x) => x.classList.toggle('primary', x === b));
+      draw();
+    };
+  });
+  main.querySelectorAll('[data-adjust]').forEach((b) => {
+    b.onclick = () => { input.value = Math.max(0, (Number(input.value) || 0) + Number(b.dataset.adjust)); draw(); };
+  });
+  input.oninput = draw;
+  draw();
 }
 
 // ---------- Ranks ----------

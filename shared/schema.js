@@ -189,7 +189,21 @@ export const unlocks = pgTable('unlocks', {
   name: text().notNull(),
   kind: text().notNull().default(''),
   cost: integer().notNull().default(0),
+  // 'tracker' rows are replaced by the daily WARDOGS Tracker sync; 'manual' rows are kept.
+  source: text().notNull().default('manual'),
+  image: text().notNull().default(''),
 }, (t) => [index('unlocks_role_level_idx').on(t.role, t.level)]);
+
+// Artillery firing tables (Admin → Artillery). table_data: one "range_m,elevation_mil" pair per line.
+export const artillery = pgTable('artillery', {
+  id: text().primaryKey(),
+  label: text().notNull(),
+  note: text().notNull().default(''),
+  min_m: integer().notNull().default(0),
+  max_m: integer().notNull().default(0),
+  table_data: text().notNull().default(''),
+  sort_order: integer().notNull().default(0),
+});
 
 // Last counted total for each XP source per user (e.g. 'kills', 'stat:wins', 'game:1867240:minutes').
 export const xpCounters = pgTable('xp_counters', {

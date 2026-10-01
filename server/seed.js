@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 // Starter data for a new database: settings, ranks, channels, medals, stats and the WPG server.
 // The table layout itself lives in shared/schema.js.
 const DEFAULT_SETTINGS = {
@@ -47,6 +49,10 @@ const DEFAULT_RANKS = [
   ['Clan Commander', 'CDR', 0, false, '#d4af37', { stars: 5, crown: true, swords: true, wreath: true, metal: 'gold' }, 'Leader of WPG.'],
 ];
 
+const OLD_STARTER = ['Galil', 'M4', 'FAL', 'MP5', 'PP-19 50-round drum', 'Super-45', 'SV98', 'MK22', 'Large Hammer', 'M500', 'M249 SAW', 'PKM',
+  'URAL', 'Dune Buggy', 'Heavy Tank', 'Z20 Lakota', 'Level 1 Armor & Helmet', 'Field Backpack', 'Level 2 Armor & Helmet',
+  'Level 3 Armor & Helmet', 'Deagle', 'Artillery Tank', 'Arsenal Backpack'];
+
 export async function seed({ q, one }) {
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [key, value]);
@@ -62,23 +68,35 @@ export async function seed({ q, one }) {
   }
 
   // Fill in the WPG Discord invite once for databases made before it was the default.
-  // Starter unlock list (widely published in game guides). Admins keep it up to date in Admin → Unlocks.
-  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_unlocks'"))) {
-    const starter = [
-      ['assault', 10, 'Galil', 'Weapon'], ['assault', 20, 'M4', 'Weapon'], ['assault', 35, 'FAL', 'Weapon'],
-      ['medic', 15, 'MP5', 'Weapon'], ['medic', 29, 'PP-19 50-round drum', 'Attachment'], ['medic', 35, 'Super-45', 'Weapon'],
-      ['recon', 19, 'SV98', 'Weapon'], ['recon', 25, 'MK22', 'Weapon'],
-      ['support', 8, 'Large Hammer', 'Gear'], ['support', 10, 'M500', 'Weapon'], ['support', 15, 'M249 SAW', 'Weapon'], ['support', 30, 'PKM', 'Weapon'],
-      ['driver', 3, 'URAL', 'Vehicle'], ['driver', 8, 'Dune Buggy', 'Vehicle'], ['driver', 35, 'Heavy Tank', 'Vehicle'],
-      ['pilot', 10, 'Z20 Lakota', 'Vehicle'],
-      ['career', 3, 'Level 1 Armor & Helmet', 'Gear'], ['career', 12, 'Field Backpack', 'Gear'], ['career', 30, 'Level 2 Armor & Helmet', 'Gear'],
-      ['career', 60, 'Level 3 Armor & Helmet', 'Gear'], ['career', 85, 'Deagle', 'Weapon'], ['career', 90, 'Artillery Tank', 'Vehicle'],
-      ['career', 150, 'Arsenal Backpack', 'Gear'],
-    ];
-    for (const [role, level, name, kind] of starter) {
-      await q('INSERT INTO unlocks (role, level, name, kind) VALUES ($1,$2,$3,$4)', [role, level, name, kind]);
+  // One-off imports, stored in our own database from then on (admins edit them in Admin):
+  //  - unlocks: full WARDOGS progression, from WARDOGS Tracker (used with permission), pictures in public/img/unlocks
+  //  - artillery: firing tables from wardogs-calculator by Apollyon (MIT licence, server/data/LICENSE-wardogs-calculator.txt)
+  if (!(await one("SELECT value FROM settings WHERE key = '_imported_unlocks'"))) {
+    const unlocks = JSON.parse(fs.readFileSync(new URL('./data/unlocks.json', import.meta.url), 'utf8'));
+    // Replace the old short starter list (and any earlier test import); keep anything admins added themselves.
+    await q("DELETE FROM unlocks WHERE source <> 'manual' OR name = ANY($1)", [OLD_STARTER]);
+    for (const u of unlocks) {
+      await q("INSERT INTO unlocks (role, level, name, kind, cost, image, source) VALUES ($1,$2,$3,$4,$5,$6,'import')",
+        [u.role, u.level, u.name, u.kind, u.cost, u.image]);
     }
-    await q("INSERT INTO settings (key, value) VALUES ('_seeded_unlocks', 'true') ON CONFLICT DO NOTHING");
+    await q("INSERT INTO settings (key, value) VALUES ('_imported_unlocks', 'true') ON CONFLICT DO NOTHING");
+  }
+  if (!(await one("SELECT value FROM settings WHERE key = '_imported_artillery'"))) {
+    const data = JSON.parse(fs.readFileSync(new URL('./data/firing-tables.json', import.meta.url), 'utf8'));
+    const gun = (id) => data.weapons.find((w) => w.id === id);
+    const lines = (pairs) => pairs.map(([r, m]) => `${r},${m}`).join('\n');
+    const mortar = gun('mortar');
+    const sph = gun('spg');
+    const rows = [
+      ['l81', 'L81 Mortar', 'High angle only', Math.round(mortar.minRangeKm * 1000), Math.round(mortar.maxRangeKm * 1000), lines(mortar.ballistics.single), 10],
+      ['sph-low', 'SPH-2 · Low arc', 'Faster, flatter', Math.min(...sph.ballistics.low.map(([r]) => r)), Math.max(...sph.ballistics.low.map(([r]) => r)), lines(sph.ballistics.low), 20],
+      ['sph-high', 'SPH-2 · High arc', 'Over cover', Math.round(sph.minRangeKm * 1000), Math.max(...sph.ballistics.high.map(([r]) => r)), lines(sph.ballistics.high), 30],
+    ];
+    for (const r of rows) {
+      await q(`INSERT INTO artillery (id, label, note, min_m, max_m, table_data, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)
+               ON CONFLICT (id) DO NOTHING`, r);
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_imported_artillery', 'true') ON CONFLICT DO NOTHING");
   }
 
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {

@@ -99,8 +99,16 @@ api.get('/xp-rules', member, async (_req, res) => {
   });
 });
 
+api.get('/artillery', member, async (_req, res) => {
+  const rows = await q('SELECT * FROM artillery ORDER BY sort_order, id');
+  res.json(rows.map((r) => ({
+    id: r.id, label: r.label, note: r.note, min: r.min_m, max: r.max_m,
+    table: r.table_data.split('\n').map((l) => l.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite)),
+  })));
+});
+
 api.get('/unlocks', member, async (_req, res) => {
-  res.json(await q('SELECT id, role, level, name, kind, cost FROM unlocks ORDER BY role, level, id'));
+  res.json(await q('SELECT id, role, level, name, kind, cost, image, source FROM unlocks ORDER BY role, level, id'));
 });
 
 api.get('/awards', member, async (_req, res) => {
