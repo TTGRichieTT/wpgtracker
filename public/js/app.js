@@ -754,7 +754,8 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('medal')} Medals & ribbons</div>
           ${p.awards.length ? `<div class="list">${p.awards.map((a) => `
-            <div class="item">${ribbon(a.colors)}<div class="grow"><b>${esc(a.name)}</b><div class="muted small">${esc(a.reason || a.description)} · ${fmtDate(a.given_at)}</div></div></div>`).join('')}</div>` : '<p class="muted">No medals yet.</p>'}
+            <div class="item">${ribbon(a.colors)}<div class="grow"><b>${esc(a.name)}</b><div class="muted small">${esc(a.reason || a.description)} · ${fmtDate(a.given_at)}</div></div></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
+          ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>
     </div>`;
@@ -769,6 +770,31 @@ async function viewProfile(main, [id]) {
     };
   });
   onLive('me', () => { if (mine) route(); });
+}
+
+// Steam achievements shown as medals: earned in colour, the rest greyed out. Rare ones (<10% of players) get gold.
+function steamMedalsHtml(medals) {
+  if (!medals.length) return '';
+  const byGame = new Map();
+  for (const m of medals) {
+    if (!byGame.has(m.game)) byGame.set(m.game, []);
+    byGame.get(m.game).push(m);
+  }
+  return [...byGame].map(([game, list]) => {
+    const earned = list.filter((m) => m.earned).length;
+    return `<h4 class="row" style="margin:16px 0 8px">${icon('medal', 'width="18" height="18" style="color:var(--gold)"')} ${esc(game)} achievement medals
+        <span class="muted small">${earned} / ${list.length}</span></h4>
+      <div class="xpbar" style="margin-bottom:10px"><div style="width:${((earned / list.length) * 100).toFixed(1)}%"></div></div>
+      <div class="steam-medals">${list.map((m) => {
+        const rare = m.percent !== null && m.percent < 10;
+        const tip = `${m.name} — ${m.description}${m.percent !== null ? ` (${m.percent}% of players)` : ''}${m.earned && m.unlocked_at ? ` · earned ${fmtDate(m.unlocked_at)}` : m.earned ? '' : ' · not earned yet'}`;
+        return `<div class="steam-medal${m.earned ? ' earned' : ''}${rare ? ' rare' : ''}" title="${esc(tip)}">
+          <img src="${esc(m.earned ? m.icon : (m.icon_gray || m.icon))}" alt="" loading="lazy" referrerpolicy="no-referrer">
+          <div class="nm">${esc(m.name)}</div>
+          <div class="sub">${m.earned ? (m.unlocked_at ? fmtDate(m.unlocked_at) : 'Earned') : 'Locked'}${m.percent !== null ? ` · ${m.percent}%` : ''}</div>
+        </div>`;
+      }).join('')}</div>`;
+  }).join('');
 }
 
 export function ribbon(colors) {

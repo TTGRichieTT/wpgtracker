@@ -158,6 +158,18 @@ api.get('/users/:id', member, async (req, res) => {
     `SELECT COUNT(*)::int + 1 AS pos FROM users WHERE status='active' AND xp > $1`,
     [u.xp],
   );
+  // Every achievement of each tracked game, marked earned or not (only games this member has synced).
+  const medals = await q(
+    `SELECT sa.app_id, g.name AS game, sa.api_name, sa.name, sa.description, sa.icon, sa.icon_gray,
+            sa.percent::float AS percent, ua.unlocked_at, (ua.user_id IS NOT NULL) AS earned
+       FROM steam_achievements sa
+       JOIN games g ON g.app_id = sa.app_id AND g.enabled = true
+       LEFT JOIN user_achievements ua ON ua.app_id = sa.app_id AND ua.api_name = sa.api_name AND ua.user_id = $1
+      WHERE EXISTS (SELECT 1 FROM user_games ug WHERE ug.user_id = $1 AND ug.app_id = sa.app_id)
+         OR ua.user_id IS NOT NULL
+      ORDER BY g.featured DESC, g.name, (ua.user_id IS NULL), sa.percent ASC NULLS LAST, sa.sort_order`,
+    [u.id],
+  );
   let friend = 'none';
   if (friendship) {
     if (friendship.status === 'accepted') friend = 'friends';
@@ -167,6 +179,7 @@ api.get('/users/:id', member, async (req, res) => {
     user: await userOut(u),
     games,
     awards,
+    medals,
     wardogs: wardogs || {},
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
     wpg_position: serverRank.pos,

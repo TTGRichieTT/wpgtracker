@@ -180,6 +180,25 @@ export const userStats = pgTable('user_stats', {
   updated_at: now(),
 }, (t) => [primaryKey({ name: 'user_stats_pkey', columns: [t.user_id, t.key] })]);
 
+// Steam achievements for tracked games (shown as medals), and who has unlocked them.
+export const steamAchievements = pgTable('steam_achievements', {
+  app_id: integer().notNull(),
+  api_name: text().notNull(),
+  name: text().notNull().default(''),
+  description: text().notNull().default(''),
+  icon: text().notNull().default(''),
+  icon_gray: text().notNull().default(''),
+  percent: numeric(),
+  sort_order: integer().notNull().default(0),
+}, (t) => [primaryKey({ name: 'steam_achievements_pkey', columns: [t.app_id, t.api_name] })]);
+
+export const userAchievements = pgTable('user_achievements', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  app_id: integer().notNull(),
+  api_name: text().notNull(),
+  unlocked_at: timestamp({ withTimezone: true }),
+}, (t) => [primaryKey({ name: 'user_achievements_pkey', columns: [t.user_id, t.app_id, t.api_name] })]);
+
 // Unlocks per Wardogs class level (admin-maintained in Admin → Unlocks).
 // role: recon | assault | medic | support | driver | pilot | career (Wardog level)
 export const unlocks = pgTable('unlocks', {

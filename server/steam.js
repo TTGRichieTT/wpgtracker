@@ -1,6 +1,7 @@
 import { q, one, flag, setting } from './db.js';
 import { bus } from './bus.js';
 import { syncWardogs } from './wardogs.js';
+import { syncAchievements } from './achievements.js';
 
 const OPENID = 'https://steamcommunity.com/openid/login';
 const API = 'https://api.steampowered.com';
@@ -93,6 +94,20 @@ export async function syncUser(userId) {
     result.steam = { ok: false, reason: 'Steam API key not set up yet' };
   }
   result.wardogs = await syncWardogs(user).catch((e) => ({ ok: false, reason: e.message }));
+  // Steam achievements as medals (works with or without the API key).
+  result.medals = [];
+  for (const game of await q('SELECT * FROM games WHERE enabled = true')) {
+    const r = await syncAchievements(user, game).catch((e) => ({ ok: false, reason: e.message }));
+    result.medals.push({ game: game.name, ...r });
+    if (r.ok && !process.env.STEAM_API_KEY) {
+      // No key: still record playtime and achievement count from the public profile.
+      await q(
+        `INSERT INTO user_games (user_id, app_id, playtime_forever, ach_unlocked, ach_total, updated_at) VALUES ($1,$2,$3,$4,$5,now())
+         ON CONFLICT (user_id, app_id) DO UPDATE SET playtime_forever=GREATEST(user_games.playtime_forever, EXCLUDED.playtime_forever),
+           ach_unlocked=EXCLUDED.ach_unlocked, ach_total=EXCLUDED.ach_total, updated_at=now()`,
+        [userId, game.app_id, Math.round((r.hours || 0) * 60), r.unlocked, r.total]);
+    }
+  }
   await q('UPDATE users SET last_sync=now() WHERE id=$1', [userId]);
   await recalcXp(userId);
   return result;

@@ -557,3 +557,14 @@ body::after { display: none; }
 }
 .tabs a { background: rgba(5,12,22,.78); }
 .tabs a.active { background: rgba(10,40,64,.9); }
+
+/* Steam achievement medals */
+.steam-medals { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.steam-medal { text-align: center; padding: 8px 4px; border-radius: 6px; background: #07121f; border: 1px solid rgba(58,120,180,.2); }
+.steam-medal img { width: 52px; height: 52px; border-radius: 50%; filter: grayscale(1) brightness(.5); box-shadow: 0 0 0 2px #2a3646; }
+.steam-medal.earned img { filter: none; box-shadow: 0 0 0 2px var(--accent), 0 0 12px rgba(41,182,246,.5); }
+.steam-medal.earned.rare img { box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(227,179,65,.7); }
+.steam-medal .nm { margin-top: 6px; font: 700 12px var(--head); text-transform: uppercase; line-height: 1.15; color: var(--muted); }
+.steam-medal.earned .nm { color: var(--text); }
+.steam-medal .sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.steam-medal.earned.rare .sub { color: var(--gold); }
