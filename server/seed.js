@@ -147,6 +147,51 @@ export async function seed({ q, one }) {
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_server_board', 'true') ON CONFLICT DO NOTHING");
   }
 
+  // Server leaderboard: 19 players with Steam IDs (list from 1 Oct 2026). Merged with any existing row by
+  // keeping the higher number, so nothing is counted twice. Members link up by Steam ID automatically.
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_server_board_v2'"))) {
+    const wpg = await one("SELECT id FROM game_servers WHERE join_code = 'bf019b3b-7670-4879-9220-b541edc58e1b'");
+    if (wpg) {
+      // [name, steam id, minutes played, visits, kills, deaths, last seen]
+      const list = [
+        ['[WPG] Richie_TT', '76561198809535860', 312, 1, 0, 0, '2026-10-01T07:13:44Z'],
+        ['[WPG] looper', '76561199046396052', 75, 5, 0, 0, '2026-10-01T03:00:42Z'],
+        ['[WPG] Joshy', '76561198076671525', 64, 2, 0, 0, '2026-10-01T03:00:30Z'],
+        ['Tempyst Mage', '76561198009221727', 55, 1, 0, 0, '2026-10-01T03:00:22Z'],
+        ['Baron', '76561198062063394', 48, 2, 0, 0, '2026-10-01T03:06:24Z'],
+        ['[WPG] Ninjas Dynasty', '76561198099451925', 8, 1, 0, 0, '2026-10-01T17:52:53Z'],
+        ['Colonel_Cracker', '76561199108691306', 4, 1, 0, 0, '2026-10-01T02:45:46Z'],
+        ['tacoslocos0_o', '76561198092757762', 2, 1, 0, 0, '2026-10-01T02:38:16Z'],
+        ['swagbluntz', '76561199073399382', 1, 1, 0, 0, '2026-10-01T02:43:32Z'],
+        ['rileyegore', '76561199744829128', 1, 1, 0, 0, '2026-10-01T02:46:30Z'],
+        ['I3lankSPACE', '76561199059898810', 1, 1, 0, 0, '2026-10-01T02:46:30Z'],
+        ['drewbies02', '76561199712686870', 1, 1, 0, 0, '2026-10-01T02:57:58Z'],
+        ['McSwaqqy', '76561198909765832', 1, 2, 0, 0, '2026-10-01T02:47:02Z'],
+        ['daithi2', '76561197979363017', 1, 2, 0, 0, '2026-10-01T06:10:24Z'],
+        ['[BLU] lemonroadanthony', '76561198818415348', 1, 1, 0, 0, '2026-09-30T22:07:28Z'],
+        ['Mellowerx', '76561198313135353', 0, 1, 0, 0, '2026-10-01T02:58:08Z'],
+        ['Simple_surmise', '76561198084029677', 0, 1, 0, 0, '2026-10-01T06:05:42Z'],
+        ['Gator', '76561198113368264', 0, 1, 0, 0, '2026-10-01T00:56:15Z'],
+        ['[843] Vodka Champion', '76561199876427913', 0, 0, 0, 0, null],
+      ];
+      for (const [name, sid, mins, visits, kills, deaths, seen] of list) {
+        // Fold in a row imported earlier by name (from the screenshot), keeping the higher numbers.
+        const byName = await one('SELECT * FROM server_players WHERE server_id=$1 AND steam_id=$2', [wpg.id, `name:${name}`]);
+        await q(
+          `INSERT INTO server_players (server_id, steam_id, name, kills, deaths, matches, playtime_s, last_seen)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (server_id, steam_id) DO UPDATE SET
+             kills=GREATEST(server_players.kills, EXCLUDED.kills), deaths=GREATEST(server_players.deaths, EXCLUDED.deaths),
+             matches=GREATEST(server_players.matches, EXCLUDED.matches), playtime_s=GREATEST(server_players.playtime_s, EXCLUDED.playtime_s),
+             last_seen=GREATEST(server_players.last_seen, EXCLUDED.last_seen)`,
+          [wpg.id, sid, name, kills, deaths, Math.max(visits, byName?.matches || 0), Math.max(mins * 60, byName?.playtime_s || 0), seen],
+        );
+        if (byName) await q('DELETE FROM server_players WHERE server_id=$1 AND steam_id=$2', [wpg.id, `name:${name}`]);
+      }
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_server_board_v2', 'true') ON CONFLICT DO NOTHING");
+  }
+
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
     await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");
