@@ -4,6 +4,7 @@ import { bus } from './bus.js';
 import { usersWithRanks, visibleChannels } from './routes.js';
 import { publicUser } from './util.js';
 import { mentionedUserIds } from './mentions.js';
+import { playingNow } from './playing.js';
 
 export function startRealtime(httpServer, sessionMiddleware) {
   const io = new Server(httpServer, { cors: { origin: false } });
@@ -29,6 +30,7 @@ export function startRealtime(httpServer, sessionMiddleware) {
     await joinChannels(socket, user);
     online.set(user.id, (online.get(user.id) || 0) + 1);
     broadcastPresence();
+    socket.emit('playing', playingNow());
     q('UPDATE users SET last_seen=now() WHERE id=$1', [user.id]).catch(() => {});
 
     socket.on('typing', (channelId) => {
@@ -61,6 +63,7 @@ export function startRealtime(httpServer, sessionMiddleware) {
   bus.on('dms:read', (userId) => io.to(`u:${userId}`).emit('counts'));
   bus.on('notify', (userId, n) => io.to(`u:${userId}`).emit('notify', n));
   bus.on('server:board', (serverId) => io.emit('server:board', serverId));
+  bus.on('playing', (map) => io.emit('playing', map));
   bus.on('user:changed', (userId) => io.to(`u:${userId}`).emit('me:changed'));
   bus.on('friends:changed', (ids) => ids.forEach((id) => io.to(`u:${id}`).emit('friends:changed')));
   bus.on('user:kick', (userId) => io.in(`u:${userId}`).disconnectSockets(true));

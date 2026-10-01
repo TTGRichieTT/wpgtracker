@@ -13,6 +13,7 @@ import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
 import { servers } from './servers.js';
 import { startServerTracker } from './servertracker.js';
+import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
 import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS, hashToken } from './util.js';
@@ -219,6 +220,7 @@ const server = http.createServer(app);
 startRealtime(server, sessionMiddleware);
 startSyncLoop();
 startServerTracker();
+startPlayingWatch();
 setInterval(() => {
   store.prune().catch(() => {});
   q("DELETE FROM remember_tokens WHERE last_used < now() - interval '120 days'").catch(() => {});

@@ -42,7 +42,7 @@ export async function verifySteamLogin(query, baseUrl) {
   return /is_valid\s*:\s*true/.test(text) ? match[1] : null;
 }
 
-async function steamGet(path, params) {
+export async function steamGet(path, params) {
   const key = process.env.STEAM_API_KEY;
   if (!key) throw new Error('STEAM_API_KEY is not set');
   const url = `${API}${path}?${new URLSearchParams({ key, format: 'json', ...params })}`;

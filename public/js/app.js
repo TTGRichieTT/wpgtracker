@@ -6,6 +6,7 @@ export const state = {
   me: null,
   settings: {},
   online: new Set(),
+  playing: {}, // userId -> { game, appId } from Steam
   unread: 0,
   friendReq: 0,
   socket: null,
@@ -110,9 +111,15 @@ export function badgeFor(u, size) {
   return isPmc(u) ? insigniaSVG({}, { size, abbr: 'PMC', color: '#f5a524', title: 'PMC (guest)' }) : rankBadge(u?.rank, size);
 }
 const rankName = (u) => (isPmc(u) ? 'PMC · Guest' : u?.rank ? u.rank.name : 'No rank');
+// "Playing …" tag from Steam; Wardogs is highlighted. Kept live by the 'playing' socket event.
+const isWardogs = (p) => (p && /wardogs/i.test(p.game) ? 1 : 0);
+export function playingTag(u) {
+  const p = state.playing[u?.id];
+  return `<span class="playing-tag${isWardogs(p) ? ' wd' : ''}" data-playing="${u?.id}"${p ? '' : ' hidden'}>🎮 ${esc(p?.game || '')}</span>`;
+}
 export function userLine(u, meta = '') {
   return `<div class="user-line">${avatar(u)}${badgeFor(u, 34)}
-    <div class="grow"><div class="name">${esc(u.name)} ${rolePill(u)}</div>
+    <div class="grow"><div class="name">${esc(u.name)} ${rolePill(u)} ${playingTag(u)}</div>
     <div class="meta">${esc(rankName(u))}${u.callsign ? ` · “${esc(u.callsign)}”` : ''}${meta ? ` · ${meta}` : ''}</div></div></div>`;
 }
 
@@ -352,6 +359,16 @@ function connectSocket() {
     document.querySelectorAll('[data-online]').forEach((d) => d.classList.toggle('on', state.online.has(Number(d.dataset.online))));
     emitLive('presence', ids);
   });
+  socket.on('playing', (map) => {
+    state.playing = map || {};
+    document.querySelectorAll('[data-playing]').forEach((t) => {
+      const p = state.playing[t.dataset.playing];
+      t.hidden = !p;
+      t.classList.toggle('wd', !!isWardogs(p));
+      t.textContent = p ? `🎮 ${p.game}` : '';
+    });
+    emitLive('playing', map);
+  });
   socket.on('chat:new', (d) => {
     if (d.user) state.users.set(d.user.id, d.user);
     (d.mentioned || []).forEach((u) => state.users.set(u.id, u));
@@ -446,10 +463,18 @@ async function viewHome(main) {
   } else {
     progress = '<p class="muted small">Top of the XP ladder. Higher ranks are appointed by command.</p>';
   }
-  const onlineOthers = () => members.filter((u) => u.id !== me.id && state.online.has(u.id));
+  // In game (from Steam, Wardogs first) and online in the app.
+  const inGame = () => members.filter((u) => state.playing[u.id])
+    .sort((a, b) => isWardogs(state.playing[b.id]) - isWardogs(state.playing[a.id]) || a.name.localeCompare(b.name));
+  const onlineOthers = () => members.filter((u) => u.id !== me.id && state.online.has(u.id) && !state.playing[u.id]);
+  const dutyCount = () => inGame().filter((u) => u.id !== me.id).length + onlineOthers().length;
   const onlineHtml = () => {
-    const list = onlineOthers();
-    return list.length ? list.map((u) => `<a class="item" href="#/u/${u.id}">${userLine(u)}</a>`).join('') : '<p class="muted">Nobody else is online right now.</p>';
+    const playing = inGame();
+    const online = onlineOthers();
+    if (!playing.length && !online.length) return '<p class="muted">Nobody else is online right now.</p>';
+    const group = (title, list) => (list.length ? `<div class="muted small" style="font:700 12px var(--head);text-transform:uppercase;letter-spacing:1px;margin:4px 0">${title}</div>
+      ${list.map((u) => `<a class="item" href="#/u/${u.id}">${userLine(u)}</a>`).join('')}` : '');
+    return group('🎮 In game', playing) + group('In the app', online);
   };
   main.innerHTML = `
     <div class="stack">
@@ -480,7 +505,7 @@ async function viewHome(main) {
             </div>`).join('') : '<p class="muted">No announcements yet.</p>'}
         </div>
         <div class="panel">
-          <div class="panel-title">${icon('users')} On duty now <span class="sub" id="onlineCount">${onlineOthers().length}</span></div>
+          <div class="panel-title">${icon('users')} On duty now <span class="sub" id="onlineCount">${dutyCount()}</span></div>
           <div class="list" id="onlineList">${onlineHtml()}</div>
         </div>
       </div>
@@ -488,12 +513,14 @@ async function viewHome(main) {
     </div>`;
   document.getElementById('syncBtn').onclick = syncMine;
   startVoice(main.querySelector('#voicePanel [data-voice]'), { alive: () => document.body.contains(main.querySelector('#voicePanel')) });
-  onLive('presence', () => {
+  const redrawDuty = () => {
     const el = document.getElementById('onlineList');
     if (!el) return;
     el.innerHTML = onlineHtml();
-    document.getElementById('onlineCount').textContent = onlineOthers().length;
-  });
+    document.getElementById('onlineCount').textContent = dutyCount();
+  };
+  onLive('presence', redrawDuty);
+  onLive('playing', redrawDuty);
 }
 
 async function syncMine(e) {
@@ -700,7 +727,7 @@ async function viewProfile(main, [id]) {
           <div class="who">
             <div class="pname">${esc(u.name)} ${flag(u.country)}</div>
             ${u.callsign ? `<div class="accent">“${esc(u.callsign)}”</div>` : ''}
-            <div class="row" style="margin-top:6px">${rolePill(u)} <span class="muted small">${state.online.has(u.id) ? '<span style="color:var(--green)">● Online</span>' : `Last seen ${timeAgo(u.last_seen)}`} · Joined ${fmtDate(u.joined_at)}</span></div>
+            <div class="row" style="margin-top:6px">${rolePill(u)} ${playingTag(u)} <span class="muted small">${state.online.has(u.id) ? '<span style="color:var(--green)">● Online</span>' : `Last seen ${timeAgo(u.last_seen)}`} · Joined ${fmtDate(u.joined_at)}</span></div>
             ${customFields ? `<div class="row" style="margin-top:8px">${customFields}</div>` : ''}
           </div>
           <div style="text-align:center">${badgeFor(u, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${esc(isPmc(u) ? 'PMC' : u.rank ? u.rank.name : 'Unranked')}</div></div>
