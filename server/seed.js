@@ -53,6 +53,16 @@ const OLD_STARTER = ['Galil', 'M4', 'FAL', 'MP5', 'PP-19 50-round drum', 'Super-
   'URAL', 'Dune Buggy', 'Heavy Tank', 'Z20 Lakota', 'Level 1 Armor & Helmet', 'Field Backpack', 'Level 2 Armor & Helmet',
   'Level 3 Armor & Helmet', 'Deagle', 'Artillery Tank', 'Arsenal Backpack'];
 
+// Reads a bundled data file. If it's missing the import is skipped (and retried next start) instead of crashing.
+function readData(name) {
+  try {
+    return JSON.parse(fs.readFileSync(new URL(`./data/${name}`, import.meta.url), 'utf8'));
+  } catch (e) {
+    console.warn(`[seed] Skipping import of server/data/${name}: ${e.message}`);
+    return null;
+  }
+}
+
 export async function seed({ q, one }) {
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING', [key, value]);
@@ -72,7 +82,8 @@ export async function seed({ q, one }) {
   //  - unlocks: full WARDOGS progression, from WARDOGS Tracker (used with permission), pictures in public/img/unlocks
   //  - artillery: firing tables from wardogs-calculator by Apollyon (MIT licence, server/data/LICENSE-wardogs-calculator.txt)
   if (!(await one("SELECT value FROM settings WHERE key = '_imported_unlocks'"))) {
-    const unlocks = JSON.parse(fs.readFileSync(new URL('./data/unlocks.json', import.meta.url), 'utf8'));
+    const unlocks = readData('unlocks.json');
+    if (unlocks) {
     // Replace the old short starter list (and any earlier test import); keep anything admins added themselves.
     await q("DELETE FROM unlocks WHERE source <> 'manual' OR name = ANY($1)", [OLD_STARTER]);
     for (const u of unlocks) {
@@ -80,9 +91,11 @@ export async function seed({ q, one }) {
         [u.role, u.level, u.name, u.kind, u.cost, u.image]);
     }
     await q("INSERT INTO settings (key, value) VALUES ('_imported_unlocks', 'true') ON CONFLICT DO NOTHING");
+    }
   }
   if (!(await one("SELECT value FROM settings WHERE key = '_imported_artillery'"))) {
-    const data = JSON.parse(fs.readFileSync(new URL('./data/firing-tables.json', import.meta.url), 'utf8'));
+    const data = readData('firing-tables.json');
+    if (data) {
     const gun = (id) => data.weapons.find((w) => w.id === id);
     const lines = (pairs) => pairs.map(([r, m]) => `${r},${m}`).join('\n');
     const mortar = gun('mortar');
@@ -97,6 +110,7 @@ export async function seed({ q, one }) {
                ON CONFLICT (id) DO NOTHING`, r);
     }
     await q("INSERT INTO settings (key, value) VALUES ('_imported_artillery', 'true') ON CONFLICT DO NOTHING");
+    }
   }
 
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
