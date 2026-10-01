@@ -553,8 +553,12 @@ function trackerCardHtml() {
       <img src="/img/brand/wolf-emblem.webp" alt="" style="width:74px;border-radius:6px">
       <form class="grow" style="min-width:220px" data-tracker-form>
         <div class="panel-title" style="margin-bottom:8px">${icon('target')} Link your <span class="sub">Wardogs stats</span></div>
-        <p style="margin:0 0 6px">Type your <b>in-game name</b> with its 4 numbers, like <b>Richie_TT#6201</b> (open your profile in game to see it).
-          Your level, XP, cash and class levels then show here and <b>update by themselves</b>.</p>
+        <p style="margin:0 0 10px">One time only, about a minute. After this your level, XP, cash and class levels show here and <b>update by themselves</b>.</p>
+        <p style="margin:0 0 6px"><b>1.</b> Link your Wardogs account on wardogs.tools (sign in there and link it).</p>
+        <div class="row" style="margin:0 0 12px">
+          <a class="btn" href="https://wardogs.tools/account" target="_blank" rel="noopener">${icon('target')} Link on wardogs.tools</a>
+        </div>
+        <p style="margin:0 0 6px"><b>2.</b> Type your <b>in-game name</b> with its 4 numbers, like <b>Richie_TT#6201</b> (open your profile in game to see it).</p>
         <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
         <div class="row">
           <input type="text" name="wardogs_name" maxlength="60" placeholder="Name#1234" class="grow" style="min-width:160px">
@@ -582,7 +586,7 @@ document.addEventListener('submit', async (e) => {
       route();
       return;
     }
-    if (status) status.textContent = `${r.reason || 'Not found'}. Check the spelling and the 4 numbers, then try again.`;
+    if (status) status.textContent = `${r.reason || 'Not found'}. Check the spelling and the 4 numbers. If you only just linked on wardogs.tools, give it a few minutes to sync, then try again.`;
   } catch (x) {
     if (status) status.textContent = x.status === 429 ? 'Wait a few seconds, then try again.' : x.message;
   } finally {
