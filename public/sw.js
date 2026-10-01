@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/auth') || url.pathname.startsWith('/socket.io')) return;
+  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/auth') || url.pathname.startsWith('/socket.io') || url.pathname.startsWith('/maps/')) return;
   // Network first so updates show straight away; fall back to cache when offline.
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' })

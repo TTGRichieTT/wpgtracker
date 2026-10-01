@@ -239,6 +239,7 @@ const NAV = [
   { href: '#/servers', key: 'servers', label: 'Servers', icon: 'server' },
   { href: '#/members', key: 'members', label: 'Members', icon: 'users' },
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
+  { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
   { href: '#/tools', key: 'tools', label: 'Tools', icon: 'crosshair' },
   { href: '#/ranks', key: 'ranks', label: 'Ranks', icon: 'chevrons' },
   { sep: true },
@@ -380,6 +381,7 @@ async function route() {
     servers: viewServers,
     leaderboard: viewLeaderboard,
     tools: viewTools,
+    map: async (m, r, alive) => (await import('./artymap.js')).viewArtyMap(m, r, alive),
     ranks: viewRanks,
     u: viewProfile,
     profile: viewEditProfile,
@@ -1443,7 +1445,7 @@ const TOOL_ROLES = [['career', 'Career'], ['recon', 'Recon'], ['assault', 'Assau
 
 // Artillery firing tables live in our database (Admin → Artillery); originally from wardogs-calculator by Apollyon (MIT licence).
 // Straight-line interpolation in a [range m, elevation mil] table. Returns null when out of range.
-function elevationFor(table, minM, maxM, range) {
+export function elevationFor(table, minM, maxM, range) {
   if (!(range >= minM && range <= maxM)) return null;
   for (let i = 0; i < table.length - 1; i++) {
     const [r1, m1] = table[i];
@@ -1478,7 +1480,8 @@ async function viewTools(main) {
   main.innerHTML = `<h1>Tools</h1>
     <div class="stack">
       <div class="panel" id="arty">
-        <div class="panel-title">${icon('target')} Artillery <span class="sub">firing calculator</span></div>
+        <div class="row between" style="margin-bottom:14px"><div class="panel-title" style="margin:0">${icon('target')} Artillery <span class="sub">firing calculator</span></div>
+          <a class="btn primary" href="#/map">${icon('target')} Open the artillery map</a></div>
         <div class="arty-weapons">${guns.map((w, i) => `<button type="button" class="btn${i === 0 ? ' primary' : ''}" data-arty="${esc(w.id)}">${esc(w.label)}${w.note ? `<span class="muted small"> · ${esc(w.note)}</span>` : ''}</button>`).join('') || '<p class="muted">No guns set up yet (Admin → Artillery).</p>'}</div>
         <div class="arty-body">
           <label class="field" style="max-width:260px"><span>Distance to target (metres)</span>

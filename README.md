@@ -170,3 +170,12 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   calculator on the Tools page. Originally from [wardogs-calculator](https://github.com/apollyon-sys/wardogs-calculator)
   by Apollyon, MIT licence (see `server/data/LICENSE-wardogs-calculator.txt`). Edit a table here if a game update changes a gun.
 - Nothing on the Tools page depends on other websites after the first start.
+
+### Artillery map
+
+- Menu → **Arty map**: Bakurani, Ozeti and Zestafona. Tap **Place gun** and tap your firing position (or type the
+  in-game X, Y), then tap targets. Each target shows **distance**, **bearing** (degrees and mils) and **elevation** for the
+  chosen gun, with Add / Drop / Left / Right 10 m corrections. Range rings show the gun's minimum and maximum range.
+- Positions use the in-game coordinates (1 unit = 100 m). Saved per map on each device.
+- Map pictures were imported once from WARDOGS Tracker (with permission) into `public/maps/`; spawn/tower positions
+  and map coordinates from wardogs-calculator (MIT). Map engine: Leaflet (BSD licence, `public/vendor/leaflet/`).
