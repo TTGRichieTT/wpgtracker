@@ -456,3 +456,27 @@ a.mention:hover { text-decoration: none; filter: brightness(1.2); }
 .xp-event { border-color: rgba(245,197,66,.6); box-shadow: 0 0 26px rgba(245,197,66,.2); text-align: center; }
 .xp-event .script::after { background: linear-gradient(90deg, transparent, #f5c542 30%, #f5c542); box-shadow: 0 0 10px #f5c542; }
 @media (max-width: 500px) { .xp-rules { grid-template-columns: 1fr; } .xp-rule b { white-space: normal; text-align: right; } }
+
+/* Clan background artwork (US + UK soldiers) behind every page */
+body::before {
+  background:
+    linear-gradient(180deg, rgba(3,7,13,.35) 0%, rgba(3,7,13,.55) 45%, rgba(3,7,13,.85) 100%),
+    url('/img/brand/bg.jpg') center top / cover no-repeat,
+    #03070d;
+}
+body::after { display: none; }
+@media (max-width: 860px) {
+  /* Phones: show the flags + soldiers at the top rather than the dark middle */
+  body::before {
+    background:
+      linear-gradient(180deg, rgba(3,7,13,.25) 0%, rgba(3,7,13,.6) 50%, rgba(3,7,13,.88) 100%),
+      url('/img/brand/bg.jpg') center top / 100% auto no-repeat,
+      #03070d;
+  }
+}
+/* Let the background artwork show through panels (blurred so text stays readable) */
+.panel { background: linear-gradient(180deg, rgba(12,28,48,.72), rgba(5,13,24,.78)); backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); }
+.sidebar { background: linear-gradient(180deg, rgba(8,22,39,.82), rgba(3,7,13,.88)); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.hero .hero-art { opacity: .92; }
+.xp-rule b { white-space: normal; text-align: right; max-width: 55%; }
+.xp-rule .grow { min-width: 90px; }

@@ -1,6 +1,6 @@
 // Caches the app shell so it opens instantly; live data always comes from the network.
-const CACHE = 'wpg-shell-v2';
-const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/admin.js', '/js/insignia.js', '/js/icons.js', '/img/logo.svg'];
+const CACHE = 'wpg-shell-v3';
+const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/admin.js', '/js/insignia.js', '/js/icons.js', '/img/logo.svg', '/img/brand/bg.jpg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
