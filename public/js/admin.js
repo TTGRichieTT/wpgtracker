@@ -96,7 +96,7 @@ const RESOURCES = {
   artillery: {
     one: 'gun',
     title: 'Artillery firing tables',
-    help: 'Used by the Arty map. Each line of the firing table is "distance in metres,elevation in mils". Tables originally from wardogs-calculator by Apollyon (MIT licence). If a game update changes a gun, edit its table here.',
+    help: 'Used by the Arty map. Each line of the firing table is "distance in metres,elevation in mils". If a game update changes a gun, edit its table here.',
     key: 'id',
     fields: [
       { k: 'id', label: 'Short ID (no spaces)', createOnly: true },

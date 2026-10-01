@@ -106,9 +106,7 @@ export async function viewArtyMap(main, _rest, alive) {
         </div>
         <div id="artyResults"></div>
         <p class="muted small" style="margin:10px 0 0">Bearing = compass direction from your gun (0° / 0 mil = north). Elevation assumes gun and target are at the same height —
-          fire a ranging shot, then use Add / Drop / Left / Right. Map from <a href="https://wardogstracker.gg/maps" target="_blank" rel="noopener">WARDOGS Tracker</a> (used with permission) ·
-          firing tables from <a href="https://github.com/apollyon-sys/wardogs-calculator" target="_blank" rel="noopener">wardogs-calculator</a> (MIT) ·
-          map engine <a href="/vendor/leaflet/LICENSE" target="_blank" rel="noopener">Leaflet</a>.</p>
+          fire a ranging shot, then use Add / Drop / Left / Right.</p>
       </div>
     </div>`;
 
