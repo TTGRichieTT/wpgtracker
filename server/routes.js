@@ -147,7 +147,7 @@ api.get('/users/:id', member, async (req, res) => {
          FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY ua.given_at`,
       [u.id],
     ),
-    one('SELECT * FROM wardogs_stats WHERE user_id=$1', [u.id]),
+    one(`SELECT ws.*, CASE WHEN ws.official IS NULL THEN NULL ELSE ${ACCOUNT_WORTH_SQL} END AS account_worth FROM wardogs_stats ws WHERE ws.user_id=$1`, [u.id]),
     q('SELECT key, value FROM user_stats WHERE user_id=$1', [u.id]),
     one(
       `SELECT * FROM friends WHERE (requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1)`,
@@ -180,12 +180,19 @@ api.get('/users/:id', member, async (req, res) => {
     games,
     awards,
     medals,
-    wardogs: wardogs || {},
+    wardogs: wardogs?.official ? { ...wardogs, official: { ...wardogs.official, accountWorth: Number(wardogs.account_worth) } } : wardogs || {},
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
     wpg_position: serverRank.pos,
     friend,
   });
 });
+
+// Account worth = cash on hand + cost of every unlock the player's levels have reached
+// (WARDOGS Tracker gives levels and cash, our unlock list gives the costs). Needs "ws" = wardogs_stats.
+const ACCOUNT_WORTH_SQL = `(COALESCE((ws.official->>'cash')::bigint, 0) + COALESCE((
+    SELECT SUM(ul.cost) FROM unlocks ul
+     WHERE ul.level <= CASE WHEN ul.role = 'career' THEN (ws.official->>'wardogLevel')::int
+                            ELSE (ws.official->'roles'->ul.role->>'level')::int END), 0))::bigint`;
 
 api.get('/leaderboard', member, async (req, res) => {
   const by = str(req.query.by, 20);
@@ -199,6 +206,18 @@ api.get('/leaderboard', member, async (req, res) => {
   } else if (by === 'level') {
     rows = await q(
       `SELECT u.*, COALESCE((ws.official->>'wardogLevel')::int, 0) AS score FROM users u
+         LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
+        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+    );
+  } else if (by === 'cash') {
+    rows = await q(
+      `SELECT u.*, COALESCE((ws.official->>'cash')::bigint, 0) AS score FROM users u
+         LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
+        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+    );
+  } else if (by === 'worth') {
+    rows = await q(
+      `SELECT u.*, CASE WHEN ws.official IS NULL THEN 0 ELSE ${ACCOUNT_WORTH_SQL} END AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
         WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
     );

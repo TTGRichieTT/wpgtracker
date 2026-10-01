@@ -596,7 +596,7 @@ async function settingsTab(body) {
     <form id="sform" class="stack">
       ${SETTINGS.map(([title, list]) => `<div class="panel"><div class="panel-title">${esc(title)}</div><div class="form-grid">${list.map(input).join('')}</div></div>`).join('')}
       ${extra.length ? `<div class="panel"><div class="panel-title">Other</div><div class="form-grid">${extra.map((k) => input([k, k])).join('')}</div></div>` : ''}
-      <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now</button></div>
+      <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now (Steam + WARDOGS Tracker + medals)</button></div>
     </form>`;
   const form = document.getElementById('sform');
   form.onsubmit = async (e) => {
@@ -615,7 +615,7 @@ async function settingsTab(body) {
   document.getElementById('syncAll').onclick = async () => {
     try {
       const r = await api('admin/sync-all', { method: 'POST', body: {} });
-      toast('Sync started', `Updating ${r.queued} members in the background.`);
+      toast('Sync started', `Updating ${r.queued} members (about ${Math.max(1, Math.ceil((r.queued * 4) / 60))} min). You'll get a message with the results when it's done.`);
     } catch (x) { fail(x); }
   };
 }

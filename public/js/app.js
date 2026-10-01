@@ -1454,16 +1454,17 @@ async function viewServers(main, _r, alive) {
 // ---------- Leaderboard ----------
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'xp';
-  const tabs = [['xp', `${state.settings.clan_tag || 'WPG'} XP`], ['level', 'Wardog level'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['xp', `${state.settings.clan_tag || 'WPG'} XP`], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
   const list = await api(`leaderboard?by=${by}`);
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
+    ${by === 'worth' ? '<p class="muted small" style="margin:-4px 0 12px">Account worth = cash on hand + the value of every unlock the player has reached (from their WARDOGS Tracker levels).</p>' : ''}${by === 'worth' || by === 'cash' || by === 'level' ? '<p class="muted small" style="margin:-4px 0 12px">Members show $0 / 0 until they link WARDOGS Tracker on HQ.</p>' : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">
         <b style="font:700 22px var(--head);width:42px;text-align:center;color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">#${i + 1}</b>
         <div class="grow">${userLine(u)}</div>
-        <b style="font:700 18px var(--head)">${fmtNum(u.score)} <span class="muted small">${unit}</span></b>
+        <b style="font:700 18px var(--head)">${by === 'cash' || by === 'worth' ? fmtMoney(u.score) : `${fmtNum(u.score)} <span class="muted small">${unit}</span>`}</b>
       </a>`).join('') || '<p class="empty">No data yet.</p>'}</div>`;
 }
 
