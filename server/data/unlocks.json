@@ -5,6 +5,7 @@
   "name": "Hexagon Brake",
   "kind": "Attachment",
   "cost": 5000,
+  "price": 350,
   "image": "/img/unlocks/muzzle-hexagon-brake.webp"
  },
  {
@@ -13,6 +14,7 @@
   "name": "AK74",
   "kind": "Weapon",
   "cost": 10000,
+  "price": 1600,
   "image": "/img/unlocks/ak74.webp"
  },
  {
@@ -21,6 +23,7 @@
   "name": "AK74 30 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 35,
   "image": "/img/unlocks/magazine-ak74-30-rnd-magazine.webp"
  },
  {
@@ -29,6 +32,7 @@
   "name": "TopComp Brake",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 770,
   "image": "/img/unlocks/muzzle-topcomp-brake.webp"
  },
  {
@@ -37,6 +41,7 @@
   "name": "STANAG 30 RND Magazine",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 55,
   "image": "/img/unlocks/magazine-stanag-30-rnd-magazine.webp"
  },
  {
@@ -45,6 +50,7 @@
   "name": "CQB 74 Brake",
   "kind": "Attachment",
   "cost": 12500,
+  "price": 680,
   "image": "/img/unlocks/muzzle-cqb-74-brake.webp"
  },
  {
@@ -53,6 +59,7 @@
   "name": "Galil",
   "kind": "Weapon",
   "cost": 35000,
+  "price": 2200,
   "image": "/img/unlocks/galil.webp"
  },
  {
@@ -61,6 +68,7 @@
   "name": "Galil 35 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 60,
   "image": "/img/unlocks/magazine-galil-35-rnd-magazine.webp"
  },
  {
@@ -69,6 +77,7 @@
   "name": "Rubberized Ergonomic Foregrip",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 540,
   "image": ""
  },
  {
@@ -77,6 +86,7 @@
   "name": "Tricon 1.5x Compact Prism Scope",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 650,
   "image": "/img/unlocks/sight-tricon-1-5x-compact-prism-scope.webp"
  },
  {
@@ -85,6 +95,7 @@
   "name": "AFG Angled Foregrip",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 820,
   "image": ""
  },
  {
@@ -93,6 +104,7 @@
   "name": "Galil 50 RND Magazine",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 110,
   "image": "/img/unlocks/magazine-galil-50-rnd-magazine.webp"
  },
  {
@@ -101,6 +113,7 @@
   "name": "Birdcage Flash Hider",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 900,
   "image": "/img/unlocks/muzzle-birdcage-flash-hider.webp"
  },
  {
@@ -109,6 +122,7 @@
   "name": "CQ-2x Prism Combat Scope",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 640,
   "image": "/img/unlocks/sight-cq-2x-prism-combat-scope.webp"
  },
  {
@@ -117,6 +131,7 @@
   "name": "TGP-A Suppressor 5.45",
   "kind": "Attachment",
   "cost": 17500,
+  "price": 1190,
   "image": "/img/unlocks/muzzle-tgp-a-suppressor-5-45.webp"
  },
  {
@@ -125,6 +140,7 @@
   "name": "M4",
   "kind": "Weapon",
   "cost": 100000,
+  "price": 2800,
   "image": "/img/unlocks/m4.webp"
  },
  {
@@ -133,6 +149,7 @@
   "name": "AR Multi-Caliber Suppressor",
   "kind": "Attachment",
   "cost": 20000,
+  "price": 1350,
   "image": "/img/unlocks/muzzle-ar-multi-caliber-suppressor.webp"
  },
  {
@@ -141,6 +158,7 @@
   "name": "Holographic Sight",
   "kind": "Attachment",
   "cost": 20000,
+  "price": 620,
   "image": "/img/unlocks/sight-holographic-sight.webp"
  },
  {
@@ -149,6 +167,7 @@
   "name": "3 Prong Flash Hider",
   "kind": "Attachment",
   "cost": 20000,
+  "price": 1000,
   "image": "/img/unlocks/muzzle-3-prong-flash-hider.webp"
  },
  {
@@ -157,6 +176,7 @@
   "name": "AK74 60 RND Magazine",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 150,
   "image": "/img/unlocks/magazine-ak74-60-rnd-magazine.webp"
  },
  {
@@ -165,6 +185,7 @@
   "name": "Spitfire 3X",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 790,
   "image": "/img/unlocks/sight-spitfire-3x.webp"
  },
  {
@@ -173,6 +194,7 @@
   "name": "PBS-4 Suppressor",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1300,
   "image": "/img/unlocks/muzzle-pbs-4-suppressor.webp"
  },
  {
@@ -181,6 +203,7 @@
   "name": "RC-556 Suppressor",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 1550,
   "image": "/img/unlocks/muzzle-rc-556-suppressor.webp"
  },
  {
@@ -189,6 +212,7 @@
   "name": "STANAG 60 RND Magazine",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 180,
   "image": "/img/unlocks/magazine-stanag-60-rnd-magazine.webp"
  },
  {
@@ -197,6 +221,7 @@
   "name": "OKP 7 Reflex",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 840,
   "image": "/img/unlocks/sight-okp-7-reflex.webp"
  },
  {
@@ -205,6 +230,7 @@
   "name": "FAL",
   "kind": "Weapon",
   "cost": 200000,
+  "price": 6500,
   "image": "/img/unlocks/fal.webp"
  },
  {
@@ -213,6 +239,7 @@
   "name": "FAL 20 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 150,
   "image": "/img/unlocks/magazine-fal-20-rnd-magazine.webp"
  },
  {
@@ -221,6 +248,7 @@
   "name": "CQR Tactical Front Rail Grip",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1100,
   "image": ""
  },
  {
@@ -229,6 +257,7 @@
   "name": "AK74 75 RND Drum Magazine",
   "kind": "Attachment",
   "cost": 75000,
+  "price": 200,
   "image": "/img/unlocks/magazine-ak74-75-rnd-drum-magazine.webp"
  },
  {
@@ -237,6 +266,7 @@
   "name": "4x Combat Prism Scope with Reflex",
   "kind": "Attachment",
   "cost": 35000,
+  "price": 880,
   "image": "/img/unlocks/sight-4x-combat-prism-scope-with-reflex.webp"
  },
  {
@@ -245,6 +275,7 @@
   "name": "3-Chamber Brake",
   "kind": "Attachment",
   "cost": 45000,
+  "price": 1080,
   "image": "/img/unlocks/muzzle-3-chamber-brake.webp"
  },
  {
@@ -253,6 +284,7 @@
   "name": "Shift Foregrip",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 1150,
   "image": ""
  },
  {
@@ -261,6 +293,7 @@
   "name": "FAL 30 RND Magazine",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 250,
   "image": "/img/unlocks/magazine-fal-30-rnd-magazine.webp"
  },
  {
@@ -269,6 +302,7 @@
   "name": "GGX 17",
   "kind": "Weapon",
   "cost": 5000,
+  "price": 200,
   "image": "/img/unlocks/ggx-17.webp"
  },
  {
@@ -277,23 +311,8 @@
   "name": "GGX 17 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 30,
   "image": "/img/unlocks/magazine-ggx-17-rnd-magazine.webp"
- },
- {
-  "role": "career",
-  "level": 3,
-  "name": "Level 1 Armor",
-  "kind": "Gear",
-  "cost": 10000,
-  "image": "/img/unlocks/level-1-armor.webp"
- },
- {
-  "role": "career",
-  "level": 3,
-  "name": "Level 1 Helmet",
-  "kind": "Gear",
-  "cost": 7500,
-  "image": "/img/unlocks/level-1-helmet.webp"
  },
  {
   "role": "career",
@@ -301,22 +320,52 @@
   "name": "Compact T-2 Red Dot",
   "kind": "Attachment",
   "cost": 5000,
+  "price": 340,
   "image": "/img/unlocks/sight-compact-t-2-red-dot.webp"
+ },
+ {
+  "role": "career",
+  "level": 6,
+  "name": "9mm Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 15,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 10,
+  "name": "5.56mm Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 25,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 11,
+  "name": "7.62mm Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 90,
+  "image": ""
  },
  {
   "role": "career",
   "level": 12,
   "name": "Field Backpack",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 20000,
+  "price": 650,
   "image": "/img/unlocks/field-backpack.webp"
  },
  {
   "role": "career",
   "level": 14,
   "name": "Medium Tac Vest",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 10000,
+  "price": 250,
   "image": "/img/unlocks/medium-tac-vest.webp"
  },
  {
@@ -325,6 +374,16 @@
   "name": "RK6 Tactical Foregrip",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 380,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 16,
+  "name": "5.45mm Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 25,
   "image": ""
  },
  {
@@ -333,14 +392,16 @@
   "name": "Judge",
   "kind": "Weapon",
   "cost": 15000,
+  "price": 250,
   "image": "/img/unlocks/judge.webp"
  },
  {
   "role": "career",
   "level": 20,
   "name": "Operator Backpack",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 800,
   "image": "/img/unlocks/operator-backpack.webp"
  },
  {
@@ -349,6 +410,7 @@
   "name": "Kobra Reflex",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 520,
   "image": "/img/unlocks/sight-kobra-reflex.webp"
  },
  {
@@ -357,7 +419,17 @@
   "name": "GGX 33 RND Magazine",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 70,
   "image": "/img/unlocks/magazine-ggx-33-rnd-magazine.webp"
+ },
+ {
+  "role": "career",
+  "level": 25,
+  "name": ".45 Colt Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 50,
+  "image": ""
  },
  {
   "role": "career",
@@ -365,22 +437,34 @@
   "name": "2.5x Combat Optic",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 690,
   "image": "/img/unlocks/sight-2-5x-combat-optic.webp"
+ },
+ {
+  "role": "career",
+  "level": 28,
+  "name": "7.62x54mm Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 55,
+  "image": ""
  },
  {
   "role": "career",
   "level": 30,
   "name": "Level 2 Armor",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 50000,
+  "price": 1000,
   "image": "/img/unlocks/level-2-armor.webp"
  },
  {
   "role": "career",
   "level": 30,
   "name": "Level 2 Helmet",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 37500,
+  "price": 500,
   "image": "/img/unlocks/level-2-helmet.webp"
  },
  {
@@ -389,14 +473,16 @@
   "name": "3x Tactical Prism Scope",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 740,
   "image": "/img/unlocks/sight-3x-tactical-prism-scope.webp"
  },
  {
   "role": "career",
   "level": 32,
   "name": "Assault Backpack",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 50000,
+  "price": 1200,
   "image": "/img/unlocks/assault-backpack.webp"
  },
  {
@@ -405,14 +491,16 @@
   "name": "45° Angled Foregrip",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 680,
   "image": ""
  },
  {
   "role": "career",
   "level": 35,
   "name": "Sport Parachute",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 1000,
   "image": "/img/unlocks/sport-parachute.webp"
  },
  {
@@ -421,6 +509,7 @@
   "name": "Mini Angled Foregrip",
   "kind": "Attachment",
   "cost": 12500,
+  "price": 720,
   "image": ""
  },
  {
@@ -429,6 +518,7 @@
   "name": "M1911",
   "kind": "Weapon",
   "cost": 25000,
+  "price": 300,
   "image": "/img/unlocks/m1911.webp"
  },
  {
@@ -437,7 +527,17 @@
   "name": "M1911 7 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 20,
   "image": "/img/unlocks/magazine-m1911-7-rnd-magazine.webp"
+ },
+ {
+  "role": "career",
+  "level": 41,
+  "name": "12g Rifled Slug",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 200,
+  "image": ""
  },
  {
   "role": "career",
@@ -445,14 +545,34 @@
   "name": ".45 ACP Pistol Compensator",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 1030,
   "image": "/img/unlocks/muzzle-45-acp-pistol-compensator.webp"
+ },
+ {
+  "role": "career",
+  "level": 45,
+  "name": "High Capacity Battery",
+  "kind": "Ammunition",
+  "cost": 50000,
+  "price": 300,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 48,
+  "name": ".45 ACP Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 15,
+  "image": ""
  },
  {
   "role": "career",
   "level": 50,
   "name": "Large Tac Vest",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 400,
   "image": "/img/unlocks/large-tac-vest.webp"
  },
  {
@@ -461,14 +581,16 @@
   "name": "M1911 10 RND Magazine",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 35,
   "image": "/img/unlocks/magazine-m1911-10-rnd-magazine.webp"
  },
  {
   "role": "career",
   "level": 55,
   "name": "Ruck Backpack",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 100000,
+  "price": 2400,
   "image": "/img/unlocks/ruck-backpack.webp"
  },
  {
@@ -477,23 +599,44 @@
   "name": "TDG Vertical Foregrip",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1000,
   "image": ""
  },
  {
   "role": "career",
   "level": 60,
   "name": "Level 3 Armor",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 100000,
+  "price": 2000,
   "image": "/img/unlocks/level-3-armor.webp"
  },
  {
   "role": "career",
   "level": 60,
   "name": "Level 3 Helmet",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 75000,
+  "price": 1500,
   "image": "/img/unlocks/level-3-helmet.webp"
+ },
+ {
+  "role": "career",
+  "level": 63,
+  "name": "7.62mm Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 50000,
+  "price": 150,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 65,
+  "name": ".308 Win Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 70,
+  "image": ""
  },
  {
   "role": "career",
@@ -501,23 +644,26 @@
   "name": "GGX 18",
   "kind": "Weapon",
   "cost": 50000,
+  "price": 800,
   "image": "/img/unlocks/ggx-18.webp"
  },
  {
   "role": "career",
   "level": 73,
   "name": "Gunner Backpack + Sling",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 125000,
-  "image": ""
+  "price": 3500,
+  "image": "/img/unlocks/gunner-backpack-plus-sling.webp"
  },
  {
   "role": "career",
-  "level": 73,
-  "name": "Gunner Backpack + Sling",
-  "kind": "Gear",
-  "cost": 125000,
-  "image": "/img/unlocks/gunner-backpack-plus-sling.webp"
+  "level": 75,
+  "name": "9mm Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 20,
+  "image": ""
  },
  {
   "role": "career",
@@ -525,7 +671,26 @@
   "name": "GGX 50 RND Drum Magazine",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 110,
   "image": "/img/unlocks/magazine-ggx-50-rnd-drum-magazine.webp"
+ },
+ {
+  "role": "career",
+  "level": 82,
+  "name": "7.62x54mm Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 90,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 83,
+  "name": "5.56mm Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 40,
+  "image": ""
  },
  {
   "role": "career",
@@ -533,6 +698,7 @@
   "name": "Deagle",
   "kind": "Weapon",
   "cost": 75000,
+  "price": 900,
   "image": "/img/unlocks/deagle.webp"
  },
  {
@@ -541,6 +707,7 @@
   "name": "Deagle 7 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 50,
   "image": "/img/unlocks/magazine-deagle-7-rnd-magazine.webp"
  },
  {
@@ -549,54 +716,115 @@
   "name": "SPH-2",
   "kind": "Vehicle",
   "cost": 500000,
+  "price": 8000,
   "image": "/img/unlocks/sph-2.webp"
+ },
+ {
+  "role": "career",
+  "level": 93,
+  "name": "5.45mm Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 40,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 95,
+  "name": "50AE Flesh Damage (HP)",
+  "kind": "Ammunition",
+  "cost": 5000,
+  "price": 35,
+  "image": ""
  },
  {
   "role": "career",
   "level": 100,
   "name": "Level 4 Armor",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 200000,
+  "price": 4000,
   "image": "/img/unlocks/level-4-armor.webp"
  },
  {
   "role": "career",
   "level": 100,
   "name": "Level 4 Helmet",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 150000,
+  "price": 3000,
   "image": "/img/unlocks/level-4-helmet.webp"
  },
  {
   "role": "career",
-  "level": 150,
-  "name": "Arsenal Backpack + 2 Slings",
-  "kind": "Gear",
-  "cost": 175000,
+  "level": 110,
+  "name": ".45 Colt Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 66,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 120,
+  "name": ".45 ACP Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 20,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 130,
+  "name": "50AE Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 90,
+  "image": ""
+ },
+ {
+  "role": "career",
+  "level": 140,
+  "name": ".308 Win Armor Piercing (AP)",
+  "kind": "Ammunition",
+  "cost": 75000,
+  "price": 180,
   "image": ""
  },
  {
   "role": "career",
   "level": 150,
   "name": "Arsenal Backpack + 2 Slings",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 175000,
+  "price": 5000,
   "image": "/img/unlocks/arsenal-backpack-plus-2-slings.webp"
  },
  {
   "role": "driver",
   "level": 3,
-  "name": "URAL",
+  "name": "Ural",
   "kind": "Vehicle",
   "cost": 35000,
+  "price": 5000,
   "image": "/img/unlocks/ural.webp"
  },
  {
   "role": "driver",
+  "level": 5,
+  "name": "H4ZARD - Gigilow",
+  "kind": "Equipment",
+  "cost": 750,
+  "price": 100,
+  "image": ""
+ },
+ {
+  "role": "driver",
   "level": 6,
-  "name": "Kodiak (M249)",
+  "name": "Kodiak [M249]",
   "kind": "Vehicle",
   "cost": 50000,
+  "price": 3750,
   "image": "/img/unlocks/kodiak-m249.webp"
  },
  {
@@ -605,15 +833,26 @@
   "name": "Dune Buggy",
   "kind": "Vehicle",
   "cost": 25000,
+  "price": 1500,
   "image": "/img/unlocks/dune-buggy.webp"
  },
  {
   "role": "driver",
   "level": 10,
-  "name": "Kodiak (Pickup)",
+  "name": "Kodiak [Pickup]",
   "kind": "Vehicle",
   "cost": 35000,
+  "price": 3000,
   "image": "/img/unlocks/kodiak-pickup.webp"
+ },
+ {
+  "role": "driver",
+  "level": 13,
+  "name": "Giants (Remix) - The Quemists",
+  "kind": "Equipment",
+  "cost": 1500,
+  "price": 100,
+  "image": ""
  },
  {
   "role": "driver",
@@ -621,7 +860,17 @@
   "name": "Humvee",
   "kind": "Vehicle",
   "cost": 25000,
+  "price": 3000,
   "image": "/img/unlocks/humvee.webp"
+ },
+ {
+  "role": "driver",
+  "level": 16,
+  "name": "Large Crate",
+  "kind": "Supply",
+  "cost": 20000,
+  "price": 300,
+  "image": ""
  },
  {
   "role": "driver",
@@ -629,30 +878,52 @@
   "name": "Ural Defender",
   "kind": "Vehicle",
   "cost": 75000,
+  "price": 6000,
   "image": "/img/unlocks/ural-defender.webp"
  },
  {
   "role": "driver",
   "level": 20,
-  "name": "Humvee (M249)",
+  "name": "Humvee [M249]",
   "kind": "Vehicle",
   "cost": 125000,
+  "price": 3750,
   "image": "/img/unlocks/humvee-m249.webp"
  },
  {
   "role": "driver",
+  "level": 23,
+  "name": "HORA - Irina Rimes & Jerry Heil",
+  "kind": "Equipment",
+  "cost": 2500,
+  "price": 100,
+  "image": ""
+ },
+ {
+  "role": "driver",
   "level": 25,
-  "name": "Ural Defender (M249)",
+  "name": "Ural Defender [M249]",
   "kind": "Vehicle",
   "cost": 125000,
+  "price": 6750,
   "image": "/img/unlocks/ural-defender-m249.webp"
  },
  {
   "role": "driver",
+  "level": 28,
+  "name": "Luili-Luili - Masha Kondratenko",
+  "kind": "Equipment",
+  "cost": 5000,
+  "price": 100,
+  "image": ""
+ },
+ {
+  "role": "driver",
   "level": 30,
-  "name": "Humvee (Minigun)",
+  "name": "Humvee [Minigun]",
   "kind": "Vehicle",
   "cost": 150000,
+  "price": 4500,
   "image": "/img/unlocks/humvee-minigun.webp"
  },
  {
@@ -661,6 +932,7 @@
   "name": "L2A6",
   "kind": "Vehicle",
   "cost": 500000,
+  "price": 14000,
   "image": "/img/unlocks/l2a6.webp"
  },
  {
@@ -669,14 +941,16 @@
   "name": "Dual Port Brake",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 720,
   "image": "/img/unlocks/muzzle-dual-port-brake.webp"
  },
  {
   "role": "medic",
   "level": 2,
   "name": "Field Resuscitator",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 10000,
+  "price": 500,
   "image": "/img/unlocks/field-resuscitator.webp"
  },
  {
@@ -685,6 +959,7 @@
   "name": "AMP-9 15 RND Magazine",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 30,
   "image": "/img/unlocks/magazine-amp-9-15-rnd-magazine.webp"
  },
  {
@@ -693,6 +968,7 @@
   "name": "PP-19 Vityaz",
   "kind": "Weapon",
   "cost": 25000,
+  "price": 1200,
   "image": "/img/unlocks/pp-19-vityaz.webp"
  },
  {
@@ -701,14 +977,16 @@
   "name": "PP-19 Vityaz 30 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 100,
   "image": "/img/unlocks/magazine-pp-19-vityaz-30-rnd-magazine.webp"
  },
  {
   "role": "medic",
   "level": 5,
   "name": "M18 Smoke Grenade: White",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 7500,
+  "price": 100,
   "image": "/img/unlocks/m18-smoke-grenade-white.webp"
  },
  {
@@ -717,6 +995,7 @@
   "name": "Four Reticle Reflex",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 580,
   "image": "/img/unlocks/sight-four-reticle-reflex.webp"
  },
  {
@@ -725,14 +1004,16 @@
   "name": "PP-19 Vityaz 10 RND Magazine",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 25,
   "image": "/img/unlocks/magazine-pp-19-vityaz-10-rnd-magazine.webp"
  },
  {
   "role": "medic",
   "level": 9,
   "name": "Individual First Aid Kit",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 800,
   "image": "/img/unlocks/individual-first-aid-kit.webp"
  },
  {
@@ -741,14 +1022,16 @@
   "name": "AMP-9 30 RND Magazine",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 100,
   "image": "/img/unlocks/magazine-amp-9-30-rnd-magazine.webp"
  },
  {
   "role": "medic",
   "level": 11,
   "name": "Defibrillator",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 50000,
+  "price": 1600,
   "image": "/img/unlocks/defibrillator.webp"
  },
  {
@@ -757,6 +1040,7 @@
   "name": "AMP-9 Tactical Flash Hider",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 550,
   "image": "/img/unlocks/muzzle-amp-9-tactical-flash-hider.webp"
  },
  {
@@ -765,14 +1049,16 @@
   "name": "Ballista Brake",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 380,
   "image": "/img/unlocks/muzzle-ballista-brake.webp"
  },
  {
   "role": "medic",
   "level": 14,
   "name": "Adrenaline Pen",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 250,
   "image": "/img/unlocks/adrenaline-pen.webp"
  },
  {
@@ -781,6 +1067,7 @@
   "name": "MP5",
   "kind": "Weapon",
   "cost": 75000,
+  "price": 1500,
   "image": "/img/unlocks/mp5.webp"
  },
  {
@@ -789,6 +1076,7 @@
   "name": "MP5 20 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 70,
   "image": "/img/unlocks/magazine-mp5-20-rnd-magazine.webp"
  },
  {
@@ -797,6 +1085,7 @@
   "name": "RVG Vertical Foregrip",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 770,
   "image": ""
  },
  {
@@ -805,6 +1094,7 @@
   "name": "QD-5 Suppressor",
   "kind": "Attachment",
   "cost": 17500,
+  "price": 1170,
   "image": "/img/unlocks/muzzle-qd-5-suppressor.webp"
  },
  {
@@ -813,14 +1103,16 @@
   "name": "AMP-9 50 RND Drum Magazine",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 180,
   "image": "/img/unlocks/magazine-amp-9-50-rnd-drum-magazine.webp"
  },
  {
   "role": "medic",
   "level": 21,
   "name": "M18 Smoke Grenade: Black",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 15000,
+  "price": 100,
   "image": "/img/unlocks/m18-smoke-grenade-black.webp"
  },
  {
@@ -829,14 +1121,16 @@
   "name": "PP-19 Vityaz Flash Hider",
   "kind": "Attachment",
   "cost": 20000,
+  "price": 800,
   "image": "/img/unlocks/muzzle-pp-19-vityaz-flash-hider.webp"
  },
  {
   "role": "medic",
   "level": 24,
   "name": "Medical Bag",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 75000,
+  "price": 2000,
   "image": "/img/unlocks/medical-bag.webp"
  },
  {
@@ -845,6 +1139,7 @@
   "name": "MP5 30 RND Magazine",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 100,
   "image": "/img/unlocks/magazine-mp5-30-rnd-magazine.webp"
  },
  {
@@ -853,6 +1148,7 @@
   "name": "Eclipse Flash Hider",
   "kind": "Attachment",
   "cost": 22500,
+  "price": 700,
   "image": "/img/unlocks/muzzle-eclipse-flash-hider.webp"
  },
  {
@@ -861,6 +1157,7 @@
   "name": "Vektor Frenix-X Micro Reflex Sight",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 820,
   "image": "/img/unlocks/sight-vektor-frenix-x-micro-reflex-sight.webp"
  },
  {
@@ -869,6 +1166,7 @@
   "name": "PP-19 50 RND Vityaz Drum Magazine",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 200,
   "image": "/img/unlocks/magazine-pp-19-50-rnd-vityaz-drum-magazine.webp"
  },
  {
@@ -877,6 +1175,7 @@
   "name": "AMP-9 9x19 Suppressor",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1130,
   "image": "/img/unlocks/muzzle-amp-9-9x19-suppressor.webp"
  },
  {
@@ -885,6 +1184,7 @@
   "name": "Super-45",
   "kind": "Weapon",
   "cost": 150000,
+  "price": 2600,
   "image": "/img/unlocks/super-45.webp"
  },
  {
@@ -893,6 +1193,7 @@
   "name": "Super-45 13 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 30,
   "image": "/img/unlocks/magazine-super-45-13-rnd-magazine.webp"
  },
  {
@@ -901,6 +1202,7 @@
   "name": "Ghost LITE Muzzle Brake",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 970,
   "image": "/img/unlocks/muzzle-ghost-lite-muzzle-brake.webp"
  },
  {
@@ -909,6 +1211,7 @@
   "name": "Super-45 30 RND Magazine",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 80,
   "image": "/img/unlocks/magazine-super-45-30-rnd-magazine.webp"
  },
  {
@@ -917,6 +1220,7 @@
   "name": "Super-45 Flash Hider",
   "kind": "Attachment",
   "cost": 40000,
+  "price": 1050,
   "image": "/img/unlocks/muzzle-super-45-flash-hider.webp"
  },
  {
@@ -925,6 +1229,7 @@
   "name": "PP-19-01 Vityaz 9x19 Suppressor",
   "kind": "Attachment",
   "cost": 45000,
+  "price": 1450,
   "image": "/img/unlocks/muzzle-pp-19-01-vityaz-9x19-suppressor.webp"
  },
  {
@@ -933,6 +1238,7 @@
   "name": "MP5 50 RND Drum Magazine",
   "kind": "Attachment",
   "cost": 75000,
+  "price": 230,
   "image": "/img/unlocks/magazine-mp5-50-rnd-drum-magazine.webp"
  },
  {
@@ -941,6 +1247,7 @@
   "name": "SG Multi-Caliber Suppressor",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 1220,
   "image": "/img/unlocks/muzzle-sg-multi-caliber-suppressor.webp"
  },
  {
@@ -949,15 +1256,35 @@
   "name": "Super-45 40 RND Drum Magazine",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 280,
   "image": "/img/unlocks/magazine-super-45-40-rnd-drum-magazine.webp"
  },
  {
   "role": "pilot",
+  "level": 2,
+  "name": "Small Armored Crate",
+  "kind": "Supply",
+  "cost": 10000,
+  "price": 500,
+  "image": ""
+ },
+ {
+  "role": "pilot",
   "level": 4,
-  "name": "AH-6M (Miniguns)",
+  "name": "AH-6M [Miniguns]",
   "kind": "Vehicle",
   "cost": 50000,
+  "price": 7000,
   "image": "/img/unlocks/ah-6m-miniguns.webp"
+ },
+ {
+  "role": "pilot",
+  "level": 5,
+  "name": "You Are Not Invited - MokuMoku",
+  "kind": "Equipment",
+  "cost": 750,
+  "price": 100,
+  "image": ""
  },
  {
   "role": "pilot",
@@ -965,23 +1292,62 @@
   "name": "Z20 Lakota",
   "kind": "Vehicle",
   "cost": 35000,
+  "price": 7400,
   "image": "/img/unlocks/z20-lakota.webp"
  },
  {
   "role": "pilot",
+  "level": 13,
+  "name": "Ride of the Valkyries - Richard Wagner",
+  "kind": "Equipment",
+  "cost": 1500,
+  "price": 100,
+  "image": ""
+ },
+ {
+  "role": "pilot",
+  "level": 15,
+  "name": "Large Armored Crate",
+  "kind": "Supply",
+  "cost": 25000,
+  "price": 800,
+  "image": ""
+ },
+ {
+  "role": "pilot",
   "level": 20,
-  "name": "AH-6R (Rockets)",
+  "name": "AH-6R [Rockets]",
   "kind": "Vehicle",
   "cost": 250000,
+  "price": 12500,
   "image": "/img/unlocks/ah-6r-rockets.webp"
  },
  {
   "role": "pilot",
+  "level": 23,
+  "name": "Tianqi Xu - Vodka Bomb",
+  "kind": "Equipment",
+  "cost": 2500,
+  "price": 100,
+  "image": ""
+ },
+ {
+  "role": "pilot",
   "level": 25,
-  "name": "Z20 Lakota (Miniguns)",
+  "name": "Z20 Lakota [Miniguns]",
   "kind": "Vehicle",
   "cost": 75000,
+  "price": 8000,
   "image": "/img/unlocks/z20-lakota-miniguns.webp"
+ },
+ {
+  "role": "pilot",
+  "level": 30,
+  "name": "Helikopter - Fazlija",
+  "kind": "Equipment",
+  "cost": 10000,
+  "price": 100,
+  "image": ""
  },
  {
   "role": "pilot",
@@ -989,14 +1355,16 @@
   "name": "Havoc",
   "kind": "Vehicle",
   "cost": 500000,
+  "price": 18000,
   "image": "/img/unlocks/havoc.webp"
  },
  {
   "role": "recon",
   "level": 2,
   "name": "Monocular",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 7500,
+  "price": 150,
   "image": "/img/unlocks/monocular.webp"
  },
  {
@@ -1005,6 +1373,7 @@
   "name": "STRELIX Suppressor",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 1000,
   "image": "/img/unlocks/muzzle-strelix-suppressor.webp"
  },
  {
@@ -1013,6 +1382,7 @@
   "name": "SKS",
   "kind": "Weapon",
   "cost": 25000,
+  "price": 2400,
   "image": "/img/unlocks/sks.webp"
  },
  {
@@ -1021,6 +1391,7 @@
   "name": "DTK-1 Brake",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 820,
   "image": "/img/unlocks/muzzle-dtk-1-brake.webp"
  },
  {
@@ -1029,14 +1400,16 @@
   "name": "SKS Bipod",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 800,
   "image": ""
  },
  {
   "role": "recon",
   "level": 8,
   "name": "Range Finder",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 15000,
+  "price": 400,
   "image": "/img/unlocks/range-finder.webp"
  },
  {
@@ -1045,6 +1418,7 @@
   "name": "Deadeye Flash Hider",
   "kind": "Attachment",
   "cost": 12500,
+  "price": 400,
   "image": "/img/unlocks/muzzle-deadeye-flash-hider.webp"
  },
  {
@@ -1053,6 +1427,7 @@
   "name": "Mosin Nagant",
   "kind": "Weapon",
   "cost": 50000,
+  "price": 4500,
   "image": "/img/unlocks/mosin-nagant.webp"
  },
  {
@@ -1061,6 +1436,7 @@
   "name": "3x-6x LPVO Short Dot",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 860,
   "image": "/img/unlocks/sight-3x-6x-lpvo-short-dot.webp"
  },
  {
@@ -1069,6 +1445,7 @@
   "name": "SVD",
   "kind": "Weapon",
   "cost": 50000,
+  "price": 4800,
   "image": "/img/unlocks/svd.webp"
  },
  {
@@ -1077,6 +1454,7 @@
   "name": "SVD 5 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 20,
   "image": "/img/unlocks/magazine-svd-5-rnd-magazine.webp"
  },
  {
@@ -1085,6 +1463,7 @@
   "name": "SVD 7.62x54R Brake",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 650,
   "image": "/img/unlocks/muzzle-svd-7-62x54r-brake.webp"
  },
  {
@@ -1093,6 +1472,7 @@
   "name": "SVD Bipod",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 1120,
   "image": ""
  },
  {
@@ -1101,6 +1481,7 @@
   "name": "Hexagon 762 Suppressor",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 1210,
   "image": "/img/unlocks/muzzle-hexagon-762-suppressor.webp"
  },
  {
@@ -1109,7 +1490,17 @@
   "name": "SVD 10 RND Magazine",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 40,
   "image": "/img/unlocks/magazine-svd-10-rnd-magazine.webp"
+ },
+ {
+  "role": "recon",
+  "level": 17,
+  "name": "Broadhead Arrow",
+  "kind": "Ammunition",
+  "cost": 0,
+  "price": 75,
+  "image": ""
  },
  {
   "role": "recon",
@@ -1117,6 +1508,7 @@
   "name": "Compound Bow",
   "kind": "Weapon",
   "cost": 125000,
+  "price": 800,
   "image": "/img/unlocks/compound-bow.webp"
  },
  {
@@ -1125,6 +1517,7 @@
   "name": "6-10x Scope MRAD",
   "kind": "Attachment",
   "cost": 40000,
+  "price": 1200,
   "image": "/img/unlocks/sight-6-10x-scope-mrad.webp"
  },
  {
@@ -1133,6 +1526,7 @@
   "name": "SV98",
   "kind": "Weapon",
   "cost": 100000,
+  "price": 5200,
   "image": "/img/unlocks/sv98.webp"
  },
  {
@@ -1141,6 +1535,7 @@
   "name": "SV98 10 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 40,
   "image": "/img/unlocks/magazine-sv98-10-rnd-magazine.webp"
  },
  {
@@ -1149,6 +1544,7 @@
   "name": "SRVV Brake",
   "kind": "Attachment",
   "cost": 17500,
+  "price": 1470,
   "image": "/img/unlocks/muzzle-srvv-brake.webp"
  },
  {
@@ -1157,6 +1553,16 @@
   "name": "SV98 Bipod",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 1250,
+  "image": ""
+ },
+ {
+  "role": "recon",
+  "level": 22,
+  "name": "Claymore",
+  "kind": "Equipment",
+  "cost": 50000,
+  "price": 900,
   "image": ""
  },
  {
@@ -1165,22 +1571,25 @@
   "name": "Constrictor Brake",
   "kind": "Attachment",
   "cost": 20000,
+  "price": 760,
   "image": "/img/unlocks/muzzle-constrictor-brake.webp"
  },
  {
   "role": "recon",
   "level": 24,
   "name": "Ghillie Body Suit",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 80000,
+  "price": 3000,
   "image": "/img/unlocks/ghillie-body-suit.webp"
  },
  {
   "role": "recon",
   "level": 24,
   "name": "Ghillie Headwear",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 60000,
+  "price": 2500,
   "image": "/img/unlocks/ghillie-headwear.webp"
  },
  {
@@ -1189,6 +1598,7 @@
   "name": "MK22",
   "kind": "Weapon",
   "cost": 150000,
+  "price": 6400,
   "image": "/img/unlocks/mk22.webp"
  },
  {
@@ -1197,6 +1607,7 @@
   "name": "MK22 5 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 30,
   "image": "/img/unlocks/magazine-mk22-5-rnd-magazine.webp"
  },
  {
@@ -1205,22 +1616,25 @@
   "name": "6-10x Scope MOA",
   "kind": "Attachment",
   "cost": 45000,
+  "price": 1050,
   "image": "/img/unlocks/sight-6-10x-scope-moa.webp"
  },
  {
   "role": "recon",
   "level": 27,
   "name": "Ghillie Body Suit (Dead)",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 100000,
+  "price": 3500,
   "image": "/img/unlocks/ghillie-body-suit-dead.webp"
  },
  {
   "role": "recon",
   "level": 27,
   "name": "Ghillie Headwear (Dead)",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 80000,
+  "price": 2800,
   "image": "/img/unlocks/ghillie-headwear-dead.webp"
  },
  {
@@ -1229,6 +1643,7 @@
   "name": "Slicktap Brake",
   "kind": "Attachment",
   "cost": 22500,
+  "price": 940,
   "image": "/img/unlocks/muzzle-slicktap-brake.webp"
  },
  {
@@ -1237,6 +1652,7 @@
   "name": "BMR-308",
   "kind": "Weapon",
   "cost": 125000,
+  "price": 6000,
   "image": "/img/unlocks/bmr-308.webp"
  },
  {
@@ -1245,6 +1661,7 @@
   "name": "FAL 10 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 60,
   "image": "/img/unlocks/magazine-fal-10-rnd-magazine.webp"
  },
  {
@@ -1253,14 +1670,16 @@
   "name": "BMR-308 Flash Hider",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1280,
   "image": "/img/unlocks/muzzle-bmr-308-flash-hider.webp"
  },
  {
   "role": "recon",
   "level": 32,
   "name": "Infrared Range Finder",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 50000,
+  "price": 1200,
   "image": "/img/unlocks/infrared-range-finder.webp"
  },
  {
@@ -1269,6 +1688,7 @@
   "name": "BMR-308 Suppressor",
   "kind": "Attachment",
   "cost": 27500,
+  "price": 1200,
   "image": "/img/unlocks/muzzle-bmr-308-suppressor.webp"
  },
  {
@@ -1277,6 +1697,7 @@
   "name": "6x Marksman Scope + Reflex",
   "kind": "Attachment",
   "cost": 35000,
+  "price": 1650,
   "image": "/img/unlocks/sight-6x-marksman-scope-reflex.webp"
  },
  {
@@ -1285,6 +1706,7 @@
   "name": "AMR 50",
   "kind": "Weapon",
   "cost": 200000,
+  "price": 8800,
   "image": "/img/unlocks/amr-50.webp"
  },
  {
@@ -1293,6 +1715,7 @@
   "name": "AMR 50 5 RND Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 15,
   "image": "/img/unlocks/magazine-amr-50-5-rnd-magazine.webp"
  },
  {
@@ -1301,6 +1724,7 @@
   "name": "Three Port Brake",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1180,
   "image": "/img/unlocks/muzzle-three-port-brake.webp"
  },
  {
@@ -1309,6 +1733,7 @@
   "name": ".50 Cal Heavy Suppressor",
   "kind": "Attachment",
   "cost": 27500,
+  "price": 1420,
   "image": "/img/unlocks/muzzle-50-cal-heavy-suppressor.webp"
  },
  {
@@ -1317,6 +1742,7 @@
   "name": "MK22 10 RND Magazine",
   "kind": "Attachment",
   "cost": 35000,
+  "price": 60,
   "image": "/img/unlocks/magazine-mk22-10-rnd-magazine.webp"
  },
  {
@@ -1325,6 +1751,7 @@
   "name": "Flow-Through .308 Suppressor",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 1120,
   "image": "/img/unlocks/muzzle-flow-through-308-suppressor.webp"
  },
  {
@@ -1333,6 +1760,7 @@
   "name": "Frontier 2.5x-10x Precision Scope",
   "kind": "Attachment",
   "cost": 95000,
+  "price": 1800,
   "image": "/img/unlocks/sight-frontier-2-5x-10x-precision-scope.webp"
  },
  {
@@ -1341,6 +1769,7 @@
   "name": "GOL Multi-Caliber Suppressor",
   "kind": "Attachment",
   "cost": 32500,
+  "price": 1800,
   "image": "/img/unlocks/muzzle-gol-multi-caliber-suppressor.webp"
  },
  {
@@ -1349,6 +1778,7 @@
   "name": "Pro Tilt Bipod",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 1400,
   "image": ""
  },
  {
@@ -1357,6 +1787,7 @@
   "name": "AMR 50 Cal Muzzle Brake",
   "kind": "Attachment",
   "cost": 35000,
+  "price": 1600,
   "image": "/img/unlocks/muzzle-amr-50-cal-muzzle-brake.webp"
  },
  {
@@ -1365,31 +1796,53 @@
   "name": "AMR 50 10 RND Magazine",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 30,
   "image": "/img/unlocks/magazine-amr-50-10-rnd-magazine.webp"
  },
  {
   "role": "support",
   "level": 1,
   "name": "Light Drill",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 10000,
+  "price": 600,
   "image": "/img/unlocks/light-drill.webp"
  },
  {
   "role": "support",
   "level": 2,
+  "name": "C4 Charge",
+  "kind": "Equipment",
+  "cost": 0,
+  "price": 250,
+  "image": ""
+ },
+ {
+  "role": "support",
+  "level": 2,
   "name": "Remote Detonator",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 15000,
+  "price": 550,
   "image": "/img/unlocks/remote-detonator.webp"
  },
  {
   "role": "support",
   "level": 3,
   "name": "Medium Hammer",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 800,
   "image": "/img/unlocks/medium-hammer.webp"
+ },
+ {
+  "role": "support",
+  "level": 5,
+  "name": "93mm",
+  "kind": "Ammunition",
+  "cost": 0,
+  "price": 200,
+  "image": ""
  },
  {
   "role": "support",
@@ -1397,14 +1850,16 @@
   "name": "RPG-7",
   "kind": "Weapon",
   "cost": 30000,
+  "price": 2000,
   "image": "/img/unlocks/rpg-7.webp"
  },
  {
   "role": "support",
   "level": 8,
   "name": "Large Hammer",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 75000,
+  "price": 2400,
   "image": "/img/unlocks/large-hammer.webp"
  },
  {
@@ -1413,6 +1868,7 @@
   "name": "M500",
   "kind": "Weapon",
   "cost": 50000,
+  "price": 1200,
   "image": "/img/unlocks/m500.webp"
  },
  {
@@ -1421,7 +1877,17 @@
   "name": "M500 Sabre Brake",
   "kind": "Attachment",
   "cost": 17500,
+  "price": 740,
   "image": "/img/unlocks/muzzle-m500-sabre-brake.webp"
+ },
+ {
+  "role": "support",
+  "level": 12,
+  "name": "PGO-7",
+  "kind": "Attachment",
+  "cost": 10000,
+  "price": 850,
+  "image": ""
  },
  {
   "role": "support",
@@ -1429,6 +1895,7 @@
   "name": "Improved Cylinder Choke",
   "kind": "Attachment",
   "cost": 7500,
+  "price": 540,
   "image": "/img/unlocks/muzzle-improved-cylinder-choke.webp"
  },
  {
@@ -1437,6 +1904,7 @@
   "name": "M249 100 RND Fabric Magazine",
   "kind": "Attachment",
   "cost": 0,
+  "price": 200,
   "image": "/img/unlocks/magazine-m249-100-rnd-fabric-magazine.webp"
  },
  {
@@ -1445,6 +1913,7 @@
   "name": "M249 SAW",
   "kind": "Weapon",
   "cost": 100000,
+  "price": 3200,
   "image": "/img/unlocks/m249-saw.webp"
  },
  {
@@ -1453,6 +1922,7 @@
   "name": "9K333 Verba",
   "kind": "Weapon",
   "cost": 50000,
+  "price": 800,
   "image": "/img/unlocks/9k333-verba.webp"
  },
  {
@@ -1461,6 +1931,7 @@
   "name": "Tread Brake",
   "kind": "Attachment",
   "cost": 10000,
+  "price": 620,
   "image": "/img/unlocks/muzzle-tread-brake.webp"
  },
  {
@@ -1469,6 +1940,7 @@
   "name": "M249 Bipod",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 1050,
   "image": ""
  },
  {
@@ -1477,6 +1949,7 @@
   "name": "Full Choke",
   "kind": "Attachment",
   "cost": 30000,
+  "price": 1400,
   "image": "/img/unlocks/muzzle-full-choke.webp"
  },
  {
@@ -1485,6 +1958,7 @@
   "name": "MAAWS",
   "kind": "Weapon",
   "cost": 125000,
+  "price": 2600,
   "image": "/img/unlocks/maaws.webp"
  },
  {
@@ -1493,6 +1967,7 @@
   "name": "Spectr 4x",
   "kind": "Attachment",
   "cost": 15000,
+  "price": 800,
   "image": "/img/unlocks/sight-spectr-4x.webp"
  },
  {
@@ -1501,7 +1976,17 @@
   "name": "M249 200 RND Box",
   "kind": "Attachment",
   "cost": 35000,
+  "price": 250,
   "image": "/img/unlocks/magazine-m249-200-rnd-box.webp"
+ },
+ {
+  "role": "support",
+  "level": 25,
+  "name": "AT Mine",
+  "kind": "Equipment",
+  "cost": 75000,
+  "price": 650,
+  "image": ""
  },
  {
   "role": "support",
@@ -1509,14 +1994,16 @@
   "name": "Slotted Flash Hider",
   "kind": "Attachment",
   "cost": 20000,
+  "price": 960,
   "image": "/img/unlocks/muzzle-slotted-flash-hider.webp"
  },
  {
   "role": "support",
   "level": 28,
   "name": "Heavy Drill",
-  "kind": "Gear",
+  "kind": "Equipment",
   "cost": 25000,
+  "price": 1300,
   "image": "/img/unlocks/heavy-drill.webp"
  },
  {
@@ -1525,6 +2012,7 @@
   "name": "PKM",
   "kind": "Weapon",
   "cost": 150000,
+  "price": 4500,
   "image": "/img/unlocks/pkm.webp"
  },
  {
@@ -1533,6 +2021,7 @@
   "name": "PKM 100 RND Box",
   "kind": "Attachment",
   "cost": 0,
+  "price": 100,
   "image": "/img/unlocks/magazine-pkm-100-rnd-box.webp"
  },
  {
@@ -1541,6 +2030,16 @@
   "name": "PKM Bipod",
   "kind": "Attachment",
   "cost": 35000,
+  "price": 1350,
+  "image": ""
+ },
+ {
+  "role": "support",
+  "level": 35,
+  "name": "40mm",
+  "kind": "Ammunition",
+  "cost": 0,
+  "price": 100,
   "image": ""
  },
  {
@@ -1549,6 +2048,7 @@
   "name": "MGL-40",
   "kind": "Weapon",
   "cost": 200000,
+  "price": 6000,
   "image": "/img/unlocks/mgl-40.webp"
  },
  {
@@ -1557,6 +2057,7 @@
   "name": "12 Gauge Suppressor",
   "kind": "Attachment",
   "cost": 25000,
+  "price": 1040,
   "image": "/img/unlocks/muzzle-12-gauge-suppressor.webp"
  },
  {
@@ -1565,6 +2066,7 @@
   "name": "Orpheus Max Brake",
   "kind": "Attachment",
   "cost": 40000,
+  "price": 1020,
   "image": "/img/unlocks/muzzle-orpheus-max-brake.webp"
  },
  {
@@ -1573,6 +2075,7 @@
   "name": "Hybrid Grip Pod",
   "kind": "Attachment",
   "cost": 50000,
+  "price": 1500,
   "image": ""
  }
 ]

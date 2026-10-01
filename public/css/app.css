@@ -582,3 +582,31 @@ body::after { display: none; }
 .sb-table tbody tr:nth-child(odd) { background: rgba(41,182,246,.04); }
 .sb-table tbody tr:hover { background: rgba(41,182,246,.1); }
 @media (max-width: 700px) { .sb-table .sb-x, .sb-table .sb-m { display: none; } .sb-table .sb-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; } .sb-table td, .sb-table th { padding: 7px 3px !important; font-size: 12px; } .sb-panel { padding-left: 10px; padding-right: 10px; } .sb-table td, .sb-table th { padding: 7px 5px; } }
+
+/* Progression page */
+.pg-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.pg-card { display: block; padding: 10px 12px; border-radius: 6px; background: rgba(7,18,31,.85); border: 1px solid rgba(58,120,180,.3); color: var(--text); text-decoration: none; position: relative; }
+.pg-card:hover { text-decoration: none; border-color: var(--accent); }
+.pg-card.active { border-color: var(--accent); box-shadow: 0 0 14px rgba(41,182,246,.25); background: rgba(10,40,64,.9); }
+.pg-card.total { border-color: rgba(227,179,65,.45); }
+.pg-card b { font: 700 15px var(--head); text-transform: uppercase; letter-spacing: .5px; }
+.pg-lvl { position: absolute; right: 10px; top: 10px; font: 700 12px var(--head); color: var(--accent2); }
+.pg-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
+.pg-nums span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.pg-nums em { display: block; font: 700 15px var(--head); font-style: normal; color: var(--text); text-transform: none; }
+.pg-table td { vertical-align: middle; font-size: 14px; }
+.pg-table img { width: 56px; height: 30px; object-fit: contain; display: block; }
+.pg-ic svg { width: 22px; height: 22px; color: var(--muted); }
+.pg-table tr.pg-locked td { opacity: .55; }
+.pg-table tr.pg-ready .pg-name { color: #f5c542; }
+.pg-ok, .pg-table tr.pg-bought .pg-tick { color: var(--green); font-weight: 600; }
+.pg-tick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; color: #f5c542; font-weight: 600; }
+@media (max-width: 700px) { .pg-table .pg-x { display: none; } .pg-table td, .pg-table th { padding: 6px 4px; } .pg-table img { width: 40px; } }
+@media (max-width: 700px) {
+  .pg-cards { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pg-card { padding: 8px; }
+  .pg-card b { font-size: 12px; display: block; padding-right: 34px; }
+  .pg-lvl { font-size: 10px; right: 6px; top: 8px; }
+  .pg-nums em { font-size: 13px; }
+  .pg-nums span { font-size: 9px; }
+}

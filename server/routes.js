@@ -116,7 +116,30 @@ api.get('/artillery', member, async (_req, res) => {
 });
 
 api.get('/unlocks', member, async (_req, res) => {
-  res.json(await q('SELECT id, role, level, name, kind, cost, image, source FROM unlocks ORDER BY role, level, id'));
+  res.json(await q('SELECT id, role, level, name, kind, cost, vendor_price, image, source FROM unlocks ORDER BY role, level, id'));
+});
+
+// Items this member has ticked as bought.
+api.get('/me/unlocks', member, async (req, res) => {
+  res.json(await q('SELECT role, name FROM user_unlocks WHERE user_id=$1', [req.user.id]));
+});
+
+// Tick/untick one item, or (with upTo) every item in a class up to a level.
+api.post('/me/unlocks', member, async (req, res) => {
+  const b = req.body || {};
+  const role = str(b.role, 20);
+  const bought = b.bought !== false;
+  let names = [];
+  if (b.upTo !== undefined) {
+    names = (await q('SELECT name FROM unlocks WHERE role=$1 AND level <= $2', [role, int(b.upTo)])).map((r) => r.name);
+  } else if (b.name) {
+    names = [str(b.name, 80)];
+  }
+  for (const name of names) {
+    if (bought) await q('INSERT INTO user_unlocks (user_id, role, name) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [req.user.id, role, name]);
+    else await q('DELETE FROM user_unlocks WHERE user_id=$1 AND role=$2 AND name=$3', [req.user.id, role, name]);
+  }
+  res.json({ ok: true, changed: names.length });
 });
 
 api.get('/awards', member, async (_req, res) => {

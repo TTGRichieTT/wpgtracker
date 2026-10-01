@@ -272,6 +272,7 @@ const RESOURCES = {
       name: (v) => str(v, 80) || 'Unlock',
       kind: (v) => str(v, 30),
       cost: (v) => Math.max(0, int(v)),
+      vendor_price: (v) => Math.max(0, int(v)),
     },
   },
   artillery: {

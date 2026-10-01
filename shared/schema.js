@@ -213,6 +213,8 @@ export const unlocks = pgTable('unlocks', {
   name: text().notNull(),
   kind: text().notNull().default(''),
   cost: integer().notNull().default(0),
+  // In-match buy price from the vendor once unlocked.
+  vendor_price: integer().notNull().default(0),
   // 'tracker' rows are replaced by the daily WARDOGS Tracker sync; 'manual' rows are kept.
   source: text().notNull().default('manual'),
   image: text().notNull().default(''),
@@ -237,6 +239,14 @@ export const rememberTokens = pgTable('remember_tokens', {
   created_at: now(),
   last_used: now(),
 });
+
+// Unlocks each member has ticked as bought (by class + name, so re-imports keep them).
+export const userUnlocks = pgTable('user_unlocks', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: text().notNull(),
+  name: text().notNull(),
+  created_at: now(),
+}, (t) => [primaryKey({ name: 'user_unlocks_pkey', columns: [t.user_id, t.role, t.name] })]);
 
 // Last counted total for each XP source per user (e.g. 'kills', 'stat:wins', 'game:1867240:minutes').
 export const xpCounters = pgTable('xp_counters', {

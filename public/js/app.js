@@ -1565,10 +1565,14 @@ export function elevationFor(table, minM, maxM, range) {
   return null;
 }
 
+const KIND_ICON = { Weapon: 'assault', Attachment: 'crosshair', Ammunition: 'target', Equipment: 'shield', Vehicle: 'driver', Supply: 'coins' };
+const KINDS = ['Weapon', 'Attachment', 'Ammunition', 'Equipment', 'Vehicle', 'Supply'];
+
 async function viewTools(main) {
-  const [list, mine] = await Promise.all([
+  const [list, mine, ticked] = await Promise.all([
     api('unlocks'),
     api(`users/${state.me.id}`).catch(() => null),
+    api('me/unlocks').catch(() => []),
   ]);
   const off = mine?.wardogs?.official;
   const levelOf = (role) => {
@@ -1577,39 +1581,89 @@ async function viewTools(main) {
     const r = off.roles?.[role];
     return r === undefined ? null : Number(r?.level ?? r) || 0;
   };
-  const tab = query().get('role') || 'career';
-  const level = levelOf(tab);
-  const items = list.filter((u) => u.role === tab).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
-  const [c, , art] = ROLE_STYLE[tab] || ['#29b6f6', 'star', ''];
-  const totalCost = items.reduce((sum, u) => sum + (u.cost || 0), 0);
+  const bought = new Set(ticked.map((t) => `${t.role}|${t.name}`));
+  const isBought = (u) => bought.has(`${u.role}|${u.name}`);
+  // Free items count as bought as soon as they're reached.
+  const statusOf = (u) => {
+    const lvl = levelOf(u.role);
+    if (isBought(u) || (u.cost === 0 && lvl !== null && u.level <= lvl)) return 'bought';
+    if (lvl !== null && u.level <= lvl) return 'ready';
+    return 'locked';
+  };
+  const totals = (items) => {
+    const t = { bought: 0, ready: 0, spent: 0, togo: 0, count: items.length };
+    for (const u of items) {
+      const s = statusOf(u);
+      if (s === 'bought') { t.bought++; t.spent += u.cost; } else { t.togo += u.cost; if (s === 'ready') t.ready++; }
+    }
+    return t;
+  };
 
+  const q2 = query();
+  const tab = q2.get('role') || 'career';
+  const kind = q2.get('kind') || '';
+  const items = list.filter((u) => u.role === tab && (!kind || u.kind === kind)).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+  const level = levelOf(tab);
+  const link = (o) => `#/progression?role=${o.role ?? tab}${(o.kind ?? kind) ? `&kind=${o.kind ?? kind}` : ''}`;
+
+  const card = (key, label, t, active) => `<a class="pg-card${active ? ' active' : ''}" href="${link({ role: key, kind: '' })}">
+      <b>${esc(label)}</b>${key !== 'all' && levelOf(key) !== null ? `<span class="pg-lvl">Lvl ${levelOf(key)}</span>` : ''}
+      <div class="pg-nums"><span><em>${t.bought}/${t.count}</em>Bought</span><span><em>${t.ready}</em>Ready</span>
+        <span><em>${fmtMoney(t.spent)}</em>Spent</span><span><em>${fmtMoney(t.togo)}</em>To go</span></div></a>`;
+
+  const reachedNotBought = items.filter((u) => statusOf(u) === 'ready').length;
   main.innerHTML = `<h1>Progression</h1>
     <div class="stack">
+      <div class="pg-cards">
+        ${card('all', 'Totals', totals(list), false).replace('<a class="pg-card"', '<div class="pg-card total"').replace(/<\/a>$/, '</div>')}
+        ${TOOL_ROLES.map(([k, l]) => card(k, l, totals(list.filter((u) => u.role === k)), k === tab)).join('')}
+      </div>
+      ${off ? '' : `<p class="muted small" style="margin:0">${state.realSteam && !state.trackerLinked ? 'Link WARDOGS Tracker on HQ so your levels fill in Ready and Bought.' : 'Your class levels are not known yet.'}</p>`}
       <div class="panel">
-        <div class="panel-title">${icon('unlock')} Progression <span class="sub">unlocks by class</span></div>
-        <div class="tabs">${TOOL_ROLES.map(([k, l]) => `<a href="#/progression?role=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div>
-        <div class="row" style="align-items:flex-start;gap:16px">
-          ${art ? `<img src="/img/brand/roles/${art}.webp" alt="" style="width:96px;border-radius:6px;border:1px solid ${c}">` : '<img src="/img/brand/wolf-emblem.webp" alt="" style="width:96px;border-radius:6px">'}
-          <div class="grow" style="min-width:240px">
-            <div style="font:700 20px var(--head);text-transform:uppercase">${esc(TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab)}${tab === 'career' ? ' (Wardog level)' : ''}</div>
-            <div class="muted">${items.length} unlocks${totalCost ? ` · ${fmtMoney(totalCost)} to unlock everything` : ''}</div>
-            <div class="muted">${level === null
-              ? (state.realSteam && !state.trackerLinked ? 'Link WARDOGS Tracker on HQ to see your progress here.' : 'Your level for this class is not known yet.')
-              : `You are level <b style="color:var(--text)">${level}</b> — ${items.filter((u) => u.level <= level).length} of ${items.length} unlocked.`}</div>
-          </div>
+        <div class="row between" style="margin-bottom:10px">
+          <div class="panel-title" style="margin:0">${icon('unlock')} ${esc(TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab)} <span class="sub">${tab === 'career' ? 'Wardog level' : 'class'} unlocks</span></div>
+          ${level !== null && reachedNotBought ? `<button class="btn small" id="pgAll">${icon('unlock')} Mark all ${reachedNotBought} reached as bought</button>` : ''}
         </div>
-        <div class="unlock-list">${items.map((u) => {
-          const got = level !== null && u.level <= level;
-          return `<div class="unlock ${got ? 'got' : ''}"><b class="lv">L${u.level}</b>
-            ${u.image ? `<img class="ui" src="${esc(u.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<span class="ui"></span>'}
-            <span class="grow">${esc(u.name)} <span class="muted small">· ${esc(u.kind || 'Unlock')}</span></span>
-            <span class="small cost">${u.cost ? fmtMoney(u.cost) : 'Free'}</span>
-            <span class="small state">${got ? '<span style="color:var(--green)">✓ Unlocked</span>' : level === null ? '' : `${u.level - level} to go`}</span></div>`;
-        }).join('') || '<p class="muted">No unlocks listed for this class yet.</p>'}</div>
+        <div class="row" style="gap:6px;margin-bottom:10px">
+          <a class="btn small${!kind ? ' primary' : ''}" href="${link({ kind: '' })}">All</a>
+          ${KINDS.filter((k) => list.some((u) => u.role === tab && u.kind === k)).map((k) => `<a class="btn small${kind === k ? ' primary' : ''}" href="${link({ kind: k })}">${k}</a>`).join('')}
+        </div>
+        <div class="table-wrap"><table class="pg-table">
+          <thead><tr><th>Lvl</th><th></th><th>Name</th><th class="pg-x">Type</th><th>Unlock</th><th class="pg-x">Buy in match</th><th>Status</th></tr></thead>
+          <tbody>${items.map((u) => {
+            const s = statusOf(u);
+            const free = u.cost === 0;
+            return `<tr class="pg-${s}">
+              <td><b>${u.level}</b></td>
+              <td>${u.image ? `<img src="${esc(u.image)}" alt="" loading="lazy">` : `<span class="pg-ic">${icon(KIND_ICON[u.kind] || 'star')}</span>`}</td>
+              <td class="pg-name">${esc(u.name)}</td>
+              <td class="pg-x muted">${esc(u.kind)}</td>
+              <td>${free ? '<span class="muted">Free</span>' : fmtMoney(u.cost)}</td>
+              <td class="pg-x">${u.vendor_price ? fmtMoney(u.vendor_price) : '—'}</td>
+              <td>${s === 'locked'
+                ? `<span class="muted small">${level === null ? 'Locked' : `${u.level - level} to go`}</span>`
+                : free ? '<span class="pg-ok">✓ Unlocked</span>'
+                : `<label class="pg-tick"><input type="checkbox" data-buy="${esc(u.name)}" ${s === 'bought' ? 'checked' : ''}> ${s === 'bought' ? 'Bought' : 'Ready'}</label>`}</td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="7" class="muted">Nothing here.</td></tr>'}</tbody>
+        </table></div>
+        <p class="muted small" style="margin:10px 0 0">Ready = you've reached the level but haven't bought it yet. Tick what you've bought — Spent and To go update from that.</p>
       </div>
     </div>`;
-  onLive('config', (name) => { if (name === 'unlocks') route(); });
 
+  main.querySelectorAll('[data-buy]').forEach((cb) => {
+    cb.onchange = async () => {
+      try {
+        await api('me/unlocks', { method: 'POST', body: { role: tab, name: cb.dataset.buy, bought: cb.checked } });
+        route();
+      } catch (x) { fail(x); cb.checked = !cb.checked; }
+    };
+  });
+  document.getElementById('pgAll')?.addEventListener('click', async () => {
+    if (!(await confirmBox(`Mark every ${TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab} unlock up to level ${level} as bought?`))) return;
+    try { await api('me/unlocks', { method: 'POST', body: { role: tab, upTo: level, bought: true } }); route(); } catch (x) { fail(x); }
+  });
+  onLive('config', (name) => { if (name === 'unlocks') route(); });
 }
 
 // ---------- Ranks ----------

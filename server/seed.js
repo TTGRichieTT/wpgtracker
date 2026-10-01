@@ -82,16 +82,16 @@ export async function seed({ q, one }) {
   // One-off imports, stored in our own database from then on (admins edit them in Admin):
   //  - unlocks: full WARDOGS progression, from WARDOGS Tracker (used with permission), pictures in public/img/unlocks
   //  - artillery: firing tables from wardogs-calculator by Apollyon (MIT licence, server/data/LICENSE-wardogs-calculator.txt)
-  if (!(await one("SELECT value FROM settings WHERE key = '_imported_unlocks'"))) {
+  if (!(await one("SELECT value FROM settings WHERE key = '_imported_unlocks_v2'"))) {
     const unlocks = readData('unlocks.json');
     if (unlocks) {
     // Replace the old short starter list (and any earlier test import); keep anything admins added themselves.
     await q("DELETE FROM unlocks WHERE source <> 'manual' OR name = ANY($1)", [OLD_STARTER]);
     for (const u of unlocks) {
-      await q("INSERT INTO unlocks (role, level, name, kind, cost, image, source) VALUES ($1,$2,$3,$4,$5,$6,'import')",
-        [u.role, u.level, u.name, u.kind, u.cost, u.image]);
+      await q("INSERT INTO unlocks (role, level, name, kind, cost, vendor_price, image, source) VALUES ($1,$2,$3,$4,$5,$6,$7,'import')",
+        [u.role, u.level, u.name, u.kind, u.cost, u.price || 0, u.image]);
     }
-    await q("INSERT INTO settings (key, value) VALUES ('_imported_unlocks', 'true') ON CONFLICT DO NOTHING");
+    await q("INSERT INTO settings (key, value) VALUES ('_imported_unlocks_v2', 'true') ON CONFLICT DO NOTHING");
     }
   }
   if (!(await one("SELECT value FROM settings WHERE key = '_imported_artillery'"))) {
