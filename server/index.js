@@ -169,10 +169,15 @@ app.use('/api', (_req, _res) => {
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-// Browsers must re-check files every time (cheap thanks to ETags), so updates show straight away.
+// Map pictures, unlock pictures and artwork never change, so browsers keep them for 30 days
+// (saves bandwidth on free hosting). Everything else is re-checked every time so updates show straight away.
+const LONG_CACHE = /^\/(maps|img\/unlocks|img\/brand|vendor)\//;
 app.use(express.static(PUBLIC_DIR, {
   index: 'index.html',
-  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  setHeaders: (res, filePath) => {
+    const rel = `/${path.relative(PUBLIC_DIR, filePath).split(path.sep).join('/')}`;
+    res.setHeader('Cache-Control', LONG_CACHE.test(rel) && !rel.endsWith('.json') ? 'public, max-age=2592000' : 'no-cache');
+  },
 }));
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();

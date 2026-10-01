@@ -179,3 +179,25 @@ They were cut from the WPG Discord career card. The mountain background is `publ
 - Positions use the in-game coordinates (1 unit = 100 m). Saved per map on each device.
 - Map pictures were imported once from WARDOGS Tracker (with permission) into `public/maps/`; spawn/tower positions
   and map coordinates from wardogs-calculator (MIT). Map engine: Leaflet (BSD licence, `public/vendor/leaflet/`).
+
+---
+
+## Free hosting: Render + Supabase (instead of Replit)
+
+**1. Database (Supabase, free):** supabase.com → New project (pick a region near your players, set a database password and save it).
+Then **Connect** → **Session pooler** → copy the connection string and put your password into it.
+
+**2. Website (Render, free):** render.com → sign in with GitHub → **New → Blueprint** → pick `TTGRichieTT/wpgtracker`.
+Render reads `render.yaml`. When it asks, paste the Supabase string into `DATABASE_URL` and your Steam key into `STEAM_API_KEY`.
+Your site will be at `https://wpg-barracks.onrender.com` (or similar).
+
+**3. Keep it awake:** free Render apps sleep after 15 minutes with no visitors. uptimerobot.com (free) → New monitor →
+HTTP(s) → your site address + `/healthz` → every 5 minutes. (Render gives 750 free hours a month — enough for one app all month.)
+
+**4. Move the data from Replit (once):** run `node scripts/copy-db.mjs "<Replit DATABASE_URL>" "<Supabase URL>"`.
+It copies every member, message, medal and setting. Safe to run twice.
+
+**5. Android app:** GitHub → Settings → Secrets and variables → Actions → Variables → change `APP_URL` to the Render address,
+then Actions → Build Android app → Run workflow, and share the new APK.
+
+Updates: every push to GitHub redeploys on Render automatically — no "Republish" step.

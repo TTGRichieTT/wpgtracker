@@ -9,11 +9,21 @@ let impl;
 // Drizzle ORM instance (typed queries against shared/schema.js). Most of the app uses q()/one() below.
 export let db;
 
+// Hosted databases (Supabase, Neon, Replit) need an encrypted connection. Their certificates
+// aren't always in Node's trusted list, so encrypt without strict certificate checks.
+// Local databases (localhost) connect without encryption.
+export function pgConfig(url) {
+  const u = new URL(url);
+  const local = ['localhost', '127.0.0.1', '::1'].includes(u.hostname) || u.searchParams.get('sslmode') === 'disable';
+  u.searchParams.delete('sslmode');
+  return { connectionString: u.toString(), max: 10, ssl: local ? false : { rejectUnauthorized: false } };
+}
+
 export async function initDb() {
   if (process.env.DATABASE_URL) {
     const pg = (await import('pg')).default;
     const { drizzle } = await import('drizzle-orm/node-postgres');
-    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 10 });
+    const pool = new pg.Pool(pgConfig(process.env.DATABASE_URL));
     impl = {
       query: (text, params) => pool.query(text, params),
       exec: (text) => pool.query(text),

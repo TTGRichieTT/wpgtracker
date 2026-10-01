@@ -1,0 +1,23 @@
+# Render "Blueprint": tells Render how to run WPG Barracks (free plan).
+# Render → New → Blueprint → pick the TTGRichieTT/wpgtracker repo.
+services:
+  - type: web
+    name: wpg-barracks
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+      # Supabase connection string (Session pooler), pasted in when Render asks.
+      - key: DATABASE_URL
+        sync: false
+      - key: STEAM_API_KEY
+        sync: false
+      - key: INGEST_KEY
+        generateValue: true
