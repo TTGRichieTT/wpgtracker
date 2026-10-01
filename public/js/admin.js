@@ -81,7 +81,7 @@ const RESOURCES = {
   unlocks: {
     one: 'unlock',
     title: 'Wardogs unlocks',
-    help: 'What each class unlocks at each level, stored in our own database. The full list was imported once from WARDOGS Tracker (used with permission). Add, change or remove items here after game updates. Members see their last and next unlock under each class, and the full list on the Tools page. "Career" is the overall Wardog level.',
+    help: 'What each class unlocks at each level, stored in our own database. The full list was imported once from WARDOGS Tracker (used with permission). Add, change or remove items here after game updates. Members see their last and next unlock under each class, and the full list on the Progression page. "Career" is the overall Wardog level.',
     fields: [
       { k: 'role', label: 'Class', type: 'select', options: [['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot'], ['career', 'Career (Wardog level)']] },
       { k: 'level', label: 'Level', type: 'number' },
@@ -95,7 +95,7 @@ const RESOURCES = {
   artillery: {
     one: 'gun',
     title: 'Artillery firing tables',
-    help: 'Used by the artillery calculator on the Tools page. Each line of the firing table is "distance in metres,elevation in mils". Tables originally from wardogs-calculator by Apollyon (MIT licence). If a game update changes a gun, edit its table here.',
+    help: 'Used by the Arty map. Each line of the firing table is "distance in metres,elevation in mils". Tables originally from wardogs-calculator by Apollyon (MIT licence). If a game update changes a gun, edit its table here.',
     key: 'id',
     fields: [
       { k: 'id', label: 'Short ID (no spaces)', createOnly: true },

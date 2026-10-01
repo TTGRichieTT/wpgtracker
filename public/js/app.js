@@ -240,7 +240,7 @@ const NAV = [
   { href: '#/members', key: 'members', label: 'Members', icon: 'users' },
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
-  { href: '#/tools', key: 'tools', label: 'Tools', icon: 'crosshair' },
+  { href: '#/progression', key: 'progression', label: 'Progression', icon: 'unlock' },
   { href: '#/ranks', key: 'ranks', label: 'Ranks', icon: 'chevrons' },
   { sep: true },
   { href: () => `#/u/${state.me.id}`, key: 'me', label: 'My career', icon: 'user' },
@@ -380,7 +380,8 @@ async function route() {
     members: viewMembers,
     servers: viewServers,
     leaderboard: viewLeaderboard,
-    tools: viewTools,
+    progression: viewTools,
+    tools: () => { location.hash = '#/progression'; },
     map: async (m, r, alive) => (await import('./artymap.js')).viewArtyMap(m, r, alive),
     ranks: viewRanks,
     u: viewProfile,
@@ -580,7 +581,7 @@ function careerUnlockHtml(list, level) {
   return `<div class="career-unlock">${icon('unlock')}
     <span><span class="muted">Last career unlock:</span> <b>${last ? `${esc(last.name)}` : '—'}</b></span>
     <span><span class="muted">Next:</span> <b>${next ? `${esc(next.name)}` : 'All done ✓'}</b>${next ? ` <span class="muted">at Wardog level ${next.level} (${next.level - level} to go)</span>` : ''}</span>
-    <a href="#/tools" class="small">See all unlocks →</a></div>`;
+    <a href="#/progression" class="small">See all unlocks →</a></div>`;
 }
 
 // ---------- Career profile ----------
@@ -1440,7 +1441,7 @@ async function viewLeaderboard(main) {
       </a>`).join('') || '<p class="empty">No data yet.</p>'}</div>`;
 }
 
-// ---------- Tools: progression + artillery ----------
+// ---------- Progression (unlocks by class) ----------
 const TOOL_ROLES = [['career', 'Career'], ['recon', 'Recon'], ['assault', 'Assault (Infantry)'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot']];
 
 // Artillery firing tables live in our database (Admin → Artillery); originally from wardogs-calculator by Apollyon (MIT licence).
@@ -1459,10 +1460,9 @@ export function elevationFor(table, minM, maxM, range) {
 }
 
 async function viewTools(main) {
-  const [list, mine, guns] = await Promise.all([
+  const [list, mine] = await Promise.all([
     api('unlocks'),
     api(`users/${state.me.id}`).catch(() => null),
-    api('artillery').catch(() => []),
   ]);
   const off = mine?.wardogs?.official;
   const levelOf = (role) => {
@@ -1477,29 +1477,11 @@ async function viewTools(main) {
   const [c, , art] = ROLE_STYLE[tab] || ['#29b6f6', 'star', ''];
   const totalCost = items.reduce((sum, u) => sum + (u.cost || 0), 0);
 
-  main.innerHTML = `<h1>Tools</h1>
+  main.innerHTML = `<h1>Progression</h1>
     <div class="stack">
-      <div class="panel" id="arty">
-        <div class="row between" style="margin-bottom:14px"><div class="panel-title" style="margin:0">${icon('target')} Artillery <span class="sub">firing calculator</span></div>
-          <a class="btn primary" href="#/map">${icon('target')} Open the artillery map</a></div>
-        <div class="arty-weapons">${guns.map((w, i) => `<button type="button" class="btn${i === 0 ? ' primary' : ''}" data-arty="${esc(w.id)}">${esc(w.label)}${w.note ? `<span class="muted small"> · ${esc(w.note)}</span>` : ''}</button>`).join('') || '<p class="muted">No guns set up yet (Admin → Artillery).</p>'}</div>
-        <div class="arty-body">
-          <label class="field" style="max-width:260px"><span>Distance to target (metres)</span>
-            <input type="number" inputmode="numeric" id="artyRange" min="0" max="3000" step="1" placeholder="e.g. 420"></label>
-          <div class="row" style="gap:6px">${[-50, -10, 10, 50].map((d) => `<button type="button" class="btn small" data-adjust="${d}">${d > 0 ? `Add ${d}` : `Drop ${-d}`} m</button>`).join('')}</div>
-          <div class="arty-result" id="artyResult"></div>
-        </div>
-        <p class="muted small" style="margin:12px 0 0">Sight = in-game elevation in mils. Assumes gun and target are at the same height — treat the first round as a ranging shot,
-          then use Add / Drop to correct. Measure the distance with the in-game map. Want to plan on the map? Try the
-          <a href="https://wardogstracker.gg/maps/mortar-calculator" target="_blank" rel="noopener">WARDOGS Tracker</a> or
-          <a href="https://wardogs.tools/map/bakurani?mode=artillery" target="_blank" rel="noopener">wardogs.tools</a> map calculators.<br>
-          Firing tables originally from <a href="https://github.com/apollyon-sys/wardogs-calculator" target="_blank" rel="noopener">wardogs-calculator</a> by Apollyon
-          (<a href="/data/LICENSE-wardogs-calculator.txt" target="_blank" rel="noopener">MIT licence</a>).</p>
-      </div>
-
       <div class="panel">
         <div class="panel-title">${icon('unlock')} Progression <span class="sub">unlocks by class</span></div>
-        <div class="tabs">${TOOL_ROLES.map(([k, l]) => `<a href="#/tools?role=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div>
+        <div class="tabs">${TOOL_ROLES.map(([k, l]) => `<a href="#/progression?role=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div>
         <div class="row" style="align-items:flex-start;gap:16px">
           ${art ? `<img src="/img/brand/roles/${art}.webp" alt="" style="width:96px;border-radius:6px;border:1px solid ${c}">` : '<img src="/img/brand/wolf-emblem.webp" alt="" style="width:96px;border-radius:6px">'}
           <div class="grow" style="min-width:240px">
@@ -1523,37 +1505,6 @@ async function viewTools(main) {
     </div>`;
   onLive('config', (name) => { if (name === 'unlocks') route(); });
 
-  // ----- artillery calculator -----
-  const result = main.querySelector('#artyResult');
-  const input = main.querySelector('#artyRange');
-  if (!result || !input) return;
-  let pick = guns[0];
-  const draw = () => {
-    if (!pick) { result.innerHTML = ''; return; }
-    const table = pick.table;
-    const minM = pick.min;
-    const maxM = pick.max;
-    const range = Number(input.value);
-    const mil = input.value === '' ? null : elevationFor(table, minM, maxM, range);
-    let status = ` · ${fmtNum(range)} m`;
-    if (input.value === '') status = ' · type a distance';
-    else if (mil === null) status = ` · <b style="color:var(--red)">${fmtNum(range)} m is out of range</b>`;
-    result.innerHTML = `
-      <div class="arty-big">${mil === null ? '—' : mil}<span>mil</span></div>
-      <div class="muted">${esc(pick.label)} · range ${fmtNum(minM)}–${fmtNum(maxM)} m${status}</div>`;
-  };
-  main.querySelectorAll('[data-arty]').forEach((b) => {
-    b.onclick = () => {
-      pick = guns.find((w) => w.id === b.dataset.arty);
-      main.querySelectorAll('[data-arty]').forEach((x) => x.classList.toggle('primary', x === b));
-      draw();
-    };
-  });
-  main.querySelectorAll('[data-adjust]').forEach((b) => {
-    b.onclick = () => { input.value = Math.max(0, (Number(input.value) || 0) + Number(b.dataset.adjust)); draw(); };
-  });
-  input.oninput = draw;
-  draw();
 }
 
 // ---------- Ranks ----------

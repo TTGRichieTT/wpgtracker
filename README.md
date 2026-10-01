@@ -161,15 +161,15 @@ They were cut from the WPG Discord career card. The mountain background is `publ
      then set XP per kill back to **2** and clear the banner.
 - Other XP rates: Admin → Stats (matches, wins, playtime…) and Admin → Games (Steam hours and achievements).
 
-### Tools page: unlocks and artillery
+### Progression page and artillery data
 
 - **Unlocks** (Admin → Unlocks): the full Wardogs progression — 197 unlocks with levels, costs and pictures.
   Imported once from WARDOGS Tracker (used with permission) and now stored in our own database.
   Pictures are in `public/img/unlocks/`. After a game update, edit, add or delete items in Admin → Unlocks.
 - **Artillery** (Admin → Artillery): firing tables for the L81 mortar and SPH-2 (low and high arc), used by the
-  calculator on the Tools page. Originally from [wardogs-calculator](https://github.com/apollyon-sys/wardogs-calculator)
+  Arty map. Originally from [wardogs-calculator](https://github.com/apollyon-sys/wardogs-calculator)
   by Apollyon, MIT licence (see `server/data/LICENSE-wardogs-calculator.txt`). Edit a table here if a game update changes a gun.
-- Nothing on the Tools page depends on other websites after the first start.
+- Neither depends on other websites after the first start.
 
 ### Artillery map
 

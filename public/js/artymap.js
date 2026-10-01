@@ -10,6 +10,8 @@ const toLL = (p) => window.L.latLng(-p.y * SCALE, p.x * SCALE);
 const fromLL = (ll) => ({ x: ll.lng / SCALE, y: -ll.lat / SCALE });
 const round2 = (v) => Math.round(v * 100) / 100;
 const MAX_TARGETS = 8;
+const MAP_STYLES = [['normal', 'Normal'], ['tactical', 'Tactical'], ['night', 'Night']];
+let mapStyle = (() => { try { return localStorage.getItem('wpg.arty.style') || 'tactical'; } catch { return 'tactical'; } })();
 
 let leafletReady = null;
 function loadLeaflet() {
@@ -74,7 +76,8 @@ export async function viewArtyMap(main, _rest, alive) {
       <div class="tabs" style="margin:0">${maps.map((m) => `<a href="#/map?map=${m.id}" class="${m.id === map.id ? 'active' : ''}">${esc(m.name)}</a>`).join('')}</div></div>
     <div class="arty-map-wrap">
       <div class="panel arty-map-panel">
-        <div id="artyMap" class="arty-map"></div>
+        <div id="artyMap" class="arty-map style-${esc(mapStyle)}"></div>
+        <div class="arty-styles">${MAP_STYLES.map(([k, l]) => `<button type="button" class="btn small${k === mapStyle ? ' primary' : ''}" data-style="${k}">${l}</button>`).join('')}</div>
         <div class="arty-cursor" id="artyCursor">Tap the map to place your ${st.gun ? 'targets' : 'gun'}</div>
       </div>
       <div class="panel arty-side">
@@ -111,7 +114,7 @@ export async function viewArtyMap(main, _rest, alive) {
   const lmap = L.map('artyMap', {
     crs: L.CRS.Simple,
     minZoom: 0,
-    maxZoom: 7,
+    maxZoom: 6,
     zoomSnap: 0.25,
     maxBounds: worldBounds.pad(0.05),
     attributionControl: false,
@@ -121,7 +124,7 @@ export async function viewArtyMap(main, _rest, alive) {
     tileSize: 512,
     minZoom: 0,
     maxNativeZoom: 4,
-    maxZoom: 7,
+    maxZoom: 6,
     noWrap: true,
     bounds: worldBounds,
     // A few edge tiles don't exist (empty land outside the playable area): show nothing instead.
@@ -239,6 +242,15 @@ export async function viewArtyMap(main, _rest, alive) {
   });
 
   main.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { st.mode = b.dataset.mode; redraw(); }; });
+  main.querySelectorAll('[data-style]').forEach((b) => {
+    b.onclick = () => {
+      mapStyle = b.dataset.style;
+      try { localStorage.setItem('wpg.arty.style', mapStyle); } catch { /* storage blocked */ }
+      const el = main.querySelector('#artyMap');
+      MAP_STYLES.forEach(([k]) => el.classList.toggle(`style-${k}`, k === mapStyle));
+      main.querySelectorAll('[data-style]').forEach((x) => x.classList.toggle('primary', x === b));
+    };
+  });
   main.querySelector('#artyClear').onclick = () => { st.gun = null; st.targets = []; st.mode = 'gun'; persist(); redraw(); };
   main.querySelector('#artyWeapon').onchange = (e) => { st.weaponId = e.target.value; persist(); redraw(); };
   const num = (id) => Number(main.querySelector(id).value);
