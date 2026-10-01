@@ -480,3 +480,16 @@ body::after { display: none; }
 .hero .hero-art { opacity: .92; }
 .xp-rule b { white-space: normal; text-align: right; max-width: 55%; }
 .xp-rule .grow { min-width: 90px; }
+
+/* Unlocks: last/next under class cards + Tools progression list */
+.role-card .ul { margin: 6px 6px 0; text-align: left; font-size: 11px; line-height: 1.35; }
+.role-card .ul div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role-card .ul span { display: inline-block; width: 30px; color: var(--muted); text-transform: uppercase; font: 700 10px var(--head); letter-spacing: .5px; }
+.role-card .ul em { font-style: normal; color: var(--rc); font-weight: 700; }
+.career-unlock { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 14px; padding: 8px 10px; background: #07121f; border: 1px solid rgba(58,120,180,.25); border-radius: 6px; }
+.career-unlock svg { width: 18px; height: 18px; color: var(--accent); }
+.unlock-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.unlock { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: #07121f; border: 1px solid rgba(58,120,180,.25); border-radius: 6px; }
+.unlock .lv { width: 44px; font: 700 16px var(--head); color: var(--accent2); }
+.unlock.got { border-color: rgba(61,220,132,.4); }
+.unlock.got .lv { color: var(--green); }

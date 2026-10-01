@@ -99,6 +99,10 @@ api.get('/xp-rules', member, async (_req, res) => {
   });
 });
 
+api.get('/unlocks', member, async (_req, res) => {
+  res.json(await q('SELECT id, role, level, name, kind, cost FROM unlocks ORDER BY role, level, id'));
+});
+
 api.get('/awards', member, async (_req, res) => {
   res.json(await q('SELECT * FROM awards ORDER BY sort_order, id'));
 });

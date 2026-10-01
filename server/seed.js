@@ -62,6 +62,25 @@ export async function seed({ q, one }) {
   }
 
   // Fill in the WPG Discord invite once for databases made before it was the default.
+  // Starter unlock list (widely published in game guides). Admins keep it up to date in Admin → Unlocks.
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_unlocks'"))) {
+    const starter = [
+      ['assault', 10, 'Galil', 'Weapon'], ['assault', 20, 'M4', 'Weapon'], ['assault', 35, 'FAL', 'Weapon'],
+      ['medic', 15, 'MP5', 'Weapon'], ['medic', 29, 'PP-19 50-round drum', 'Attachment'], ['medic', 35, 'Super-45', 'Weapon'],
+      ['recon', 19, 'SV98', 'Weapon'], ['recon', 25, 'MK22', 'Weapon'],
+      ['support', 8, 'Large Hammer', 'Gear'], ['support', 10, 'M500', 'Weapon'], ['support', 15, 'M249 SAW', 'Weapon'], ['support', 30, 'PKM', 'Weapon'],
+      ['driver', 3, 'URAL', 'Vehicle'], ['driver', 8, 'Dune Buggy', 'Vehicle'], ['driver', 35, 'Heavy Tank', 'Vehicle'],
+      ['pilot', 10, 'Z20 Lakota', 'Vehicle'],
+      ['career', 3, 'Level 1 Armor & Helmet', 'Gear'], ['career', 12, 'Field Backpack', 'Gear'], ['career', 30, 'Level 2 Armor & Helmet', 'Gear'],
+      ['career', 60, 'Level 3 Armor & Helmet', 'Gear'], ['career', 85, 'Deagle', 'Weapon'], ['career', 90, 'Artillery Tank', 'Vehicle'],
+      ['career', 150, 'Arsenal Backpack', 'Gear'],
+    ];
+    for (const [role, level, name, kind] of starter) {
+      await q('INSERT INTO unlocks (role, level, name, kind) VALUES ($1,$2,$3,$4)', [role, level, name, kind]);
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_unlocks', 'true') ON CONFLICT DO NOTHING");
+  }
+
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
     await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");

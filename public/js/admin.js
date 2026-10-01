@@ -11,6 +11,7 @@ const TABS = [
   { key: 'awards', label: 'Medals' },
   { key: 'stat-defs', label: 'Stats' },
   { key: 'game-servers', label: 'Game servers' },
+  { key: 'unlocks', label: 'Unlocks' },
   { key: 'channels', label: 'Chat channels' },
   { key: 'games', label: 'Games' },
   { key: 'profile-fields', label: 'Profile fields' },
@@ -75,6 +76,20 @@ const RESOURCES = {
     ],
     defaults: { format: 'number', xp_each: 0 },
     row: (r) => `<div class="grow"><b>${esc(r.label)}</b> <span class="pill">${esc(r.key)}</span><div class="muted small">${esc(r.format)} · ${Number(r.xp_each)} XP each</div></div>`,
+  },
+  unlocks: {
+    one: 'unlock',
+    title: 'Wardogs unlocks',
+    help: 'What each class unlocks at each level. Members see their last and next unlock under each class on their career page, and the full list on the Tools page. Started from the unlock levels published in game guides — please check them in game and keep them up to date after game updates. "Career" means the overall Wardog level.',
+    fields: [
+      { k: 'role', label: 'Class', type: 'select', options: [['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot'], ['career', 'Career (Wardog level)']] },
+      { k: 'level', label: 'Level', type: 'number' },
+      { k: 'name', label: 'What unlocks' },
+      { k: 'kind', label: 'Type', type: 'select', options: [['Weapon', 'Weapon'], ['Attachment', 'Attachment'], ['Vehicle', 'Vehicle'], ['Gear', 'Gear'], ['Other', 'Other']] },
+      { k: 'cost', label: 'Cost in cash (0 if free / unknown)', type: 'number' },
+    ],
+    defaults: { role: 'assault', level: 1, kind: 'Weapon', cost: 0 },
+    row: (r) => `<div class="grow"><b>${esc(r.name)}</b> <span class="pill">${esc(r.role)} · level ${r.level}</span><div class="muted small">${esc(r.kind)}${r.cost ? ` · ${fmtNum(r.cost)}` : ''}</div></div>`,
   },
   'game-servers': {
     one: 'server',

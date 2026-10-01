@@ -239,6 +239,7 @@ const NAV = [
   { href: '#/servers', key: 'servers', label: 'Servers', icon: 'server' },
   { href: '#/members', key: 'members', label: 'Members', icon: 'users' },
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
+  { href: '#/tools', key: 'tools', label: 'Tools', icon: 'crosshair' },
   { href: '#/ranks', key: 'ranks', label: 'Ranks', icon: 'chevrons' },
   { sep: true },
   { href: () => `#/u/${state.me.id}`, key: 'me', label: 'My career', icon: 'user' },
@@ -378,6 +379,7 @@ async function route() {
     members: viewMembers,
     servers: viewServers,
     leaderboard: viewLeaderboard,
+    tools: viewTools,
     ranks: viewRanks,
     u: viewProfile,
     profile: viewEditProfile,
@@ -556,6 +558,29 @@ document.addEventListener('click', (e) => {
   else if (e.target.closest('[data-tracker-check]')) trackerCheck(true);
 });
 
+// ---------- Unlocks (admin-maintained list) ----------
+export function lastNextUnlock(list, role, level) {
+  const mine = list.filter((u) => u.role === role).sort((a, b) => a.level - b.level);
+  const done = mine.filter((u) => u.level <= level);
+  return { last: done[done.length - 1] || null, next: mine.find((u) => u.level > level) || null, total: mine.length, unlocked: done.length };
+}
+function unlockLinesHtml(list, role, level) {
+  const { last, next, total } = lastNextUnlock(list, role, level);
+  if (!total) return '';
+  return `<div class="ul">
+    <div title="${esc(last ? `${last.name} (level ${last.level})` : '')}"><span>Last</span> ${last ? esc(last.name) : '—'}</div>
+    <div title="${esc(next ? `${next.name} at level ${next.level}` : '')}"><span>Next</span> ${next ? `${esc(next.name)} <em>L${next.level}</em>` : 'All done ✓'}</div>
+  </div>`;
+}
+function careerUnlockHtml(list, level) {
+  const { last, next, total } = lastNextUnlock(list, 'career', level);
+  if (!total) return '';
+  return `<div class="career-unlock">${icon('unlock')}
+    <span><span class="muted">Last career unlock:</span> <b>${last ? `${esc(last.name)}` : '—'}</b></span>
+    <span><span class="muted">Next:</span> <b>${next ? `${esc(next.name)}` : 'All done ✓'}</b>${next ? ` <span class="muted">at Wardog level ${next.level} (${next.level - level} to go)</span>` : ''}</span>
+    <a href="#/tools" class="small">See all unlocks →</a></div>`;
+}
+
 // ---------- Career profile ----------
 // [colour, fallback icon, artwork] — artwork is from the WPG career card.
 const ROLE_STYLE = {
@@ -585,7 +610,7 @@ function formatStat(def, v) {
 }
 
 async function viewProfile(main, [id]) {
-  const [p, defs, fields] = await Promise.all([api(`users/${Number(id)}`), api('stat-defs'), api('profile-fields')]);
+  const [p, defs, fields, unlockList] = await Promise.all([api(`users/${Number(id)}`), api('stat-defs'), api('profile-fields'), api('unlocks').catch(() => [])]);
   const u = p.user;
   const mine = u.id === state.me.id;
   const off = p.wardogs.official;
@@ -626,8 +651,10 @@ async function viewProfile(main, [id]) {
       <div class="roles">${roles.map(([name, r]) => {
         const [c, ic, art] = ROLE_STYLE[name.toLowerCase()] || ['#29b6f6', 'star', ''];
         const pic = art ? `<img class="art" src="/img/brand/roles/${art}.webp" alt="" loading="lazy">` : `<div style="padding-top:10px">${icon(ic)}</div>`;
-        return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(r?.level ?? r)}</div></div>`;
+        const lvl = Number(r?.level ?? r) || 0;
+        return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(lvl)}</div>${unlockLinesHtml(unlockList, name.toLowerCase(), lvl)}</div>`;
       }).join('')}</div>` : ''}
+      ${careerUnlockHtml(unlockList, Number(off.wardogLevel) || 0)}
       <div class="credit">Global stats by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a>${p.wardogs.official_synced ? ` · updated ${timeAgo(p.wardogs.official_synced)}` : ''}</div>`;
   } else {
     officialHtml = mine && state.realSteam
@@ -1409,6 +1436,62 @@ async function viewLeaderboard(main) {
         <div class="grow">${userLine(u)}</div>
         <b style="font:700 18px var(--head)">${fmtNum(u.score)} <span class="muted small">${unit}</span></b>
       </a>`).join('') || '<p class="empty">No data yet.</p>'}</div>`;
+}
+
+// ---------- Tools: progression + artillery ----------
+const TOOL_ROLES = [['career', 'Career'], ['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot']];
+
+async function viewTools(main) {
+  const [list, mine] = await Promise.all([
+    api('unlocks'),
+    api(`users/${state.me.id}`).catch(() => null),
+  ]);
+  const off = mine?.wardogs?.official;
+  const levelOf = (role) => {
+    if (!off) return null;
+    if (role === 'career') return Number(off.wardogLevel) || 0;
+    const r = off.roles?.[role];
+    return r === undefined ? null : Number(r?.level ?? r) || 0;
+  };
+  const tab = query().get('role') || 'career';
+  const level = levelOf(tab);
+  const items = list.filter((u) => u.role === tab).sort((a, b) => a.level - b.level);
+  const [c, , art] = ROLE_STYLE[tab] || ['#29b6f6', 'star', ''];
+
+  main.innerHTML = `<h1>Tools</h1>
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-title">${icon('unlock')} Progression <span class="sub">unlocks by class</span></div>
+        <div class="tabs">${TOOL_ROLES.map(([k, l]) => `<a href="#/tools?role=${k}" class="${k === tab ? 'active' : ''}">${l}</a>`).join('')}</div>
+        <div class="row" style="align-items:flex-start;gap:16px">
+          ${art ? `<img src="/img/brand/roles/${art}.webp" alt="" style="width:96px;border-radius:6px;border:1px solid ${c}">` : `<img src="/img/brand/wolf-emblem.webp" alt="" style="width:96px;border-radius:6px">`}
+          <div class="grow" style="min-width:240px">
+            <div style="font:700 20px var(--head);text-transform:uppercase">${esc(TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab)}${tab === 'career' ? ' (Wardog level)' : ''}</div>
+            <div class="muted">${level === null
+              ? (state.realSteam && !state.trackerLinked ? 'Link WARDOGS Tracker on HQ to see your progress here.' : 'Your level for this class is not known yet.')
+              : `You are level <b style="color:var(--text)">${level}</b>.`}</div>
+          </div>
+        </div>
+        <div class="unlock-list">${items.map((u) => {
+          const got = level !== null && u.level <= level;
+          return `<div class="unlock ${got ? 'got' : ''}"><b class="lv">L${u.level}</b><span class="grow">${esc(u.name)} <span class="muted small">· ${esc(u.kind || 'Unlock')}${u.cost ? ` · ${fmtMoney(u.cost)}` : ''}</span></span>
+            <span class="small">${got ? '<span style="color:var(--green)">✓ Unlocked</span>' : level === null ? '' : `${u.level - level} level${u.level - level === 1 ? '' : 's'} to go`}</span></div>`;
+        }).join('') || '<p class="muted">No unlocks listed for this class yet.</p>'}</div>
+        <p class="muted small" style="margin:12px 0 0">This list is kept by WPG admins (Admin → Unlocks) and may miss some items.
+          For every unlock and its cost see <a href="https://wardogs.tools/progression" target="_blank" rel="noopener">wardogs.tools progression</a>.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">${icon('target')} Artillery <span class="sub">mortar &amp; howitzer</span></div>
+        <p style="margin-top:0">Place your gun and the target on the map, and the calculator gives you the bearing and elevation (mils) for the L81 mortar and SPH-2 howitzer.
+          These open in your browser — they're run by other Wardogs fans, so they stay up to date after game patches.</p>
+        <div class="row">
+          <a class="btn primary" href="https://wardogs.tools/map/bakurani?mode=artillery" target="_blank" rel="noopener">${icon('target')} Artillery map (wardogs.tools)</a>
+          <a class="btn" href="https://wardogstracker.gg/maps/mortar-calculator" target="_blank" rel="noopener">${icon('crosshair')} Mortar calculator (WARDOGS Tracker)</a>
+        </div>
+      </div>
+    </div>`;
+  onLive('config', (name) => { if (name === 'unlocks') route(); });
 }
 
 // ---------- Ranks ----------

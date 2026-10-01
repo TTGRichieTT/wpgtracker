@@ -256,6 +256,16 @@ const RESOURCES = {
       sort_order: (v) => int(v),
     },
   },
+  unlocks: {
+    table: 'unlocks', key: 'id', min: 'admin', order: 'role, level, id',
+    fields: {
+      role: (v) => (['recon', 'assault', 'medic', 'support', 'driver', 'pilot', 'career'].includes(v) ? v : 'assault'),
+      level: (v) => Math.max(1, Math.min(500, int(v, 1))),
+      name: (v) => str(v, 80) || 'Unlock',
+      kind: (v) => str(v, 30),
+      cost: (v) => Math.max(0, int(v)),
+    },
+  },
   'game-servers': {
     table: 'game_servers', key: 'id', min: 'admin', order: 'sort_order, id',
     secrets: ['rcon_password'],

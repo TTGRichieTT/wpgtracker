@@ -180,6 +180,17 @@ export const userStats = pgTable('user_stats', {
   updated_at: now(),
 }, (t) => [primaryKey({ name: 'user_stats_pkey', columns: [t.user_id, t.key] })]);
 
+// Unlocks per Wardogs class level (admin-maintained in Admin → Unlocks).
+// role: recon | assault | medic | support | driver | pilot | career (Wardog level)
+export const unlocks = pgTable('unlocks', {
+  id: serial().primaryKey(),
+  role: text().notNull(),
+  level: integer().notNull(),
+  name: text().notNull(),
+  kind: text().notNull().default(''),
+  cost: integer().notNull().default(0),
+}, (t) => [index('unlocks_role_level_idx').on(t.role, t.level)]);
+
 // Last counted total for each XP source per user (e.g. 'kills', 'stat:wins', 'game:1867240:minutes').
 export const xpCounters = pgTable('xp_counters', {
   user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
