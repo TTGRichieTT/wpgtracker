@@ -549,3 +549,11 @@ body::after { display: none; }
 .arty-map.style-tactical .leaflet-tile-pane { filter: grayscale(1) contrast(1.35) brightness(.95); }
 .arty-map.style-night .leaflet-tile-pane { filter: grayscale(.6) brightness(.55) contrast(1.3) sepia(.25) hue-rotate(160deg); }
 .arty-map.style-tactical .leaflet-overlay-pane path[stroke="#ffffff"], .arty-map.style-night .leaflet-overlay-pane path[stroke="#ffffff"] { stroke-opacity: .32; }
+
+/* Phones: show every tab by wrapping onto extra rows instead of sideways scrolling */
+@media (max-width: 860px) {
+  .tabs { flex-wrap: wrap; overflow-x: visible; padding-bottom: 0; }
+  .tabs a { padding: 7px 10px; font-size: 13px; }
+}
+.tabs a { background: rgba(5,12,22,.78); }
+.tabs a.active { background: rgba(10,40,64,.9); }
