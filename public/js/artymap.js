@@ -1,13 +1,14 @@
 // Interactive artillery map: place your gun and targets, get distance, bearing and elevation.
 // Map tiles were imported once from WARDOGS Tracker (with permission); map positions use the
-// in-game coordinate system (1 unit = 100 m, x to the east, y to the south / down the map).
+// in-game coordinate system (1 unit = 100 m, x to the east, y to the NORTH / up the map).
 import { api, esc, fmtNum, elevationFor } from './app.js';
 import { icon } from './icons.js';
 
 const UNITS = 163.84; // map width/height in game units
-const SCALE = 512 / UNITS; // Leaflet zoom-0 pixels per game unit
-const toLL = (p) => window.L.latLng(-p.y * SCALE, p.x * SCALE);
-const fromLL = (ll) => ({ x: ll.lng / SCALE, y: -ll.lat / SCALE });
+// Set per map in viewArtyMap: Leaflet zoom-0 pixels per game unit.
+let K = 512 / UNITS;
+const toLL = (p) => window.L.latLng(-(UNITS - p.y) * K, p.x * K);
+const fromLL = (ll) => ({ x: ll.lng / K, y: UNITS + ll.lat / K });
 const round2 = (v) => Math.round(v * 100) / 100;
 const MAX_TARGETS = 8;
 const MAP_STYLES = [['normal', 'Normal'], ['tactical', 'Tactical'], ['night', 'Night']];
@@ -33,7 +34,7 @@ function loadLeaflet() {
 }
 
 // Saved positions (per map) live on this device only.
-const storeKey = (mapId) => `wpg.arty.${mapId}`;
+const storeKey = (mapId) => `wpg.arty2.${mapId}`;
 function loadSaved(mapId) {
   try { return JSON.parse(localStorage.getItem(storeKey(mapId))) || {}; } catch { return {}; }
 }
@@ -43,9 +44,9 @@ function save(mapId, data) {
 
 export function solution(gun, target, weapon) {
   const dx = (target.x - gun.x) * 100; // metres east
-  const dy = (target.y - gun.y) * 100; // metres south
+  const dy = (target.y - gun.y) * 100; // metres north
   const dist = Math.hypot(dx, dy);
-  const bearing = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
+  const bearing = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
   const mil = weapon ? elevationFor(weapon.table, weapon.min, weapon.max, dist) : null;
   return { dist, bearing, bearingMil: Math.round((bearing * 6400) / 360) % 6400, mil };
 }
@@ -61,6 +62,8 @@ export async function viewArtyMap(main, _rest, alive) {
   const L = window.L;
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const map = maps.find((m) => m.id === params.get('map')) || maps[0];
+  const nativeZoom = map.maxNativeZoom || 4;
+  K = (512 * ((map.imageWidth || 512 * 2 ** nativeZoom) / (512 * 2 ** nativeZoom))) / UNITS;
   const saved = loadSaved(map.id);
   const st = {
     gun: saved.gun || null,
@@ -110,7 +113,7 @@ export async function viewArtyMap(main, _rest, alive) {
     </div>`;
 
   // ----- the map -----
-  const worldBounds = L.latLngBounds(toLL({ x: 0, y: UNITS }), toLL({ x: UNITS, y: 0 }));
+  const worldBounds = L.latLngBounds(toLL({ x: 0, y: 0 }), toLL({ x: UNITS, y: UNITS }));
   const lmap = L.map('artyMap', {
     crs: L.CRS.Simple,
     minZoom: 0,
@@ -123,14 +126,14 @@ export async function viewArtyMap(main, _rest, alive) {
   L.tileLayer(`/maps/${map.id}/{z}/{x}_{y}.webp`, {
     tileSize: 512,
     minZoom: 0,
-    maxNativeZoom: 4,
+    maxNativeZoom: nativeZoom,
     maxZoom: 6,
     noWrap: true,
     bounds: worldBounds,
     // A few edge tiles don't exist (empty land outside the playable area): show nothing instead.
     errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
   }).addTo(lmap);
-  const play = map.bounds ? L.latLngBounds(toLL({ x: map.bounds.minX, y: map.bounds.maxY }), toLL({ x: map.bounds.maxX, y: map.bounds.minY })) : worldBounds;
+  const play = map.bounds ? L.latLngBounds(toLL({ x: map.bounds.minX, y: map.bounds.minY }), toLL({ x: map.bounds.maxX, y: map.bounds.maxY })) : worldBounds;
   lmap.fitBounds(play);
 
   // 1 km grid (every 10 units)
@@ -163,7 +166,7 @@ export async function viewArtyMap(main, _rest, alive) {
       gm.on('drag', (e) => { st.gun = fromLL(e.target.getLatLng()); drawResults(); });
       gm.on('dragend', () => { persist(); redraw(); });
       if (w) {
-        const ring = (m, dash) => L.circle(toLL(st.gun), { radius: (m / 100) * SCALE, color: '#29b6f6', weight: 1.5, dashArray: dash, fill: false, interactive: false }).addTo(layer);
+        const ring = (m, dash) => L.circle(toLL(st.gun), { radius: (m / 100) * K, color: '#29b6f6', weight: 1.5, dashArray: dash, fill: false, interactive: false }).addTo(layer);
         ring(w.max, null);
         if (w.min > 0) ring(w.min, '4 6');
       }
@@ -211,8 +214,8 @@ export async function viewArtyMap(main, _rest, alive) {
     const s = solution(st.gun, t, null);
     const rad = (s.bearing * Math.PI) / 180;
     const step = 10 / 100; // 10 m in units
-    const fwd = { x: Math.sin(rad), y: -Math.cos(rad) };
-    const right = { x: Math.cos(rad), y: Math.sin(rad) };
+    const fwd = { x: Math.sin(rad), y: Math.cos(rad) };
+    const right = { x: Math.cos(rad), y: -Math.sin(rad) };
     const d = { add: [fwd, 1], drop: [fwd, -1], right: [right, 1], left: [right, -1] }[how];
     st.targets[i] = { x: t.x + d[0].x * step * d[1], y: t.y + d[0].y * step * d[1] };
     persist();

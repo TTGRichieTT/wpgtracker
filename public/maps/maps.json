@@ -14,55 +14,55 @@
    {
     "icon": "tower",
     "label": "Tower 4",
-    "x": 83.61,
-    "y": 72.84
+    "x": 83.64,
+    "y": 72.85
    },
    {
     "icon": "tower",
     "label": "Tower 3",
-    "x": 77.16,
-    "y": 73.43
+    "x": 77.19,
+    "y": 73.44
    },
    {
     "icon": "tower",
     "label": "Tower 2",
-    "x": 77.17,
-    "y": 69.99
+    "x": 77.19,
+    "y": 70
    },
    {
     "icon": "tower",
     "label": "Tower 1",
-    "x": 80.49,
-    "y": 69.84
+    "x": 80.52,
+    "y": 69.85
    },
    {
     "icon": "tower",
     "label": "Tower 5",
-    "x": 82.2,
+    "x": 82.22,
     "y": 68.41
    },
    {
     "icon": "valkyra",
-    "label": "Valkyra",
+    "label": "Valkyra spawn",
     "x": 118.75,
     "y": 70.93
    },
    {
     "icon": "manticore",
-    "label": "Manticore",
+    "label": "Manticore spawn",
     "x": 40.09,
     "y": 77.52
    },
    {
     "icon": "lonestar",
-    "label": "Lonestar",
+    "label": "Lonestar spawn",
     "x": 87.46,
     "y": 32.5
    }
   ],
   "areas": [
    {
-    "label": "VALKYRA Spawn",
+    "label": "Valkyra spawn",
     "color": "#d86666",
     "points": [
      [
@@ -84,7 +84,7 @@
     ]
    },
    {
-    "label": "MANTICORE Spawn",
+    "label": "Manticore spawn",
     "color": "#82c596",
     "points": [
      [
@@ -106,7 +106,7 @@
     ]
    },
    {
-    "label": "LONESTAR Spawn",
+    "label": "Lonestar spawn",
     "color": "#5fa8d3",
     "points": [
      [
@@ -127,7 +127,9 @@
      ]
     ]
    }
-  ]
+  ],
+  "imageWidth": 8192,
+  "maxNativeZoom": 4
  },
  {
   "id": "ozeti",
@@ -167,26 +169,26 @@
    },
    {
     "icon": "valkyra",
-    "label": "Valkyra",
-    "x": 118.75,
-    "y": 70.93
+    "label": "Valkyra spawn",
+    "x": 136.98,
+    "y": 66.92
    },
    {
     "icon": "manticore",
-    "label": "Manticore",
+    "label": "Manticore spawn",
     "x": 68.28,
     "y": 88.03
    },
    {
     "icon": "lonestar",
-    "label": "Lonestar",
+    "label": "Lonestar spawn",
     "x": 83.73,
     "y": 30.69
    }
   ],
   "areas": [
    {
-    "label": "VALKYRA Spawn",
+    "label": "Valkyra spawn",
     "color": "#d86666",
     "points": [
      [
@@ -208,7 +210,7 @@
     ]
    },
    {
-    "label": "MANTICORE Spawn",
+    "label": "Manticore spawn",
     "color": "#82c596",
     "points": [
      [
@@ -230,7 +232,7 @@
     ]
    },
    {
-    "label": "LONESTAR Spawn",
+    "label": "Lonestar spawn",
     "color": "#5fa8d3",
     "points": [
      [
@@ -251,7 +253,9 @@
      ]
     ]
    }
-  ]
+  ],
+  "imageWidth": 8192,
+  "maxNativeZoom": 4
  },
  {
   "id": "zestafona",
@@ -285,26 +289,26 @@
    },
    {
     "icon": "valkyra",
-    "label": "VALKYRA Spawn",
+    "label": "Valkyra spawn",
     "x": 39.44,
     "y": 124.94
    },
    {
     "icon": "manticore",
-    "label": "MANTICORE Spawn",
+    "label": "Manticore spawn",
     "x": 104.66,
     "y": 115.08
    },
    {
     "icon": "lonestar",
-    "label": "LONESTAR",
+    "label": "Lonestar spawn",
     "x": 68.01,
     "y": 66.6
    }
   ],
   "areas": [
    {
-    "label": "MANTICORE Spawn",
+    "label": "Manticore spawn",
     "color": "#82c596",
     "points": [
      [
@@ -326,7 +330,7 @@
     ]
    },
    {
-    "label": "VALKYRA Spawn",
+    "label": "Valkyra spawn",
     "color": "#d86666",
     "points": [
      [
@@ -348,7 +352,7 @@
     ]
    },
    {
-    "label": "LONESTAR Spawn",
+    "label": "Lonestar spawn",
     "color": "#5fa8d3",
     "points": [
      [
@@ -369,6 +373,8 @@
      ]
     ]
    }
-  ]
+  ],
+  "imageWidth": 13107,
+  "maxNativeZoom": 5
  }
 ]
