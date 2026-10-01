@@ -231,27 +231,70 @@ servers.get('/admin/servers/:id/maps/:mapId/modes', role('admin'), async (req, r
   res.json((forMap?.experiences || []).map((id) => ({ id: String(id), name: expLabel(id) || names.get(id) || String(id) })));
 });
 
+// Time-of-day presets and control zones for "Change map" (and the time-of-day button).
+const catalogIds = (data, key) => {
+  const list = Array.isArray(data) ? data : data?.[key] || [];
+  return list.map((x) => (typeof x === 'string' ? x : x?.id || x?.name)).filter(Boolean).map(String);
+};
+servers.get('/admin/servers/:id/lightings', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  res.json(catalogIds(await rcon(s, 'GET', '/catalog/lightings'), 'lightings'));
+});
+servers.get('/admin/servers/:id/maps/:mapId/zones', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const mapId = encodeURIComponent(str(req.params.mapId, 80));
+  res.json(catalogIds(await rcon(s, 'GET', `/catalog/maps/${mapId}/alternators`).catch(() => []), 'alternators'));
+});
+// Faction names for "Move player to faction".
+servers.get('/admin/servers/:id/factions', role('mod'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const st = await rcon(s, 'GET', '/status');
+  res.json((st?.factionScores || []).map((f) => f.name).filter(Boolean));
+});
+
 servers.get('/admin/servers/:id/bans', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   res.json(await rcon(s, 'GET', '/bans'));
 });
 
-// Mods: broadcast, kick, kill. Admins: also ban, unban, restart, end match, change map.
+// Mods: broadcast, whisper, kick, kill, move faction. Admins: also ban, unban, restart, end/next, map, time of day.
 const ACTIONS = {
   broadcast: { min: 'mod', run: (s, b) => rcon(s, 'POST', '/broadcast', { message: need(str(b.message, 300), 'Type a message.') }) },
   kick: { min: 'mod', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kick`, { reason: str(b.reason, 200) || 'Kicked by WPG staff' }) },
   kill: { min: 'mod', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kill`) },
   ban: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/bans', { steamId: steamId(b), reason: str(b.reason, 200) || 'Banned by WPG staff' }) },
   unban: { min: 'admin', run: (s, b) => rcon(s, 'DELETE', `/bans/${steamId(b)}`) },
+  whisper: {
+    min: 'mod',
+    run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/message`, { message: need(str(b.message, 300), 'Type a message.') }),
+  },
+  faction: {
+    min: 'mod',
+    run: (s, b) => rcon(s, 'PATCH', `/players/${steamId(b)}`, { faction: need(str(b.faction, 40), 'Pick a faction.') }),
+  },
   restart: { min: 'admin', run: (s) => rcon(s, 'POST', '/match/restart') },
   end: { min: 'admin', run: (s) => rcon(s, 'POST', '/match/end') },
+  // Same server call as "end", but only when the rotation has a next map to go to.
+  next: {
+    min: 'admin',
+    run: async (s) => {
+      const st = await rcon(s, 'GET', '/status');
+      if (st?.rotation?.nextIndex === null || st?.rotation?.nextIndex === undefined) throw new HttpError(400, 'There is no next map in the rotation.');
+      return rcon(s, 'POST', '/match/end');
+    },
+  },
+  lighting: { min: 'admin', run: (s, b) => rcon(s, 'PUT', '/world/lighting', { lighting: need(str(b.lighting, 60), 'Pick a time of day.') }) },
   map: {
     min: 'admin',
     run: (s, b) => {
-      // Same body as the official Wardogs RCON console: { map, experiences? }
+      // Same body as the official Wardogs RCON console: { map, experiences?, lighting?, alternator? }
       const body = { map: need(str(b.map, 80), 'Pick a map.') };
       const exps = (Array.isArray(b.experiences) ? b.experiences : []).map((e) => str(e, 80)).filter(Boolean).slice(0, 10);
       if (exps.length) body.experiences = exps;
+      const lighting = str(b.lighting, 60);
+      if (lighting) body.lighting = lighting;
+      const alternator = str(b.alternator, 120);
+      if (alternator) body.alternator = alternator;
       return rcon(s, 'POST', '/match/map', body);
     },
   },
@@ -276,7 +319,7 @@ servers.post('/admin/servers/:id/action', role('mod'), async (req, res) => {
   playersCache.delete(s.id);
   liveCacheRcon.delete(s.id);
   await audit(req.user.id, `server.${b.action}`, s.name || s.join_code, {
-    steamId: b.steamId, reason: b.reason, message: b.message, map: b.map,
+    steamId: b.steamId, reason: b.reason, message: b.message, map: b.map, faction: b.faction, lighting: b.lighting,
   });
   res.json({ ok: true, result });
 });

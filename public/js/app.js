@@ -1263,13 +1263,22 @@ async function changeMapBox(sid, act) {
   if (!maps.length) { body.innerHTML = '<p class="muted">The server did not send a map list.</p>'; return; }
   body.innerHTML = `<form class="stack" id="mapForm">
       <label class="field"><span>Map</span><select name="map">${maps.map((mp) => `<option value="${esc(mp.id)}">${esc(mp.name)}</option>`).join('')}</select></label>
-      <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;margin-bottom:6px">Game mode</span><div id="modeList" class="stack"></div></div>
-      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Change map</button></div>
+      <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;margin-bottom:6px">Game mode + modifications</span><div id="modeList" class="stack"></div></div>
+      <label class="field"><span>Time of day</span><select name="lighting"><option value="">Server default</option></select></label>
+      <label class="field"><span>Control zone</span><select name="alternator"><option value="">Server default</option></select></label>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">Change map now</button></div>
     </form>`;
   const form = body.querySelector('#mapForm');
   form.querySelector('[data-close]').onclick = m.close;
   const modeList = form.querySelector('#modeList');
+  const fill = (sel, ids, label = (x) => x) => {
+    sel.innerHTML = `<option value="">Server default</option>${ids.map((x) => `<option value="${esc(x)}">${esc(label(x))}</option>`).join('')}`;
+  };
+  api(`admin/servers/${sid}/lightings`).then((l) => fill(form.lighting, l, (x) => x.replace(/([a-z])([A-Z])/g, '$1 $2'))).catch(() => {});
   const loadModes = async () => {
+    api(`admin/servers/${sid}/maps/${encodeURIComponent(form.map.value)}/zones`)
+      .then((z) => fill(form.alternator, z, (x) => x.replace(/^ZoneAlternator\.[^.]+\./, '').replace(/\./g, ' · ')))
+      .catch(() => fill(form.alternator, []));
     modeList.innerHTML = '<div class="spinner" style="margin:6px 0"></div>';
     try {
       const modes = await api(`admin/servers/${sid}/maps/${encodeURIComponent(form.map.value)}/modes`);
@@ -1287,8 +1296,20 @@ async function changeMapBox(sid, act) {
     const experiences = [...form.querySelectorAll('[name=mode]:checked')].map((c) => c.value);
     const name = form.map.options[form.map.selectedIndex].text;
     m.close();
-    act(sid, { action: 'map', map: form.map.value, experiences }, `Changing map to ${name}.`);
+    act(sid, { action: 'map', map: form.map.value, experiences, lighting: form.lighting.value, alternator: form.alternator.value }, `Changing map to ${name}.`);
   };
+}
+
+// Small picker box: pick one option from a list. Resolves to the value, or null if cancelled.
+function pickBox(title, label, options, okLabel) {
+  return new Promise((resolve) => {
+    const m = modal(`<form class="stack"><h2 style="margin:0">${esc(title)}</h2>
+      <label class="field"><span>${esc(label)}</span><select name="v">${options.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</select></label>
+      <div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn primary">${esc(okLabel)}</button></div></form>`);
+    const f = m.el.querySelector('form');
+    f.querySelector('[data-close]').onclick = () => { m.close(); resolve(null); };
+    f.onsubmit = (e) => { e.preventDefault(); const v = f.v.value; m.close(); resolve(v); };
+  });
 }
 
 // The public server list reports internal map names; show what players see in game.
@@ -1361,11 +1382,13 @@ async function viewServers(main, _r, alive) {
         <form class="row" data-broadcast="${s.id}"><input type="text" name="message" class="grow" maxlength="300" placeholder="Message everyone on the server" style="min-width:180px"><button class="btn">${icon('megaphone')} Broadcast</button></form>
         ${admin ? `
         <div class="row">
+          <button class="btn" data-act="map" data-sid="${s.id}">${icon('target')} Override map</button>
+          <button class="btn danger" data-act="end" data-sid="${s.id}">Force end match</button>
           <button class="btn" data-act="restart" data-sid="${s.id}">${icon('refresh')} Restart match</button>
-          <button class="btn" data-act="end" data-sid="${s.id}">End match</button>
-          <button class="btn" data-act="map" data-sid="${s.id}">${icon('target')} Change map</button>
+          <button class="btn" data-act="next" data-sid="${s.id}">Force next map</button>
+          <button class="btn" data-act="lighting" data-sid="${s.id}">Time of day</button>
           <button class="btn ghost" data-act="unban" data-sid="${s.id}">Unban a Steam ID</button>
-        </div>` : '<p class="muted small">Mods can broadcast, kick and kill. Admins can also ban and control the match.</p>'}
+        </div>` : '<p class="muted small">Mods can broadcast, whisper, kick, kill and move players. Admins can also ban and control the match.</p>'}
       </div>`;
   };
 
@@ -1389,6 +1412,8 @@ async function viewServers(main, _r, alive) {
             <div class="muted small">${p.kills !== null ? `${p.kills} kills · ${p.deaths} deaths` : ''}${p.pingMs !== null ? ` · ${p.pingMs} ms` : ''}${p.member ? '' : ' · not in app'}</div>
           </div>
           ${staff && p.steamId ? `<div class="row">
+            <button class="btn small" data-act="whisper" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Whisper</button>
+            <button class="btn small" data-act="faction" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Move</button>
             <button class="btn small" data-act="kick" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Kick</button>
             <button class="btn small ghost" data-act="kill" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Kill</button>
             ${admin ? `<button class="btn small danger" data-act="ban" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Ban</button>` : ''}
@@ -1460,7 +1485,25 @@ async function viewServers(main, _r, alive) {
     } else if (a === 'restart') {
       if (await confirmBox('Restart the current match for everyone?')) act(sid, { action: 'restart' }, 'Match restarting.');
     } else if (a === 'end') {
-      if (await confirmBox('End the current match now?')) act(sid, { action: 'end' }, 'Match ended.');
+      if (await confirmBox('End the current match now? The server moves on once the match-end screen finishes.')) act(sid, { action: 'end' }, 'Match ended.');
+    } else if (a === 'next') {
+      if (await confirmBox('End this round and go to the next map in the rotation?')) act(sid, { action: 'next' }, 'Going to the next map.');
+    } else if (a === 'whisper') {
+      const message = await promptBox(`Whisper to ${name}`, 'Only they will see it', { okLabel: 'Send' });
+      if (message) act(sid, { action: 'whisper', steamId: steam, message }, `Message sent to ${name}.`);
+    } else if (a === 'faction') {
+      try {
+        const factions = await api(`admin/servers/${sid}/factions`);
+        if (!factions.length) return toast('No factions', 'The server did not list any factions.', { error: true });
+        const faction = await pickBox(`Move ${name}`, 'Faction', factions.map((f) => [f, f]), 'Move');
+        if (faction) act(sid, { action: 'faction', steamId: steam, faction }, `${name} moved to ${faction}.`);
+      } catch (x) { fail(x); }
+    } else if (a === 'lighting') {
+      try {
+        const list = await api(`admin/servers/${sid}/lightings`);
+        const lighting = await pickBox('Change time of day', 'Time of day', list.map((l) => [l, l.replace(/([a-z])([A-Z])/g, '$1 $2')]), 'Change');
+        if (lighting) act(sid, { action: 'lighting', lighting }, 'Time of day changed.');
+      } catch (x) { fail(x); }
     } else if (a === 'map') {
       changeMapBox(sid, act);
     }
