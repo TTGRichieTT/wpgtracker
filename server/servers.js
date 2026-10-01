@@ -90,7 +90,7 @@ function reachReason(e, base) {
   return `${code || 'network error'}${cause.message ? ` (${cause.message})` : ''}.`;
 }
 
-async function rcon(server, method, path, body) {
+export async function rcon(server, method, path, body) {
   if (!server.rcon_url || !server.rcon_password) throw new HttpError(400, 'RCON is not set up for this server yet.');
   const base = server.rcon_url.replace(/\/+$/, '').replace(/\/v1$/, '');
   let res;
@@ -287,4 +287,45 @@ servers.get('/admin/servers/search', role('admin'), async (req, res) => {
   if (term.length < 2) return res.json([]);
   const data = await liveFetch(`/servers?q=${encodeURIComponent(term)}&limit=20`);
   res.json((data.data || []).map((s) => ({ join_code: s.serverId, name: s.name, players: s.players, maxPlayers: s.maxPlayers, region: s.region, type: s.type })));
+});
+
+// ---------- Server leaderboard ----------
+const BOARD_SORT = {
+  kills: 'kills DESC, playtime_s DESC',
+  kd: '(kills::float / GREATEST(deaths, 1)) DESC, kills DESC',
+  wins: 'wins DESC, matches DESC',
+  matches: 'matches DESC, playtime_s DESC',
+  playtime: 'playtime_s DESC',
+};
+servers.get('/server-leaderboard', member, async (req, res) => {
+  const list = await q("SELECT id, name, join_code FROM game_servers WHERE enabled = true AND rcon_url <> '' ORDER BY sort_order, id");
+  const server = list.find((s) => s.id === int(req.query.server)) || list[0];
+  if (!server) return res.json({ servers: [], rows: [] });
+  const by = BOARD_SORT[req.query.by] ? req.query.by : 'kills';
+  const rows = await q(
+    `SELECT sp.*, u.id AS user_id FROM server_players sp LEFT JOIN users u ON u.steam_id = sp.steam_id AND u.status = 'active'
+      WHERE sp.server_id = $1 ORDER BY ${BOARD_SORT[by]}, sp.name LIMIT 200`,
+    [server.id],
+  );
+  const memberIds = rows.map((r) => r.user_id).filter(Boolean);
+  const members = memberIds.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [memberIds])) : [];
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const st = await one('SELECT updated_at FROM server_track_state WHERE server_id=$1', [server.id]);
+  res.json({
+    servers: list.map((s) => ({ id: s.id, name: s.name || s.join_code })),
+    server: server.id,
+    by,
+    updated: st?.updated_at || null,
+    rows: rows.map((r) => ({
+      name: r.name,
+      kills: r.kills,
+      deaths: r.deaths,
+      matches: r.matches,
+      wins: r.wins,
+      losses: r.losses,
+      playtime_s: r.playtime_s,
+      last_seen: r.last_seen,
+      member: r.user_id ? byId.get(r.user_id) || null : null,
+    })),
+  });
 });

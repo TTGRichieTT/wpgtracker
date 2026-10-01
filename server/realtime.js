@@ -60,6 +60,7 @@ export function startRealtime(httpServer, sessionMiddleware) {
   });
   bus.on('dms:read', (userId) => io.to(`u:${userId}`).emit('counts'));
   bus.on('notify', (userId, n) => io.to(`u:${userId}`).emit('notify', n));
+  bus.on('server:board', (serverId) => io.emit('server:board', serverId));
   bus.on('user:changed', (userId) => io.to(`u:${userId}`).emit('me:changed'));
   bus.on('friends:changed', (ids) => ids.forEach((id) => io.to(`u:${id}`).emit('friends:changed')));
   bus.on('user:kick', (userId) => io.in(`u:${userId}`).disconnectSockets(true));

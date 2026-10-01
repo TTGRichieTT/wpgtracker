@@ -129,6 +129,24 @@ export async function seed({ q, one }) {
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_wardogs_name', 'true') ON CONFLICT DO NOTHING");
   }
 
+  // Server leaderboard starting data (from the Discord bot's leaderboard, 1 Oct 2026). Rows join up with
+  // the real player when the tracker first sees that name on the server.
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_server_board'"))) {
+    const wpg = await one("SELECT id FROM game_servers WHERE join_code = 'bf019b3b-7670-4879-9220-b541edc58e1b'");
+    if (wpg) {
+      const start = [
+        ['[WPG] Ninjas Dynasty', 3, 33], ['[WPG] Fang1127', 1, 27], ['[WPG] Joshy', 3, 20], ['Cadicristein', 2, 18],
+        ['[WPG] Richie_TT', 1, 12], ['Bodo', 1, 8], ['NoxLVR', 1, 6], ['[WPG] Gus Gallows', 1, 6], ['[WPG] mrtacosauce', 1, 8],
+        ['lithocreations', 1, 7], ['mrbrandywine', 1, 6], ['(Nirvana) AVERAGE PE', 0, 0], ['- HAGGARD', 0, 0], ['-0-PERKY-0-', 0, 0],
+      ];
+      for (const [name, matches, mins] of start) {
+        await q(`INSERT INTO server_players (server_id, steam_id, name, matches, playtime_s) VALUES ($1,$2,$3,$4,$5)
+                 ON CONFLICT DO NOTHING`, [wpg.id, `name:${name}`, name, matches, mins * 60]);
+      }
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_server_board', 'true') ON CONFLICT DO NOTHING");
+  }
+
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
     await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");

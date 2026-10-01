@@ -574,3 +574,11 @@ body::after { display: none; }
 .rack-item { display: flex; flex-direction: column; gap: 4px; padding: 8px; background: #07121f; border: 1px solid rgba(58,120,180,.2); border-radius: 6px; min-width: 0; }
 .rack-item .ribbon { width: 100%; height: 18px; }
 .rack-item b { font: 700 13px var(--head); text-transform: uppercase; letter-spacing: .3px; line-height: 1.2; }
+
+/* Server leaderboard table */
+.sb-table th { white-space: nowrap; font-size: 12px; }
+.sb-table td { font: 600 14px var(--head); text-align: center; white-space: nowrap; }
+.sb-table td.sb-name, .sb-table th:nth-child(2) { text-align: left; font-family: var(--body); }
+.sb-table tbody tr:nth-child(odd) { background: rgba(41,182,246,.04); }
+.sb-table tbody tr:hover { background: rgba(41,182,246,.1); }
+@media (max-width: 700px) { .sb-table .sb-x, .sb-table .sb-m { display: none; } .sb-table .sb-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; } .sb-table td, .sb-table th { padding: 7px 3px !important; font-size: 12px; } .sb-panel { padding-left: 10px; padding-right: 10px; } .sb-table td, .sb-table th { padding: 7px 5px; } }

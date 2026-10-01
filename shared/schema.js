@@ -246,6 +246,28 @@ export const xpCounters = pgTable('xp_counters', {
   updated_at: now(),
 }, (t) => [primaryKey({ name: 'xp_counters_pkey', columns: [t.user_id, t.source] })]);
 
+// Server leaderboard: totals per player on our game servers, counted from RCON (members and guests).
+// steam_id is 'name:<in-game name>' for rows imported before the tracker had seen that player.
+export const serverPlayers = pgTable('server_players', {
+  server_id: integer().notNull(),
+  steam_id: text().notNull(),
+  name: text().notNull().default(''),
+  kills: integer().notNull().default(0),
+  deaths: integer().notNull().default(0),
+  matches: integer().notNull().default(0),
+  wins: integer().notNull().default(0),
+  losses: integer().notNull().default(0),
+  playtime_s: integer().notNull().default(0),
+  last_seen: timestamp({ withTimezone: true }),
+}, (t) => [primaryKey({ name: 'server_players_pkey', columns: [t.server_id, t.steam_id] })]);
+
+// The tracker's memory of the match in progress, so a restart doesn't double count.
+export const serverTrackState = pgTable('server_track_state', {
+  server_id: integer().primaryKey(),
+  state: jsonb().notNull().default({}),
+  updated_at: now(),
+});
+
 export const gameServers = pgTable('game_servers', {
   id: serial().primaryKey(),
   join_code: text().notNull().unique('game_servers_join_code_key'),

@@ -376,6 +376,7 @@ function connectSocket() {
   });
   socket.on('me:changed', refreshMe);
   socket.on('friends:changed', () => { refreshMe(); emitLive('friends', null); });
+  socket.on('server:board', () => emitLive('server-board'));
   socket.on('config:changed', async (name) => {
     if (name === 'settings') state.settings = await api('settings/public').catch(() => state.settings);
     emitLive('config', name);
@@ -1488,9 +1489,51 @@ async function viewServers(main, _r, alive) {
 }
 
 // ---------- Leaderboard ----------
+// The WPG game server's own leaderboard (counted live from the server).
+const SERVER_SORTS = [['kills', 'Kills'], ['kd', 'K/D'], ['wins', 'Wins'], ['matches', 'Matches'], ['playtime', 'Playtime']];
+async function serverBoardHtml(sort, serverId) {
+  const d = await api(`server-leaderboard?by=${sort}${serverId ? `&server=${serverId}` : ''}`);
+  if (!d.servers.length) {
+    return '<div class="panel empty">The server leaderboard starts once a game server has its RCON details (Servers → Server settings).</div>';
+  }
+  const tag = state.settings.clan_tag || 'WPG';
+  const ratio = (a, b) => (a / Math.max(1, b)).toFixed(2);
+  const link = (extra) => `#/leaderboard?by=server&sort=${extra.sort ?? sort}${(extra.server ?? d.server) ? `&server=${extra.server ?? d.server}` : ''}`;
+  return `
+    ${d.servers.length > 1 ? `<div class="tabs">${d.servers.map((s) => `<a href="${link({ server: s.id })}" class="${s.id === d.server ? 'active' : ''}">${esc(s.name)}</a>`).join('')}</div>` : ''}
+    <div class="panel glow sb-panel">
+      <div class="row between" style="margin-bottom:10px">
+        <div class="panel-title" style="margin:0">${icon('trophy')} Server <span class="sub">leaderboard</span></div>
+        <span class="muted small">${d.updated ? `Updated ${timeAgo(d.updated)}` : 'Waiting for the first check'} · counts every 30 s</span>
+      </div>
+      <div class="row" style="gap:6px;margin-bottom:12px"><span class="muted small">Sort by</span>
+        ${SERVER_SORTS.map(([k, l]) => `<a class="btn small${k === d.by ? ' primary' : ''}" href="${link({ sort: k })}">${l}</a>`).join('')}</div>
+      <div class="table-wrap"><table class="sb-table">
+        <thead><tr><th>#</th><th>Player</th><th>Kills</th><th class="sb-x">Deaths</th><th>K/D</th><th class="sb-m">Matches</th><th>Wins</th><th class="sb-x">Losses</th><th class="sb-x">W/L</th><th>Playtime</th><th class="sb-x">${esc(tag)} rank</th><th class="sb-x">${esc(tag)} XP</th></tr></thead>
+        <tbody>${d.rows.map((r, i) => `<tr>
+          <td><b style="color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">${i + 1}</b></td>
+          <td class="sb-name">${r.member ? `<a href="#/u/${r.member.id}">${esc(r.name)}</a>` : esc(r.name)}</td>
+          <td>${fmtNum(r.kills)}</td><td class="sb-x">${fmtNum(r.deaths)}</td><td>${ratio(r.kills, r.deaths)}</td>
+          <td class="sb-m">${fmtNum(r.matches)}</td><td>${fmtNum(r.wins)}</td><td class="sb-x">${fmtNum(r.losses)}</td><td class="sb-x">${ratio(r.wins, r.losses)}</td>
+          <td>${fmtMins(Math.floor(r.playtime_s / 60))}</td>
+          <td class="sb-x">${r.member ? `<span class="accent" style="font:700 13px var(--head);text-transform:uppercase">${esc(isPmc(r.member) ? 'PMC' : r.member.rank?.abbr || '—')}</span>` : '<span class="muted small">Guest</span>'}</td>
+          <td class="sb-x">${r.member ? fmtNum(r.member.xp) : '—'}</td>
+        </tr>`).join('') || '<tr><td colspan="12" class="muted">Nobody yet — stats appear after players join the server.</td></tr>'}</tbody>
+      </table></div>
+      <p class="muted small" style="margin:10px 0 0">Wins and losses count when a match ends (your team had the top score). Guests are players not in the app.</p>
+    </div>`;
+}
+
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'xp';
-  const tabs = [['xp', `${state.settings.clan_tag || 'WPG'} XP`], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['server', `${state.settings.clan_tag || 'WPG'} server`], ['xp', `${state.settings.clan_tag || 'WPG'} XP`], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  if (by === 'server') {
+    main.innerHTML = `<h1>Leaderboard</h1>
+      <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
+      ${await serverBoardHtml(query().get('sort') || 'kills', query().get('server'))}`;
+    onLive('server-board', () => route());
+    return;
+  }
   const list = await api(`leaderboard?by=${by}`);
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>

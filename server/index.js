@@ -12,6 +12,7 @@ import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop 
 import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
 import { servers } from './servers.js';
+import { startServerTracker } from './servertracker.js';
 import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
 import { PgSessionStore, HttpError, str, OWNER_IDS, START_ADMIN_IDS, hashToken } from './util.js';
@@ -217,6 +218,7 @@ app.use((err, _req, res, _next) => {
 const server = http.createServer(app);
 startRealtime(server, sessionMiddleware);
 startSyncLoop();
+startServerTracker();
 setInterval(() => {
   store.prune().catch(() => {});
   q("DELETE FROM remember_tokens WHERE last_used < now() - interval '120 days'").catch(() => {});
