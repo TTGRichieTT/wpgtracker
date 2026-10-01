@@ -1361,7 +1361,8 @@ async function viewServers(main, _r, alive) {
       ${admin ? `<button class="btn primary" id="srvAdd">${icon('plus')} Add server</button>` : ''}
       <button class="btn" id="srvRefresh">${icon('refresh')} Refresh</button></div></div>
     ${stale ? '<p class="muted small">⚠ Live server data may be a few minutes old.</p>' : ''}
-    <div class="stack">${servers.map(serverCard).join('')}</div>`;
+    <div class="stack">${servers.map(serverCard).join('')}</div>
+    <div class="credit">Live server data by <a href="https://wardogservers.com" target="_blank" rel="noopener">Wardog Servers</a></div>`;
 
   async function loadPlayers(s) {
     const box = main.querySelector(`[data-players="${s.id}"]`);
