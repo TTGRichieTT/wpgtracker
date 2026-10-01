@@ -1,5 +1,5 @@
 // Automatic medals: given when a member's synced stats meet a medal's rule.
-//   class:<recon|assault|medic|support|driver|pilot>:<level>  — class level from WARDOGS Tracker
+//   class:<recon|assault|medic|support|driver|pilot>:<level>  — class level from global Wardogs stats
 //   career:<level>                                            — overall Wardog level
 //   hours:<hours>                                             — hours played in tracked Steam games
 // Medals are never taken away automatically.

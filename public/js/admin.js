@@ -67,7 +67,7 @@ const RESOURCES = {
   'stat-defs': {
     one: 'stat',
     title: 'Server stats',
-    help: 'Stats you track for each member (matches, wins…). Mods type them in on the Members tab, or your Discord bot can send them in automatically. “XP each” gives WPG XP per 1 of this stat. Kills and deaths come from WARDOGS Tracker, but adding a stat with key “kills” or “deaths” lets you override them.',
+    help: 'Stats you track for each member (matches, wins…). Mods type them in on the Members tab, or your Discord bot can send them in automatically. “XP each” gives WPG XP per 1 of this stat. Kills and deaths come from the WPG server, but adding a stat with key “kills” or “deaths” lets you override them.',
     key: 'key',
     fields: [
       { k: 'key', label: 'Key (used by bots, e.g. wins)' },
@@ -475,7 +475,7 @@ async function editUser(id, ranks, awards, reload) {
         <label class="field" style="grid-column:1/-1"><span>Bio</span><textarea name="bio">${esc(u.bio)}</textarea></label>
       </div>
       <h3>Server stats</h3>
-      <p class="muted small">Leave a box empty to clear it. Kills & deaths normally come from WARDOGS Tracker.</p>
+      <p class="muted small">Leave a box empty to clear it. Kills & deaths normally come from the WPG server.</p>
       <div class="form-grid">${defs.map((s) => `<label class="field"><span>${esc(s.label)}${s.format === 'minutes' ? ' (minutes)' : ''}</span><input type="number" step="any" data-stat="${esc(s.key)}" value="${d.stats[s.key] ?? ''}"></label>`).join('')}</div>
       <div class="row"><button class="btn primary">Save changes</button><button type="button" class="btn" id="usync">${icon('refresh')} Sync stats now</button></div>
     </form>
@@ -577,8 +577,7 @@ const SETTINGS = [
     ['xp_event_message', 'XP event banner on the Ranks page (e.g. "Kill XP is 10 this weekend!") — leave empty when no event'],
   ]],
   ['Stats syncing', [
-    ['tracker_enabled', 'Get Wardogs stats from WARDOGS Tracker', 'check'],
-    ['tracker_server', 'WPG server name on WARDOGS Tracker (the part after /servers/ in the link)'],
+    ['tracker_enabled', 'Get global Wardogs stats (level, cash, classes, world ranks)', 'check'],
     ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
   ]],
 ];
@@ -598,7 +597,7 @@ async function settingsTab(body) {
     <form id="sform" class="stack">
       ${SETTINGS.map(([title, list]) => `<div class="panel"><div class="panel-title">${esc(title)}</div><div class="form-grid">${list.map(input).join('')}</div></div>`).join('')}
       ${extra.length ? `<div class="panel"><div class="panel-title">Other</div><div class="form-grid">${extra.map((k) => input([k, k])).join('')}</div></div>` : ''}
-      <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now (Steam + WARDOGS Tracker + medals)</button></div>
+      <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now (Steam + Wardogs + medals)</button></div>
     </form>`;
   const form = document.getElementById('sform');
   form.onsubmit = async (e) => {

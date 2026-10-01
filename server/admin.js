@@ -437,7 +437,7 @@ admin.put('/settings', role('admin'), async (req, res) => {
   res.json({ ok: true });
 });
 
-// Syncs every member (Steam, WARDOGS Tracker, medals) and tells the admin how it went when finished.
+// Syncs every member (Steam, Wardogs stats, medals) and tells the admin how it went when finished.
 let syncAllRunning = false;
 admin.post('/sync-all', role('admin'), async (req, res) => {
   if (syncAllRunning) throw new HttpError(409, 'A full sync is already running — you\'ll get a message when it finishes.');
@@ -460,11 +460,11 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
     syncAllRunning = false;
   }
   const missing = tally.notOnTracker.length
-    ? ` Not on WARDOGS Tracker yet (they need to link it from HQ): ${tally.notOnTracker.slice(0, 12).join(', ')}${tally.notOnTracker.length > 12 ? ` and ${tally.notOnTracker.length - 12} more` : ''}.`
+    ? ` No Wardogs stats yet (they need to add their in-game name on HQ): ${tally.notOnTracker.slice(0, 12).join(', ')}${tally.notOnTracker.length > 12 ? ` and ${tally.notOnTracker.length - 12} more` : ''}.`
     : '';
   bus.emit('notify', req.user.id, {
     title: 'Full sync finished',
-    body: `${tally.done} members synced · ${tally.tracker} with WARDOGS Tracker stats${tally.failed ? ` · ${tally.failed} failed` : ''}.${missing}`,
+    body: `${tally.done} members synced · ${tally.tracker} with Wardogs stats${tally.failed ? ` · ${tally.failed} failed` : ''}.${missing}`,
   });
   await audit(req.user.id, 'sync.all', '', { synced: tally.done, tracker: tally.tracker, notOnTracker: tally.notOnTracker.length, failed: tally.failed });
 });

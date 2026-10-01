@@ -50,13 +50,24 @@ api.get('/me', signedIn, async (req, res) => {
   });
 });
 
-// Checks WARDOGS Tracker for my stats (used while someone is linking their account there).
+// Looks up my global stats now (after I fill in my in-game name).
 const trackerChecks = new Map();
 api.post('/me/tracker-check', member, async (req, res) => {
   const last = trackerChecks.get(req.user.id) || 0;
   if (Date.now() - last < 10 * 1000) throw new HttpError(429, 'Checking too often.');
   trackerChecks.set(req.user.id, Date.now());
-  const r = await syncWardogs(req.user).catch((e) => ({ ok: false, reason: e.message }));
+  // Optional in-game name (Name#1234) typed on the HQ card; saved to the profile box of the same name.
+  let user = req.user;
+  const typed = str(req.body?.wardogs_name, 60);
+  if (typed) {
+    if (!/^.+#\d{3,6}$/.test(typed)) throw new HttpError(400, 'Type it as Name#1234 — your in-game name, then # and the 4 numbers.');
+    user = await one(
+      "UPDATE users SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || jsonb_build_object('wardogs_name', $2::text) WHERE id=$1 RETURNING *",
+      [req.user.id, typed],
+    );
+    bus.emit('user:changed', user.id);
+  }
+  const r = await syncWardogs(user).catch((e) => ({ ok: false, reason: e.message }));
   if (r.official) await recalcXp(req.user.id);
   res.json({ linked: !!r.official, reason: r.ok ? '' : r.reason });
 });
@@ -232,13 +243,12 @@ function topTierOnly(awards) {
   return awards.filter((a) => !a.auto_rule || best.get(series(a.auto_rule)) === a);
 }
 
-// Account worth = cash on hand + cost of every unlock the player's levels have reached
-// (WARDOGS Tracker gives levels and cash, our unlock list gives the costs). Needs "ws" = wardogs_stats.
-const ACCOUNT_WORTH_SQL = `(COALESCE((ws.official->>'cash')::bigint, 0) + COALESCE((
+// Account worth: the real figure from the global stats (cash + gold + bought unlocks + vault) when
+// there is one, otherwise cash + cost of every unlock reached by level. Needs "ws" = wardogs_stats.
+const ACCOUNT_WORTH_SQL = `COALESCE((ws.official->>'worth')::bigint, COALESCE((ws.official->>'cash')::bigint, 0) + COALESCE((
     SELECT SUM(ul.cost) FROM unlocks ul
      WHERE ul.level <= CASE WHEN ul.role = 'career' THEN (ws.official->>'wardogLevel')::int
                             ELSE (ws.official->'roles'->ul.role->>'level')::int END), 0))::bigint`;
-
 api.get('/leaderboard', member, async (req, res) => {
   const by = str(req.query.by, 20);
   let rows;

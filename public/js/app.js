@@ -505,7 +505,7 @@ async function syncMine(e) {
     if (r.steam && !r.steam.ok) notes.push(`Steam: ${r.steam.reason}`);
     if (r.steam?.private) notes.push('Steam: your game details are private, so playtime cannot be read.');
     if (r.wardogs && !r.wardogs.ok) notes.push(`Wardogs: ${r.wardogs.reason}`);
-    else if (r.wardogs && !r.wardogs.official) notes.push('Wardogs: no global stats found. Sign in at wardogstracker.gg once to share them.');
+    else if (r.wardogs && !r.wardogs.official) notes.push('Wardogs: no global stats found. Add your in-game name (Name#1234) in Edit profile.');
     toast('Stats synced', notes.join(' ') || 'All up to date.');
     await refreshMe();
     route();
@@ -516,74 +516,51 @@ async function syncMine(e) {
   }
 }
 
-// ---------- WARDOGS Tracker linking ----------
-// Players must sign in on WARDOGS Tracker themselves (their Steam login can't be done for them).
-// We open the tracker's own "Sync my stats" page and then keep checking until their stats appear.
-const TRACKER_CONNECT = 'https://wardogstracker.gg/api/wardogs/connect?redirect=/';
+// ---------- Wardogs stats linking ----------
+// Global stats are found by the member's in-game name (Name#1234). Once found they update by themselves.
 const needsTracker = () => state.realSteam && !state.trackerLinked;
 
 function trackerCardHtml() {
   return `<div class="panel glow tracker-card" data-tracker-card>
     <div class="row" style="align-items:flex-start;gap:16px">
       <img src="/img/brand/wolf-emblem.webp" alt="" style="width:74px;border-radius:6px">
-      <div class="grow" style="min-width:220px">
+      <form class="grow" style="min-width:220px" data-tracker-form>
         <div class="panel-title" style="margin-bottom:8px">${icon('target')} Link your <span class="sub">Wardogs stats</span></div>
-        <p style="margin:0 0 6px">One-time, about a minute: sign in to <b>WARDOGS Tracker</b> with Steam and press <b>Sync</b>.
-          Your level, XP, cash and role levels then show here and <b>update by themselves</b>.</p>
-        <p class="muted small" data-tracker-status style="margin:0 0 10px">We'll spot it automatically when you're done.</p>
+        <p style="margin:0 0 6px">Type your <b>in-game name</b> with its 4 numbers, like <b>Richie_TT#6201</b> (open your profile in game to see it).
+          Your level, XP, cash and class levels then show here and <b>update by themselves</b>.</p>
+        <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
         <div class="row">
-          <a class="btn primary" href="${TRACKER_CONNECT}" target="_blank" rel="noopener" data-tracker-link>${icon('steam')} Link WARDOGS Tracker</a>
-          <button class="btn ghost" type="button" data-tracker-check>I've done it — check now</button>
+          <input type="text" name="wardogs_name" maxlength="60" placeholder="Name#1234" class="grow" style="min-width:160px">
+          <button class="btn primary">${icon('target')} Find my stats</button>
         </div>
-      </div>
+      </form>
     </div>
   </div>`;
 }
 
-let trackerWatch = null;
-function stopTrackerWatch() {
-  if (!trackerWatch) return;
-  clearInterval(trackerWatch.timer);
-  document.removeEventListener('visibilitychange', trackerWatch.onVisible);
-  trackerWatch = null;
-}
-async function trackerCheck(manual) {
-  const status = document.querySelector('[data-tracker-status]');
+// One listener for every link card, wherever it appears.
+document.addEventListener('submit', async (e) => {
+  const form = e.target.closest('[data-tracker-form]');
+  if (!form) return;
+  e.preventDefault();
+  const status = form.querySelector('[data-tracker-status]');
+  const btn = form.querySelector('button');
+  btn.disabled = true;
+  if (status) status.textContent = 'Looking…';
   try {
-    const r = await api('me/tracker-check', { method: 'POST', body: {} });
+    const r = await api('me/tracker-check', { method: 'POST', body: { wardogs_name: form.wardogs_name.value.trim() } });
     if (r.linked) {
       state.trackerLinked = true;
-      stopTrackerWatch();
       toast('Wardogs stats linked!', 'Your global stats are now on your career profile.', { link: `#/u/${state.me.id}` });
       route();
       return;
     }
-    if (status) {
-      status.textContent = manual
-        ? 'Not found yet — make sure you signed in and pressed Sync on WARDOGS Tracker, then try again.'
-        : 'Waiting for WARDOGS Tracker… finish signing in there, then come back here.';
-    }
+    if (status) status.textContent = `${r.reason || 'Not found'}. Check the spelling and the 4 numbers, then try again.`;
   } catch (x) {
-    if (manual && x.status !== 429) fail(x);
+    if (status) status.textContent = x.status === 429 ? 'Wait a few seconds, then try again.' : x.message;
+  } finally {
+    btn.disabled = false;
   }
-}
-function startTrackerWatch() {
-  stopTrackerWatch();
-  const until = Date.now() + 10 * 60 * 1000;
-  const onVisible = () => { if (document.visibilityState === 'visible') trackerCheck(false); };
-  const timer = setInterval(() => {
-    if (Date.now() > until || state.trackerLinked) return stopTrackerWatch();
-    trackerCheck(false);
-  }, 15000);
-  document.addEventListener('visibilitychange', onVisible);
-  trackerWatch = { timer, onVisible };
-  const status = document.querySelector('[data-tracker-status]');
-  if (status) status.textContent = 'Waiting for WARDOGS Tracker… finish signing in there, then come back here.';
-}
-// One listener for every link card, wherever it appears.
-document.addEventListener('click', (e) => {
-  if (e.target.closest('[data-tracker-link]')) startTrackerWatch();
-  else if (e.target.closest('[data-tracker-check]')) trackerCheck(true);
 });
 
 // ---------- Unlocks (admin-maintained list) ----------
@@ -697,7 +674,7 @@ async function viewProfile(main, [id]) {
   } else {
     officialHtml = worldRanksHtml + (mine && state.realSteam
       ? `<p class="muted" style="margin-top:0">No global Wardogs stats yet.</p>${trackerCardHtml()}`
-      : '<p class="muted">No global Wardogs stats yet. They show once this player links WARDOGS Tracker.</p>');
+      : '<p class="muted">No global Wardogs stats yet. They show once this player adds their in-game name (Name#1234).</p>');
   }
 
   const games = p.games.map((g) => {
@@ -777,7 +754,7 @@ async function viewProfile(main, [id]) {
             ${srv.topWeapon ? statBox('assault', 'Top weapon', srv.topWeapon) : ''}
             ${extraDefs.map((d) => statBox('star', d.label, formatStat(d, st[d.key]))).join('')}
           </div>
-          ${p.wardogs.server_synced ? `<div class="credit">Kills by <a href="https://wardogstracker.gg" target="_blank" rel="noopener">WARDOGS Tracker</a> · updated ${timeAgo(p.wardogs.server_synced)}</div>` : ''}
+          ${p.wardogs.server_synced ? `<div class="credit">Kills from the WPG server · updated ${timeAgo(p.wardogs.server_synced)}</div>` : ''}
         </div>
       </div>
 
@@ -1586,7 +1563,7 @@ async function viewLeaderboard(main) {
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
-    ${by === 'worth' ? '<p class="muted small" style="margin:-4px 0 12px">Account worth = cash on hand + the value of every unlock the player has reached (from their WARDOGS Tracker levels).</p>' : ''}${by === 'worth' || by === 'cash' || by === 'level' ? '<p class="muted small" style="margin:-4px 0 12px">Members show $0 / 0 until they link WARDOGS Tracker on HQ.</p>' : ''}
+    ${by === 'worth' ? '<p class="muted small" style="margin:-4px 0 12px">Account worth = cash + gold + bought unlocks + vault.</p>' : ''}${by === 'worth' || by === 'cash' || by === 'level' ? '<p class="muted small" style="margin:-4px 0 12px">Members show $0 / 0 until they add their in-game name on HQ.</p>' : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">
         <b style="font:700 22px var(--head);width:42px;text-align:center;color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">#${i + 1}</b>
@@ -1666,7 +1643,7 @@ async function viewTools(main) {
         ${card('all', 'Totals', totals(list), false).replace('<a class="pg-card"', '<div class="pg-card total"').replace(/<\/a>$/, '</div>')}
         ${TOOL_ROLES.map(([k, l]) => card(k, l, totals(list.filter((u) => u.role === k)), k === tab)).join('')}
       </div>
-      ${off ? '' : `<p class="muted small" style="margin:0">${state.realSteam && !state.trackerLinked ? 'Link WARDOGS Tracker on HQ so your levels fill in Ready and Bought.' : 'Your class levels are not known yet.'}</p>`}
+      ${off ? '' : `<p class="muted small" style="margin:0">${state.realSteam && !state.trackerLinked ? 'Add your in-game name on HQ so your levels fill in Ready and Bought.' : 'Your class levels are not known yet.'}</p>`}
       <div class="panel">
         <div class="row between" style="margin-bottom:10px">
           <div class="panel-title" style="margin:0">${icon('unlock')} ${esc(TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab)} <span class="sub">${tab === 'career' ? 'Wardog level' : 'class'} unlocks</span></div>
@@ -1739,7 +1716,7 @@ function xpRulesHtml(x) {
       <ul class="muted small" style="margin:14px 0 0;padding-left:18px;line-height:1.7">
         <li>Your stats sync by themselves every ${x.sync_minutes} minutes, or press <b>Sync stats</b> on HQ. XP is added when they sync.</li>
         <li>New activity earns the rate <b>at the time it's counted</b>. When staff change a rate (for example an XP event), XP you've already earned stays the same.</li>
-        <li>Global Wardogs stats need <b>WARDOGS Tracker</b> linked — see the card on HQ if you haven't.</li>
+        <li>Global Wardogs stats need your <b>in-game name</b> (Name#1234) — see the card on HQ if you haven't.</li>
         <li>${x.auto_promote ? 'Ranks marked with XP are given automatically as soon as you reach them.' : 'Automatic promotions are paused right now — staff promote by hand.'} Ranks marked <b>Appointed</b> are given by command.</li>
         ${isPmc(state.me) ? '<li>You\'re a PMC (guest): you earn XP but don\'t hold a rank.</li>' : ''}
       </ul>

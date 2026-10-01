@@ -1,7 +1,6 @@
 import { q, one, flag, setting } from './db.js';
 import { bus } from './bus.js';
 import { syncWardogs } from './wardogs.js';
-import { syncRanks } from './ranking.js';
 import { syncAchievements } from './achievements.js';
 import { giveAutoMedals } from './medals.js';
 
@@ -95,8 +94,9 @@ export async function syncUser(userId) {
   } else {
     result.steam = { ok: false, reason: 'Steam API key not set up yet' };
   }
+  // Global stats and world ranks come from the same lookup.
   result.wardogs = await syncWardogs(user).catch((e) => ({ ok: false, reason: e.message }));
-  result.ranks = await syncRanks(user).catch((e) => ({ ok: false, reason: e.message }));
+  result.ranks = result.wardogs;
   // Steam achievements as medals (works with or without the API key).
   result.medals = [];
   for (const game of await q('SELECT * FROM games WHERE enabled = true')) {
