@@ -50,9 +50,18 @@ export const users = pgTable('users', {
   muted_until: timestamp({ withTimezone: true }),
   custom_fields: jsonb().notNull().default({}),
   steam_private: boolean().notNull().default(false),
+  discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),
   last_seen: now(),
   last_sync: timestamp({ withTimezone: true }),
+});
+
+// One-time codes from the Discord /link command; the member types it in the app to link accounts.
+export const discordLinkCodes = pgTable('discord_link_codes', {
+  code: text().primaryKey(),
+  discord_id: text().notNull(),
+  discord_name: text().notNull().default(''),
+  created_at: now(),
 });
 
 export const friends = pgTable('friends', {

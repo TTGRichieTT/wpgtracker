@@ -20,11 +20,16 @@ export async function syncProgress() {
   const players = Array.isArray(data?.players) ? data.players : null;
   if (!players) throw new Error('The bot progress API sent no player list');
 
+  // Ranks before this sync, to spot rank-ups (new players are never announced, so a first sync is quiet).
+  const before = new Map((await q('SELECT steam_id, rank_level FROM server_progress')).map((r) => [r.steam_id, r.rank_level]));
   let n = 0;
   for (const p of players) {
     const sid = String(p.steam_id || '');
     if (!/^\d{17}$/.test(sid)) continue;
     const level = Math.min(200, Math.max(1, Math.round(Number(p.rank_level) || 1)));
+    if (before.has(sid) && level > before.get(sid)) {
+      bus.emit('announce', { type: 'wpgrank', steamId: sid, name: String(p.name || ''), rank: p.rank_name, xp: p.wpg_xp });
+    }
     await q(
       `INSERT INTO server_progress (steam_id, bot_name, xp, rank_level, rank_name, synced_at) VALUES ($1,$2,$3,$4,$5,now())
        ON CONFLICT (steam_id) DO UPDATE SET bot_name=EXCLUDED.bot_name, xp=EXCLUDED.xp, rank_level=EXCLUDED.rank_level,

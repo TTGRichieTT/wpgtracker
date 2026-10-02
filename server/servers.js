@@ -174,9 +174,13 @@ async function catalog(s) {
 
 const liveCacheRcon = new Map();
 servers.get('/servers/:id/live', member, async (req, res) => {
-  const s = await getServer(req.params.id);
+  res.json(await liveMatch(await getServer(req.params.id)));
+});
+
+// The match in progress, straight from the server (RCON). Cached 15 s. Also used by the Discord bot.
+export async function liveMatch(s) {
   const hit = liveCacheRcon.get(s.id);
-  if (hit && Date.now() - hit.at < 15000) return res.json(hit.data);
+  if (hit && Date.now() - hit.at < 15000) return hit.data;
   const [st, cat, rot] = await Promise.all([
     rcon(s, 'GET', '/status'),
     catalog(s),
@@ -206,8 +210,8 @@ servers.get('/servers/:id/live', member, async (req, res) => {
     next: next ? { map: mapName(next.map), mode: modeLabel((next.experiences || []).find((e) => !isModifier(e))) || '', lighting: spaceCamel(next.lighting), zone: zoneLabel(next.zoneAlternator) } : null,
   };
   liveCacheRcon.set(s.id, { at: Date.now(), data });
-  res.json(data);
-});
+  return data;
+}
 
 servers.get('/admin/servers/:id/status', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);

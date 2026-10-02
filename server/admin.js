@@ -5,6 +5,7 @@ import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
 import { giveAutoMedalsToAll } from './medals.js';
+import { botReady, postToChannel, registerCommands } from './discordbot.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -166,6 +167,7 @@ admin.post('/users/:id/awards', role('mod'), async (req, res) => {
   ]);
   await audit(req.user.id, 'award.give', `${target.persona_name} (#${target.id})`, { award: award.name });
   bus.emit('notify', target.id, { title: 'Medal awarded!', body: `You received: ${award.name}` });
+  bus.emit('announce', { type: 'medals', userId: target.id, names: [award.name] });
   bus.emit('user:changed', target.id);
   res.json({ ok: true });
 });
@@ -435,6 +437,28 @@ admin.put('/settings', role('admin'), async (req, res) => {
   await audit(req.user.id, 'settings.edit', '', req.body);
   bus.emit('config:changed', 'settings');
   res.json({ ok: true });
+});
+
+// ---------- Barracks Discord bot (admins) ----------
+admin.get('/discord-bot', role('admin'), async (_req, res) => {
+  res.json({
+    ready: botReady(),
+    missing: ['DISCORD_APP_ID', 'DISCORD_PUBLIC_KEY', 'DISCORD_BOT_TOKEN'].filter((k) => !process.env[k]),
+    interactions_url: `${(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '') || '(your app address)'}/discord/interactions`,
+    invite_url: process.env.DISCORD_APP_ID
+      ? `https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_APP_ID}&scope=bot%20applications.commands&permissions=18432`
+      : '',
+  });
+});
+admin.post('/discord-bot/test', role('admin'), async (req, res) => {
+  const r = await postToChannel({ embeds: [{ color: 0x29b6f6, title: '✅ WPG Barracks bot', description: `Test post from the Barracks app, sent by ${req.user.persona_name}. Promotions, medals and WPG rank-ups will appear here.` }] });
+  if (!r.ok) throw new HttpError(400, r.reason);
+  res.json({ ok: true });
+});
+admin.post('/discord-bot/register', role('admin'), async (_req, res) => {
+  const r = await registerCommands();
+  if (!r.ok) throw new HttpError(400, r.reason);
+  res.json(r);
 });
 
 // Syncs every member (Steam, Wardogs stats, medals) and tells the admin how it went when finished.

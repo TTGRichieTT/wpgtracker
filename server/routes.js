@@ -48,8 +48,31 @@ api.get('/me', signedIn, async (req, res) => {
     tracker_linked: !!tracker?.linked,
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I' },
     real_steam: /^\d{17}$/.test(req.user.steam_id),
+    discord_linked: !!req.user.discord_id,
     ...(rememberToken ? { remember_token: rememberToken } : {}),
   });
+});
+
+// Links my Discord account using the code from the bot's /link command (works for 15 minutes).
+api.post('/me/discord-link', member, async (req, res) => {
+  const code = str(req.body?.code, 12).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) throw new HttpError(400, 'Type the code the bot gave you.');
+  const row = await one("DELETE FROM discord_link_codes WHERE code=$1 AND created_at > now() - interval '15 minutes' RETURNING *", [code]);
+  if (!row) throw new HttpError(400, 'That code is wrong or has run out. Type /link in Discord again for a new one.');
+  // One Discord account per member: take it off anyone else first.
+  await q("UPDATE users SET discord_id='' WHERE discord_id=$1 AND id<>$2", [row.discord_id, req.user.id]);
+  await q('UPDATE users SET discord_id=$2 WHERE id=$1', [req.user.id, row.discord_id]);
+  // Fill in the "Discord name" profile box if it's empty.
+  if (row.discord_name && !req.user.custom_fields?.discord) {
+    await q("UPDATE users SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || jsonb_build_object('discord', $2::text) WHERE id=$1", [req.user.id, row.discord_name]);
+  }
+  bus.emit('user:changed', req.user.id);
+  res.json({ ok: true, discord_name: row.discord_name });
+});
+api.delete('/me/discord-link', member, async (req, res) => {
+  await q("UPDATE users SET discord_id='' WHERE id=$1", [req.user.id]);
+  bus.emit('user:changed', req.user.id);
+  res.json({ ok: true });
 });
 
 // Looks up my global stats now (after I fill in my in-game name).
@@ -240,7 +263,7 @@ api.get('/users/:id', member, async (req, res) => {
 
 // Automatic medals in the same series (e.g. every Recon level medal, or every hours medal) only show
 // the highest one held, so a new tier replaces the old one on the ribbon rack.
-function topTierOnly(awards) {
+export function topTierOnly(awards) {
   const series = (rule) => { const [kind, a] = String(rule || '').split(':'); return kind === 'class' ? `class:${a}` : kind; };
   const level = (rule) => Number(String(rule).split(':').pop()) || 0;
   const best = new Map();

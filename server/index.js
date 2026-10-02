@@ -15,6 +15,7 @@ import { servers } from './servers.js';
 import { startServerTracker, pushMemberStats } from './servertracker.js';
 import { startWarconSync } from './warcon.js';
 import { startProgressSync } from './progress.js';
+import { discordBot, startDiscordBot } from './discordbot.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
@@ -73,6 +74,8 @@ app.use((_req, res, next) => {
   });
   next();
 });
+// Discord bot commands: before the JSON parser, because the signature check needs the raw body.
+app.use(discordBot);
 app.use(express.json({ limit: '200kb' }));
 app.use(sessionMiddleware);
 
@@ -225,6 +228,7 @@ startServerTracker();
 startPlayingWatch();
 startWarconSync(pushMemberStats);
 startProgressSync();
+startDiscordBot();
 setInterval(() => {
   store.prune().catch(() => {});
   q("DELETE FROM remember_tokens WHERE last_used < now() - interval '120 days'").catch(() => {});

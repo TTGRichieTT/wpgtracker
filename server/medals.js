@@ -89,6 +89,7 @@ export async function giveAutoMedals(userId, { notify = true } = {}) {
         body: fresh.slice(0, 3).join(', ') + (fresh.length > 3 ? ` and ${fresh.length - 3} more` : ''),
         link: `#/u/${userId}`,
       });
+      bus.emit('announce', { type: 'medals', userId, names: fresh });
     }
     bus.emit('user:changed', userId);
   }

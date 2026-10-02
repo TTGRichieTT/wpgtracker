@@ -17,6 +17,12 @@ services:
       # Supabase connection string (Session pooler), pasted in when Render asks.
       - key: DATABASE_URL
         sync: false
+      - key: DISCORD_APP_ID
+        sync: false
+      - key: DISCORD_PUBLIC_KEY
+        sync: false
+      - key: DISCORD_BOT_TOKEN
+        sync: false
       - key: WARCON_API_KEY
         sync: false
       - key: STEAM_API_KEY

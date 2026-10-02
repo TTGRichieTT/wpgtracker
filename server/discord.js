@@ -16,7 +16,7 @@ function inviteCode(link) {
   return m ? m[1] : null;
 }
 
-async function guildId() {
+export async function guildId() {
   const direct = String((await setting('discord_server_id')) || '').trim();
   if (/^\d{15,22}$/.test(direct)) return direct;
   const code = inviteCode(await setting('discord_invite'));

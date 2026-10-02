@@ -23,6 +23,11 @@ const DEFAULT_SETTINGS = {
   tracker_server: '',
   xp_per_server_kill: '2',
   xp_event_message: '',
+  // Barracks Discord bot: automatic posts (channel ID empty = no posts).
+  discord_post_channel: '',
+  discord_post_promotions: 'true',
+  discord_post_medals: 'true',
+  discord_post_wpg_ranks: 'true',
 };
 
 // Insignia combine US and UK army symbols:

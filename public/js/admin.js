@@ -580,7 +580,40 @@ const SETTINGS = [
     ['tracker_enabled', 'Get global Wardogs stats (level, cash, classes, world ranks)', 'check'],
     ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
   ]],
+  ['Discord bot (automatic posts)', [
+    ['discord_post_channel', 'Channel ID for posts (in Discord: right-click the channel → Copy Channel ID). Empty = no posts'],
+    ['discord_post_promotions', 'Post clan promotions', 'check'],
+    ['discord_post_medals', 'Post new medals', 'check'],
+    ['discord_post_wpg_ranks', 'Post WPG rank-ups (from the WPG bot)', 'check'],
+  ]],
 ];
+
+// Status and setup steps for the Barracks Discord bot, with test buttons.
+async function discordBotPanel(el) {
+  let d;
+  try { d = await api('admin/discord-bot'); } catch (x) { el.innerHTML = `<p class="muted small">${esc(x.message)}</p>`; return; }
+  const copy = (text) => `<code style="overflow-wrap:anywhere;background:#06101c;border:1px solid var(--line);border-radius:6px;padding:4px 8px">${esc(text)}</code>`;
+  el.innerHTML = `<div class="panel-title">${icon('discord')} Barracks Discord bot <span class="sub">${d.ready ? '✅ connected' : 'not set up yet'}</span></div>
+    ${d.ready ? '' : `<ol class="small" style="margin:0 0 10px;padding-left:20px;line-height:1.7">
+      <li>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it "WPG Barracks".</li>
+      <li>On <b>General Information</b> copy the <b>Application ID</b> and <b>Public Key</b>. On <b>Bot</b> press <b>Reset Token</b> and copy the token.</li>
+      <li>In Render → your app → <b>Environment</b>, add <b>DISCORD_APP_ID</b>, <b>DISCORD_PUBLIC_KEY</b> and <b>DISCORD_BOT_TOKEN</b>. Missing now: ${d.missing.map((m) => `<b>${esc(m)}</b>`).join(', ')}.</li>
+      <li>Back on <b>General Information</b>, set <b>Interactions Endpoint URL</b> to ${copy(d.interactions_url)} and save.</li>
+      <li>Come back here and use the invite link that appears to add the bot to the WPG Discord.</li></ol>`}
+    ${d.ready ? `<p class="small" style="margin:0 0 10px">Interactions Endpoint URL: ${copy(d.interactions_url)}</p>` : ''}
+    ${d.invite_url ? `<p class="small" style="margin:0 0 10px">Add the bot to the Discord: <a href="${esc(d.invite_url)}" target="_blank" rel="noopener">invite link</a></p>` : ''}
+    <div class="row">
+      <button type="button" class="btn" id="dbTest"${d.ready ? '' : ' disabled'}>Send a test post</button>
+      <button type="button" class="btn ghost" id="dbReg"${d.ready ? '' : ' disabled'}>Refresh bot commands</button>
+    </div>
+    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /live /link /unlink. Members type /link once to connect their Discord.</p>`;
+  el.querySelector('#dbTest').onclick = async () => {
+    try { await api('admin/discord-bot/test', { method: 'POST', body: {} }); toast('Sent', 'Check the post channel in Discord.'); } catch (x) { fail(x); }
+  };
+  el.querySelector('#dbReg').onclick = async () => {
+    try { const r = await api('admin/discord-bot/register', { method: 'POST', body: {} }); toast('Commands ready', `${r.count} commands set up (${r.where}).`); } catch (x) { fail(x); }
+  };
+}
 
 async function settingsTab(body) {
   const s = await api('admin/settings');
@@ -598,7 +631,9 @@ async function settingsTab(body) {
       ${SETTINGS.map(([title, list]) => `<div class="panel"><div class="panel-title">${esc(title)}</div><div class="form-grid">${list.map(input).join('')}</div></div>`).join('')}
       ${extra.length ? `<div class="panel"><div class="panel-title">Other</div><div class="form-grid">${extra.map((k) => input([k, k])).join('')}</div></div>` : ''}
       <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now (Steam + Wardogs + medals)</button></div>
-    </form>`;
+    </form>
+    <div class="panel" id="discordBot" style="margin-top:16px"><div class="spinner"></div></div>`;
+  discordBotPanel(document.getElementById('discordBot'));
   const form = document.getElementById('sform');
   form.onsubmit = async (e) => {
     e.preventDefault();

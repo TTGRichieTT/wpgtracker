@@ -197,6 +197,7 @@ function applyMe(me) {
   state.friendReq = me.friend_requests;
   state.trackerLinked = !!me.tracker_linked;
   state.wpgServer = me.wpg_server || null;
+  state.discordLinked = !!me.discord_linked;
   state.realSteam = !!me.real_steam;
   state.users.set(me.user.id, me.user);
 }
@@ -881,7 +882,28 @@ async function viewEditProfile(main) {
         <label class="field"><span>Banner colour</span><input type="color" name="banner_color" value="${esc(u.banner_color || '#0d2238')}"></label>
       </div>
       <div class="row"><button class="btn primary">Save profile</button><a class="btn ghost" href="#/u/${u.id}">Cancel</a></div>
+    </form>
+    <form class="panel stack" id="dlink" style="margin-top:16px">
+      <div class="panel-title" style="margin:0">${icon('discord')} Discord <span class="sub">Barracks bot</span></div>
+      ${state.discordLinked
+        ? `<p style="margin:0">✅ Your Discord is linked. In Discord, <b>/stats</b>, <b>/rank</b>, <b>/medals</b> and the other commands show your stats.</p>
+           <div class="row"><button type="button" class="btn ghost" id="dunlink">Unlink Discord</button></div>`
+        : `<p style="margin:0">Link once so the Barracks bot in Discord knows who you are. In Discord, type <b>/link</b>. The bot gives you a code — type it here.</p>
+           <div class="row"><input type="text" name="code" maxlength="12" placeholder="Code from /link" class="grow" style="min-width:140px;text-transform:uppercase"><button class="btn primary">${icon('discord')} Link</button></div>`}
     </form>`;
+  document.getElementById('dlink').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api('me/discord-link', { method: 'POST', body: { code: e.target.code.value } });
+      toast('Discord linked', r.discord_name ? `Linked to ${r.discord_name}.` : 'All set.');
+      await refreshMe();
+      route();
+    } catch (x) { fail(x); }
+  };
+  document.getElementById('dunlink')?.addEventListener('click', async () => {
+    if (!(await confirmBox('Unlink your Discord from the Barracks app?'))) return;
+    try { await api('me/discord-link', { method: 'DELETE' }); await refreshMe(); route(); } catch (x) { fail(x); }
+  });
   document.getElementById('pf').onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;
