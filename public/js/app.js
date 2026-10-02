@@ -1383,7 +1383,7 @@ async function viewServers(main, _r, alive) {
           <button class="btn small" data-copy="${esc(s.join_code)}">${icon('copy')} Copy</button>
         </div>
         ${s.has_rcon ? `<div style="margin-top:18px"><h4 class="row" style="margin:0 0 8px">${icon('users', 'width="18" height="18"')} On the server now</h4><div class="list" data-players="${s.id}"><div class="spinner" style="margin:10px auto"></div></div></div>` : ''}
-        ${staff ? controlsHtml(s) : ''}
+        ${admin ? controlsHtml(s) : ''}
       </div>`;
   };
 
@@ -1392,7 +1392,7 @@ async function viewServers(main, _r, alive) {
       return `<div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
         <p class="muted small grow" style="margin:0">${icon('shield', 'width="14" height="14"')} ${admin
           ? 'Add this server\'s RCON address and password to control it from here.'
-          : 'An admin can add this server\'s RCON details so staff can control it from here.'}</p>
+          : 'An admin can add this server\'s RCON details so admins can control it from here.'}</p>
         ${admin ? `<button class="btn small primary" data-settings="${s.id}">${icon('settings')} Add RCON details</button>` : ''}</div>`;
     }
     return `
@@ -1408,7 +1408,7 @@ async function viewServers(main, _r, alive) {
           <button class="btn" data-act="next" data-sid="${s.id}">Force next map</button>
           <button class="btn" data-act="lighting" data-sid="${s.id}">Time of day</button>
           <button class="btn ghost" data-act="unban" data-sid="${s.id}">Unban a Steam ID</button>
-        </div>` : '<p class="muted small">Mods can broadcast, whisper, kick, kill and move players. Admins can also ban and control the match.</p>'}
+        </div>` : ''}
       </div>`;
   };
 
@@ -1431,7 +1431,7 @@ async function viewServers(main, _r, alive) {
             ${p.member ? `<a href="#/u/${p.member.id}" style="color:inherit">${userLine(p.member)}</a>` : `<b>${esc(p.name)}</b>`}
             <div class="muted small">${p.kills !== null ? `${p.kills} kills · ${p.deaths} deaths` : ''}${p.pingMs !== null ? ` · ${p.pingMs} ms` : ''}${p.member ? '' : ' · not in app'}</div>
           </div>
-          ${staff && p.steamId ? `<div class="row">
+          ${admin && p.steamId ? `<div class="row">
             <button class="btn small" data-act="whisper" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Whisper</button>
             <button class="btn small" data-act="faction" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Move</button>
             <button class="btn small" data-act="kick" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Kick</button>

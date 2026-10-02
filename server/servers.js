@@ -209,7 +209,7 @@ servers.get('/servers/:id/live', member, async (req, res) => {
   res.json(data);
 });
 
-servers.get('/admin/servers/:id/status', role('mod'), async (req, res) => {
+servers.get('/admin/servers/:id/status', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   res.json(await rcon(s, 'GET', '/status'));
 });
@@ -247,7 +247,7 @@ servers.get('/admin/servers/:id/maps/:mapId/zones', role('admin'), async (req, r
   res.json(catalogIds(await rcon(s, 'GET', `/catalog/maps/${mapId}/alternators`).catch(() => []), 'alternators'));
 });
 // Faction names for "Move player to faction".
-servers.get('/admin/servers/:id/factions', role('mod'), async (req, res) => {
+servers.get('/admin/servers/:id/factions', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   const st = await rcon(s, 'GET', '/status');
   res.json((st?.factionScores || []).map((f) => f.name).filter(Boolean));
@@ -336,19 +336,19 @@ export async function restoreRotation(s) {
   return true;
 }
 
-// Mods: broadcast, whisper, kick, kill, move faction. Admins: also ban, unban, restart, end/next, map, time of day.
+// Game server tools are admins only (broadcast, whisper, kick, kill, move faction, ban, match and map control).
 const ACTIONS = {
-  broadcast: { min: 'mod', run: (s, b) => rcon(s, 'POST', '/broadcast', { message: need(str(b.message, 300), 'Type a message.') }) },
-  kick: { min: 'mod', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kick`, { reason: str(b.reason, 200) || 'Kicked by WPG staff' }) },
-  kill: { min: 'mod', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kill`) },
+  broadcast: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/broadcast', { message: need(str(b.message, 300), 'Type a message.') }) },
+  kick: { min: 'admin', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kick`, { reason: str(b.reason, 200) || 'Kicked by WPG staff' }) },
+  kill: { min: 'admin', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kill`) },
   ban: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/bans', { steamId: steamId(b), reason: str(b.reason, 200) || 'Banned by WPG staff' }) },
   unban: { min: 'admin', run: (s, b) => rcon(s, 'DELETE', `/bans/${steamId(b)}`) },
   whisper: {
-    min: 'mod',
+    min: 'admin',
     run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/message`, { message: need(str(b.message, 300), 'Type a message.') }),
   },
   faction: {
-    min: 'mod',
+    min: 'admin',
     run: (s, b) => rcon(s, 'PATCH', `/players/${steamId(b)}`, { faction: need(str(b.faction, 40), 'Pick a faction.') }),
   },
   restart: { min: 'admin', run: (s) => rcon(s, 'POST', '/match/restart') },
@@ -395,7 +395,7 @@ function steamId(b) {
   return id;
 }
 
-servers.post('/admin/servers/:id/action', role('mod'), async (req, res) => {
+servers.post('/admin/servers/:id/action', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   const b = req.body || {};
   const action = ACTIONS[b.action];
