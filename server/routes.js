@@ -71,7 +71,10 @@ api.post('/me/tracker-check', member, async (req, res) => {
   }
   const r = await syncWardogs(user).catch((e) => ({ ok: false, reason: e.message }));
   if (r.official) await recalcXp(req.user.id);
-  res.json({ linked: !!r.official, reason: r.ok ? '' : r.reason });
+  res.json({
+    linked: !!r.official,
+    reason: !r.ok ? r.reason : r.official ? '' : `Found ${r.name}#${r.tag}, but the stats couldn't be read just then — wait a minute and press Find my stats again`,
+  });
 });
 
 // ---------- Profile ----------

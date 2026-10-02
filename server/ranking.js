@@ -88,9 +88,15 @@ export async function syncRanks(user) {
 
   let official = null;
   if (offset !== null) {
-    const rows = await levelBlock(Math.floor(offset / 1000));
-    const r = rows.find((x) => x[0] === player.socialId);
-    if (r) official = rowStats(r);
+    // Positions shift as players level up, so a player near the edge of a 1000-player block can be in
+    // the next or previous one by the time we read it. Look there too, and re-download a stale block.
+    const home = Math.floor(offset / 1000);
+    const tries = [[home, false], [home, true], [home + 1, false], [home - 1, false]].filter(([b]) => b >= 0);
+    for (const [block, fresh] of tries) {
+      if (fresh) blockCache.delete(block);
+      const r = (await levelBlock(block)).find((x) => x[0] === player.socialId);
+      if (r) { official = rowStats(r); break; }
+    }
   }
   await q(
     `INSERT INTO wardogs_stats (user_id, ranks, ranks_synced) VALUES ($1,$2,now())
