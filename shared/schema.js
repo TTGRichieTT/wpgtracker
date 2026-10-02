@@ -322,3 +322,91 @@ export const sessions = pgTable('sessions', {
   sess: jsonb().notNull(),
   expire: timestamp({ withTimezone: true }).notNull(),
 });
+
+// ---------- Cheat watch (staff) ----------
+// Steam's public ban records and account age for everyone who has played on the WPG server.
+export const playerChecks = pgTable('player_checks', {
+  steam_id: text().primaryKey(),
+  vac_bans: integer().notNull().default(0),
+  game_bans: integer().notNull().default(0),
+  community_banned: boolean().notNull().default(false),
+  days_since_last_ban: integer(),
+  account_created: timestamp({ withTimezone: true }),
+  checked_at: now(),
+});
+
+// One row per player per finished match on our server (from the server tracker).
+export const matchPlayers = pgTable('match_players', {
+  id: serial().primaryKey(),
+  server_id: integer().notNull(),
+  steam_id: text().notNull(),
+  name: text().notNull().default(''),
+  faction: text().notNull().default(''),
+  kills: integer().notNull().default(0),
+  deaths: integer().notNull().default(0),
+  seconds: integer().notNull().default(0),
+  won: boolean(),
+  ended_at: now(),
+}, (t) => [index('match_players_steam_idx').on(t.steam_id)]);
+
+// Play sessions (join to leave) from WarCon's history.
+export const serverSessions = pgTable('server_sessions', {
+  id: text().primaryKey(), // WarCon's session id
+  steam_id: text().notNull(),
+  name: text().notNull().default(''),
+  joined_at: timestamp({ withTimezone: true }),
+  last_seen: timestamp({ withTimezone: true }),
+  left_at: timestamp({ withTimezone: true }),
+  kills: integer().notNull().default(0),
+  deaths: integer().notNull().default(0),
+}, (t) => [index('server_sessions_steam_idx').on(t.steam_id)]);
+
+// Kill events from the game server's kill feed (raw kept, plus the fields we could read).
+export const killEvents = pgTable('kill_events', {
+  id: serial().primaryKey(),
+  received_at: now(),
+  killer: text().notNull().default(''),
+  victim: text().notNull().default(''),
+  weapon: text().notNull().default(''),
+  distance: numeric(),
+  headshot: boolean(),
+  raw: jsonb().notNull().default({}),
+}, (t) => [index('kill_events_killer_idx').on(t.killer)]);
+
+// Staff decisions: 'watch' (alert every time they join) or 'cleared' (checked, stop flagging).
+export const playerWatch = pgTable('player_watch', {
+  steam_id: text().primaryKey(),
+  status: text().notNull().default('watch'),
+  updated_by: integer(),
+  updated_at: now(),
+});
+
+export const playerNotes = pgTable('player_notes', {
+  id: serial().primaryKey(),
+  steam_id: text().notNull(),
+  author_id: integer(),
+  text: text().notNull(),
+  created_at: now(),
+}, (t) => [index('player_notes_steam_idx').on(t.steam_id)]);
+
+// Reports from members (app or Discord /report).
+export const playerReports = pgTable('player_reports', {
+  id: serial().primaryKey(),
+  steam_id: text().notNull().default(''),
+  name: text().notNull().default(''),
+  reason: text().notNull().default(''),
+  reporter_user_id: integer(),
+  reporter_name: text().notNull().default(''),
+  source: text().notNull().default('app'),
+  status: text().notNull().default('open'),
+  created_at: now(),
+  closed_by: integer(),
+  closed_at: timestamp({ withTimezone: true }),
+});
+
+// When each cheat-watch alert was last sent, so staff aren't spammed.
+export const watchAlerts = pgTable('watch_alerts', {
+  steam_id: text().notNull(),
+  kind: text().notNull(),
+  sent_at: now(),
+}, (t) => [primaryKey({ name: 'watch_alerts_pkey', columns: [t.steam_id, t.kind] })]);

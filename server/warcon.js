@@ -62,7 +62,35 @@ export async function syncWarcon() {
     n++;
   }
   bus.emit('server:board', server.id);
-  return { ok: true, players: n };
+  const sessions = await syncSessions().catch((e) => { console.warn('[warcon] sessions', e.message); return 0; });
+  return { ok: true, players: n, sessions };
+}
+
+// Play sessions (join to leave) for cheat watch. After the first full copy, only sessions active in
+// the last day are fetched again (they may still have been running last time).
+async function syncSessions() {
+  const last = await one('SELECT MAX(last_seen) AS t FROM server_sessions');
+  const since = last?.t ? new Date(new Date(last.t).getTime() - 24 * 3600 * 1000).toISOString() : null;
+  let n = 0;
+  for (let offset = 0; offset < 200000; offset += PAGE) {
+    const data = await get(`/v1/sessions?limit=${PAGE}&offset=${offset}${since ? `&since=${encodeURIComponent(since)}` : ''}`);
+    const page = Array.isArray(data?.sessions) ? data.sessions : [];
+    for (const s of page) {
+      const sid = String(s.steamId || '');
+      if (!/^\d{17}$/.test(sid) || s.id === undefined || s.id === null) continue;
+      const when = (v) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+      await q(
+        `INSERT INTO server_sessions (id, steam_id, name, joined_at, last_seen, left_at, kills, deaths) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, last_seen=EXCLUDED.last_seen, left_at=EXCLUDED.left_at,
+           kills=EXCLUDED.kills, deaths=EXCLUDED.deaths`,
+        [String(s.id), sid, String(s.name || '').slice(0, 64), when(s.joinedAt), when(s.lastSeen), when(s.leftAt),
+          Math.max(0, Number(s.kills) || 0), Math.max(0, Number(s.deaths) || 0)],
+      );
+      n++;
+    }
+    if (page.length < PAGE) break;
+  }
+  return n;
 }
 
 export function startWarconSync(onDone) {

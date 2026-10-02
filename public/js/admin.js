@@ -1,4 +1,4 @@
-import { api, esc, state, toast, fail, modal, confirmBox, userLine, fmtNum, fmtDate, timeAgo, query, ribbon, COUNTRIES, flag, refreshMe } from './app.js';
+import { api, esc, state, toast, fail, modal, confirmBox, promptBox, userLine, fmtNum, fmtDate, timeAgo, query, ribbon, COUNTRIES, flag, refreshMe } from './app.js';
 import { icon } from './icons.js';
 import { insigniaSVG, rankBadge, INSIGNIA_PARTS } from './insignia.js';
 
@@ -17,6 +17,7 @@ const TABS = [
   { key: 'games', label: 'Games' },
   { key: 'profile-fields', label: 'Profile fields' },
   { key: 'settings', label: 'Settings' },
+  { key: 'cheatwatch', label: 'Cheat watch', mod: true },
   { key: 'audit', label: 'Audit log', mod: true },
 ];
 
@@ -189,6 +190,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'users') return usersTab(body);
   if (tab.key === 'settings') return settingsTab(body);
   if (tab.key === 'audit') return auditTab(body);
+  if (tab.key === 'cheatwatch') return cheatTab(body);
   return resourceTab(body, tab.key);
 }
 
@@ -586,6 +588,11 @@ const SETTINGS = [
     ['discord_post_medals', 'Post new medals', 'check'],
     ['discord_post_wpg_ranks', 'Post WPG rank-ups (from the WPG bot)', 'check'],
   ]],
+  ['Cheat watch (staff only)', [
+    ['discord_staff_channel', 'Staff-only Discord channel ID for cheat alerts and reports (keep this channel private!). Empty = app alerts only'],
+    ['cheat_alerts', 'Send cheat-watch alerts (flagged player joins, live kill spikes, new reports)', 'check'],
+    ['cheat_live_kills', 'Live spike alert: kills in 5 minutes', 'number'],
+  ]],
 ];
 
 // Setup checklist for the Barracks Discord bot. Each step is ticked once it has really worked.
@@ -618,11 +625,11 @@ async function discordBotPanel(el) {
       <button type="button" class="btn" id="dbTest"${d.token && d.post_channel ? '' : ' disabled'}>Send a test post</button>
       <button type="button" class="btn ghost" id="dbReg"${d.token ? '' : ' disabled'}>Re-check &amp; fix Discord setup</button>
     </div>
-    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /serverboard /live /link /unlink. Members type /link once to connect their Discord.</p>
+    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /serverboard /live /report /link /unlink. Members type /link once to connect their Discord.</p>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
       <b>Preview a card</b> <span class="muted small">— made here exactly as the bot makes it, without Discord.</span>
       <div class="row" style="margin-top:8px">
-        <select id="dbCmd">${(d.commands_wanted || []).filter((c) => !['link', 'unlink'].includes(c)).map((c) => `<option value="${esc(c)}">/${esc(c)}</option>`).join('')}</select>
+        <select id="dbCmd">${(d.commands_wanted || []).filter((c) => !['link', 'unlink', 'report'].includes(c)).map((c) => `<option value="${esc(c)}">/${esc(c)}</option>`).join('')}</select>
         <button type="button" class="btn" id="dbPreview">Preview</button>
       </div>
       <div id="dbPreviewOut" style="margin-top:10px"></div>
@@ -714,4 +721,159 @@ async function auditTab(body) {
     ${rows.map((r) => `<tr><td class="small">${timeAgo(r.created_at)}</td><td>${esc(r.actor || '—')}</td><td><span class="pill">${esc(r.action)}</span></td><td>${esc(r.target)}</td>
       <td class="small muted" style="max-width:320px;overflow-wrap:anywhere">${esc(JSON.stringify(r.details)).slice(0, 200)}</td></tr>`).join('')}
     </tbody></table></div></div>`;
+}
+
+// ---------- Cheat watch (staff) ----------
+// Signs for staff to check — never automatic bans. Flags come from Steam ban records, kill rate, K/D,
+// single-match spikes, headshots / long kills (once the kill feed is connected) and member reports.
+const SEVERITY = {
+  high: ['High', '#e05252'], medium: ['Medium', '#f5a524'], watch: ['Watch list', '#33d1ff'], low: ['Low', '#8a9bb0'], '': ['Cleared', '#4ade80'],
+};
+const sevPill = (s, status) => {
+  const [label, c] = status === 'cleared' ? SEVERITY[''] : SEVERITY[s] || SEVERITY.low;
+  return `<span class="pill" style="color:${c};border-color:${c}">${label}</span>`;
+};
+const hrs = (s) => `${Math.floor((Number(s) || 0) / 3600)}h ${Math.floor(((Number(s) || 0) % 3600) / 60)}m`;
+
+async function cheatTab(body, { showLow = false } = {}) {
+  let d;
+  try { d = await api('admin/cheat'); } catch (x) { body.innerHTML = `<div class="panel"><p style="color:var(--red)">${esc(x.message)}</p></div>`; return; }
+  const flags = d.flags.filter((f) => showLow || !['low', ''].includes(f.severity) || f.status === 'watch');
+  const count = (s) => d.flags.filter((f) => f.severity === s).length;
+  const open = d.reports.filter((r) => r.status === 'open');
+  const feed = d.feed || {};
+  body.innerHTML = `
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-title">${icon('shield')} Cheat watch <span class="sub">signs for staff to check — never automatic bans</span></div>
+        <div class="row" style="gap:8px;margin-bottom:10px">
+          ${sevPill('high')} <b>${count('high')}</b> ${sevPill('medium')} <b>${count('medium')}</b> ${sevPill('watch')} <b>${count('watch')}</b> ${sevPill('low')} <b>${count('low')}</b>
+          <span class="muted">·</span> <b>${open.length}</b> open report${open.length === 1 ? '' : 's'}
+          <span class="muted small">· ${fmtNum(d.players)} players on record</span>
+        </div>
+        <p class="muted small" style="margin:0 0 6px">Normal on the WPG server: <b>${d.norms.kpm.toFixed(2)}</b> kills a minute and a K/D of <b>${d.norms.kd.toFixed(2)}</b> (middle player). Flags mean "far above that" — good players can trip them too, so look before acting.</p>
+        <p class="small" style="margin:0 0 6px">Steam ban checks: ${d.checks.steam_key ? `<b>${fmtNum(d.checks.n)}</b> players checked${d.checks.last ? ` (last ${esc(timeAgo(d.checks.last))})` : ''} — every player is re-checked daily.` : '<span style="color:#f5a524">needs the Steam API key in Render (STEAM_API_KEY)</span>'}
+          ${d.can_admin && d.checks.steam_key ? '<button class="btn small ghost" id="cwCheck">Check now</button>' : ''}</p>
+        <p class="small" style="margin:0">Kill feed (headshots, distances, weapons): ${feed.n ? `<b>${fmtNum(feed.n)}</b> kills received, last ${esc(timeAgo(feed.last))}${!feed.read_ok ? ' — <span style="color:var(--red)">the format isn&#39;t understood yet (send the sample below to the app&#39;s developer)</span>' : ''}`
+          : feed.connected ? 'connected — waiting for the game server to restart and send its first kills' : 'not connected yet'}
+          ${d.can_admin ? `<button class="btn small ghost" id="cwFeed">${feed.connected ? 'Reconnect kill feed' : 'Connect kill feed'}</button>` : ''}</p>
+        ${feed.sample ? `<details style="margin-top:6px"><summary class="small muted">Latest kill as the game server sent it</summary><pre class="small" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0">${esc(JSON.stringify(feed.sample, null, 1).slice(0, 2000))}</pre></details>` : ''}
+        ${feed.rejected?.length ? `<details style="margin-top:6px"><summary class="small" style="color:var(--red)">${feed.rejected.length} kill-feed message(s) refused (wrong token)</summary><pre class="small" style="white-space:pre-wrap;margin:6px 0 0">${esc(JSON.stringify(feed.rejected, null, 1).slice(0, 2000))}</pre></details>` : ''}
+      </div>
+
+      <div class="panel">
+        <div class="row between" style="margin-bottom:8px">
+          <div class="panel-title" style="margin:0">Flagged players <span class="sub">${flags.length}</span></div>
+          <label class="check small"><input type="checkbox" id="cwLow" ${showLow ? 'checked' : ''}> Show low &amp; cleared</label>
+        </div>
+        ${flags.length ? `<div class="table-wrap"><table>
+          <thead><tr><th>Player</th><th>Flag</th><th>Why</th><th>Kills/min</th><th>K/D</th><th>Kills</th><th>Played</th><th>Last seen</th><th></th></tr></thead>
+          <tbody>${flags.map((f) => `<tr>
+            <td><b>${esc(f.name)}</b>${f.member_id ? ' <span class="pill">Member</span>' : ''}</td>
+            <td>${sevPill(f.severity, f.status)}</td>
+            <td class="small" style="max-width:380px">${f.reasons.slice(0, 2).map(esc).join('<br>')}${f.reasons.length > 2 ? `<br><span class="muted">+${f.reasons.length - 2} more</span>` : ''}${!f.reasons.length && f.status === 'watch' ? '<span class="muted">On the watch list</span>' : ''}</td>
+            <td>${f.kpm ?? '—'}</td><td>${f.kd}</td><td>${fmtNum(f.kills)}</td><td>${hrs(f.playtime)}</td>
+            <td class="small muted">${f.last_seen ? esc(timeAgo(f.last_seen)) : '—'}</td>
+            <td><button class="btn small" data-cw="${esc(f.steam_id)}">Open</button></td>
+          </tr>`).join('')}</tbody></table></div>` : '<p class="muted">Nobody flagged right now. 👍</p>'}
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Reports <span class="sub">from members (app and Discord /report)</span></div>
+        ${d.reports.length ? d.reports.map((r) => `
+          <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+            <div class="row between">
+              <div><b>${esc(r.name || 'Unknown player')}</b> <span class="muted small">reported by ${esc(r.reporter_name || 'a member')} · ${r.source === 'discord' ? 'Discord' : 'app'} · ${esc(timeAgo(r.created_at))}</span></div>
+              <div class="row" style="gap:6px">
+                ${r.steam_id ? `<button class="btn small ghost" data-cw="${esc(r.steam_id)}">Open player</button>` : '<span class="muted small">no match on our server</span>'}
+                ${r.status === 'open' ? `<button class="btn small" data-close="${r.id}">Close</button>` : `<span class="pill">Closed${r.closed_by_name ? ` by ${esc(r.closed_by_name)}` : ''}</span>`}
+              </div>
+            </div>
+            <div style="white-space:pre-wrap;margin-top:4px">${esc(r.reason)}</div>
+          </div>`).join('') : '<p class="muted">No reports yet.</p>'}
+      </div>
+    </div>`;
+  body.querySelector('#cwLow').onchange = (e) => cheatTab(body, { showLow: e.target.checked });
+  body.querySelectorAll('[data-cw]').forEach((b) => { b.onclick = () => cheatPlayer(b.dataset.cw, () => cheatTab(body, { showLow })); });
+  body.querySelectorAll('[data-close]').forEach((b) => {
+    b.onclick = async () => {
+      const note = await promptBox('Close this report?', 'What you found (optional)', { okLabel: 'Close report' });
+      if (note === null) return;
+      try { await api(`admin/cheat/reports/${b.dataset.close}/close`, { method: 'POST', body: { note } }); cheatTab(body, { showLow }); } catch (x) { fail(x); }
+    };
+  });
+  body.querySelector('#cwCheck')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try { const r = await api('admin/cheat/check-now', { method: 'POST', body: {} }); toast('Steam checks done', `${fmtNum(r.checked)} players checked.`); cheatTab(body, { showLow }); } catch (x) { fail(x); e.target.disabled = false; }
+  });
+  body.querySelector('#cwFeed')?.addEventListener('click', async () => {
+    if (!(await confirmBox('Point the WPG game server’s kill feed at this app? Only the kill-feed setting is changed. It starts working after the game server’s next restart.'))) return;
+    try { await api('admin/cheat/killfeed/connect', { method: 'POST', body: {} }); toast('Kill feed connected', 'Kills will start arriving after the game server next restarts.'); cheatTab(body, { showLow }); } catch (x) { fail(x); }
+  });
+}
+
+async function cheatPlayer(steamId, onChange) {
+  const m = modal('<div class="spinner" style="margin:20px auto"></div>');
+  let p;
+  try { p = await api(`admin/cheat/player/${encodeURIComponent(steamId)}`); } catch (x) { m.close(); fail(x); return; }
+  const s = p.stats || {};
+  const kd = (Number(s.kills || 0) / Math.max(1, Number(s.deaths || 0))).toFixed(2);
+  const kpm = s.playtime >= 600 ? (s.kills / (s.playtime / 60)).toFixed(2) : '—';
+  const c = p.check;
+  const age = c?.account_created ? Math.floor((Date.now() - new Date(c.account_created).getTime()) / 86400000) : null;
+  const f = p.feed || {};
+  const tile = (label, val) => `<div style="padding:10px;background:rgba(255,255,255,.04);border-radius:8px"><div class="muted small">${label}</div><b style="font-size:18px">${val}</b></div>`;
+  m.el.innerHTML = `
+    <div class="row between"><h2 style="margin:0">${esc(p.name)} ${p.flag ? sevPill(p.flag.severity, p.status) : p.status === 'cleared' ? sevPill('', 'cleared') : ''}</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
+    ${p.member ? `<p class="small muted" style="margin:4px 0 0">Barracks member: <a href="#/u/${p.member.id}">${esc(p.member.name)}</a></p>` : ''}
+    ${p.flag?.reasons?.length ? `<ul style="margin:10px 0">${p.flag.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="muted">No warning signs right now.</p>'}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin:10px 0">
+      ${tile('Kills', fmtNum(s.kills))}${tile('Deaths', fmtNum(s.deaths))}${tile('K/D', kd)}${tile('Kills/min', kpm)}
+      ${tile('Matches', fmtNum(s.matches))}${tile('Wins / losses', `${fmtNum(s.wins)} / ${fmtNum(s.losses)}`)}${tile('Played', hrs(s.playtime))}${tile('Last seen', s.last_seen ? esc(timeAgo(s.last_seen)) : '—')}
+    </div>
+    <p class="small" style="margin:6px 0">Steam: ${c ? `${c.vac_bans || c.game_bans ? `<b style="color:var(--red)">${c.vac_bans} VAC + ${c.game_bans} game ban(s), last ${fmtNum(c.days_since_last_ban)} days ago</b>` : 'no VAC or game bans'}${c.community_banned ? ' · community banned' : ''}${age !== null ? ` · account ${fmtNum(age)} days old` : ''}` : '<span class="muted">not checked yet</span>'}</p>
+    <p class="small" style="margin:6px 0">Kill feed: ${f.kills ? `${fmtNum(f.kills)} kills recorded${f.hs_known ? ` · ${Math.round((f.hs / f.hs_known) * 100)}% headshots` : ''}${f.max_dist ? ` · longest ${Math.round(f.max_dist)} m` : ''}${f.weapons?.length ? ` · weapons: ${f.weapons.map(esc).join(', ')}` : ''}` : '<span class="muted">no kill details yet</span>'}</p>
+    ${p.matches.length ? `<details open><summary><b>Recent matches</b> <span class="muted small">(our tracker)</span></summary><div class="table-wrap"><table class="small"><thead><tr><th>When</th><th>Kills</th><th>Deaths</th><th>Minutes</th><th>Kills/min</th><th>Result</th></tr></thead><tbody>
+      ${p.matches.map((x) => `<tr><td>${esc(timeAgo(x.ended_at))}</td><td>${x.kills}</td><td>${x.deaths}</td><td>${Math.round(x.seconds / 60)}</td><td>${(x.kills / Math.max(1, x.seconds / 60)).toFixed(2)}</td><td>${x.won === null ? '—' : x.won ? 'Win' : 'Loss'}</td></tr>`).join('')}
+    </tbody></table></div></details>` : ''}
+    ${p.sessions.length ? `<details ${p.matches.length ? '' : 'open'}><summary><b>Play sessions</b> <span class="muted small">(WarCon history)</span></summary><div class="table-wrap"><table class="small"><thead><tr><th>Joined</th><th>Kills</th><th>Deaths</th><th>Minutes</th><th>Kills/min</th></tr></thead><tbody>
+      ${p.sessions.map((x) => `<tr><td>${x.joined_at ? esc(timeAgo(x.joined_at)) : '—'}</td><td>${x.kills}</td><td>${x.deaths}</td><td>${Math.round((x.secs || 0) / 60)}</td><td>${(x.kills / Math.max(1, (x.secs || 0) / 60)).toFixed(2)}</td></tr>`).join('')}
+    </tbody></table></div></details>` : ''}
+    ${p.reports.length ? `<details><summary><b>Reports</b> (${p.reports.length})</summary>${p.reports.map((r) => `<p class="small" style="margin:6px 0"><b>${esc(r.reporter_name || 'a member')}</b> · ${esc(timeAgo(r.created_at))} · ${esc(r.status)}<br>${esc(r.reason)}</p>`).join('')}</details>` : ''}
+    <div style="margin-top:10px"><b>Staff notes</b>
+      ${p.notes.length ? p.notes.map((n) => `<p class="small" style="margin:6px 0"><b>${esc(n.author || 'staff')}</b> · <span class="muted">${esc(timeAgo(n.created_at))}</span><br>${esc(n.text)}</p>`).join('') : '<p class="small muted">No notes yet.</p>'}
+      <form class="row" id="cwNote" style="margin-top:6px"><input type="text" name="text" maxlength="1000" placeholder="Add a note (what you checked, clips, decisions)" class="grow"><button class="btn small">Add</button></form>
+    </div>
+    <div class="row" style="margin-top:14px;gap:6px">
+      <button class="btn small" data-st="watch"${p.status === 'watch' ? ' disabled' : ''}>Watch list</button>
+      <button class="btn small" data-st="cleared"${p.status === 'cleared' ? ' disabled' : ''}>Checked &amp; cleared</button>
+      ${p.status ? '<button class="btn small ghost" data-st="">Remove status</button>' : ''}
+      ${p.can_admin && p.server_id ? '<span class="grow"></span><button class="btn small" data-act="kick">Kick (if on now)</button><button class="btn small danger" data-act="ban">Ban</button>' : ''}
+    </div>`;
+  const reload = () => { m.close(); cheatPlayer(steamId, onChange); onChange?.(); };
+  m.el.querySelector('[data-close]').onclick = () => { m.close(); onChange?.(); };
+  m.el.querySelector('#cwNote').onsubmit = async (e) => {
+    e.preventDefault();
+    const text = e.target.text.value.trim();
+    if (!text) return;
+    try { await api(`admin/cheat/player/${encodeURIComponent(steamId)}/notes`, { method: 'POST', body: { text } }); reload(); } catch (x) { fail(x); }
+  };
+  m.el.querySelectorAll('[data-st]').forEach((b) => {
+    b.onclick = async () => {
+      try { await api(`admin/cheat/player/${encodeURIComponent(steamId)}/status`, { method: 'POST', body: { status: b.dataset.st } }); reload(); } catch (x) { fail(x); }
+    };
+  });
+  m.el.querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = async () => {
+      const action = b.dataset.act;
+      const reason = await promptBox(`${action === 'ban' ? 'Ban' : 'Kick'} ${p.name}?`, 'Reason (shown to them)', { danger: action === 'ban', okLabel: action === 'ban' ? 'Ban' : 'Kick' });
+      if (reason === null) return;
+      try {
+        await api(`admin/servers/${p.server_id}/action`, { method: 'POST', body: { action, steamId, reason } });
+        await api(`admin/cheat/player/${encodeURIComponent(steamId)}/notes`, { method: 'POST', body: { text: `${action === 'ban' ? 'Banned' : 'Kicked'}${reason ? `: ${reason}` : ''}` } });
+        toast('Done', `${p.name} was ${action === 'ban' ? 'banned' : 'kicked'}.`);
+        reload();
+      } catch (x) { fail(x); }
+    };
+  });
 }

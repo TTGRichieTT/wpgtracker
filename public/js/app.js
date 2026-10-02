@@ -1438,6 +1438,7 @@ async function viewServers(main, _r, alive) {
 
   main.innerHTML = `<div class="row between"><h1>Servers</h1><div class="row">
       ${admin ? `<button class="btn primary" id="srvAdd">${icon('plus')} Add server</button>` : ''}
+      <button class="btn ghost" id="srvReport" title="Report a suspected cheater to staff">${icon('shield')} Report a player</button>
       <button class="btn" id="srvRefresh">${icon('refresh')} Refresh</button></div></div>
     ${stale ? '<p class="muted small">⚠ Live server data may be a few minutes old.</p>' : ''}
     <div class="stack">${servers.map(serverCard).join('')}</div>
@@ -1462,6 +1463,7 @@ async function viewServers(main, _r, alive) {
             <button class="btn small ghost" data-act="kill" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Kill</button>
             ${admin ? `<button class="btn small danger" data-act="ban" data-sid="${s.id}" data-steam="${esc(p.steamId)}" data-name="${esc(p.name)}">Ban</button>` : ''}
           </div>` : ''}
+          ${p.steamId && !admin ? `<button class="btn small ghost" data-report="${esc(p.steamId)}" data-name="${esc(p.name)}" title="Report a suspected cheater to staff">Report</button>` : ''}
         </div>`).join('') : '<p class="muted">Nobody on right now.</p>';
     } catch (e) {
       box.innerHTML = `<p class="muted small">Couldn't load players: ${esc(e.message)}</p>`;
@@ -1511,6 +1513,19 @@ async function viewServers(main, _r, alive) {
     const copy = e.target.closest('[data-copy]');
     if (copy) {
       try { await navigator.clipboard.writeText(copy.dataset.copy); toast('Copied', 'Server ID copied.'); } catch { toast('Copy failed', 'Select the ID and copy it by hand.', { error: true }); }
+      return;
+    }
+    // Members: report a suspected cheater to staff.
+    const rep = e.target.closest('[data-report], #srvReport');
+    if (rep) {
+      const who = rep.dataset.name || await promptBox('Report a player', 'Their in-game name', { okLabel: 'Next' });
+      if (!who) return;
+      const reason = await promptBox(`Report ${who} to staff`, 'What did you see? (when, which map, what happened)', { okLabel: 'Send report' });
+      if (!reason) return;
+      try {
+        await api('reports', { method: 'POST', body: { steamId: rep.dataset.report || '', name: who, reason } });
+        toast('Report sent', 'Thanks — staff will look into it.');
+      } catch (x) { fail(x); }
       return;
     }
     const b = e.target.closest('[data-act]');

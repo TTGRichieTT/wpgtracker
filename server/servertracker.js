@@ -8,6 +8,7 @@ import { q, one } from './db.js';
 import { rcon, queuedMap, restoreRotation } from './servers.js';
 import { recalcXp } from './steam.js';
 import { bus } from './bus.js';
+import { watchPoll } from './cheatwatch.js';
 
 const POLL_MS = 30 * 1000;
 const RECENT_MS = 3 * 60 * 1000; // must have been seen this recently at match end to get a win/loss
@@ -16,17 +17,25 @@ const MEMBER_PUSH_MS = 5 * 60 * 1000;
 const totalScore = (st) => (st?.factionScores || []).reduce((n, f) => n + (Number(f.score) || 0), 0);
 const matchKey = (st) => `${st?.map || ''}|${(st?.experiences || []).join('+')}`;
 
-// Ends the match in `state`: hands out wins and losses.
+// Ends the match in `state`: hands out wins and losses (none for an empty or tied match), and keeps
+// one row per player of how their match went (for cheat watch).
 async function finishMatch(serverId, state) {
   const scores = state.scores || [];
   const best = Math.max(0, ...scores.map((f) => Number(f.score) || 0));
   const winners = scores.filter((f) => (Number(f.score) || 0) === best);
-  if (best <= 0 || winners.length !== 1) return; // empty or tied match: no result
-  const winner = winners[0].name;
+  const winner = best > 0 && winners.length === 1 ? winners[0].name : null;
   for (const [sid, p] of Object.entries(state.players || {})) {
-    if (!p.faction || Date.now() - (p.seen || 0) > RECENT_MS) continue;
-    const won = p.faction === winner;
-    await q(`UPDATE server_players SET ${won ? 'wins = wins + 1' : 'losses = losses + 1'} WHERE server_id=$1 AND steam_id=$2`, [serverId, sid]);
+    const stayed = p.faction && Date.now() - (p.seen || 0) <= RECENT_MS;
+    const won = winner && stayed ? p.faction === winner : null;
+    if (won !== null) {
+      await q(`UPDATE server_players SET ${won ? 'wins = wins + 1' : 'losses = losses + 1'} WHERE server_id=$1 AND steam_id=$2`, [serverId, sid]);
+    }
+    if ((p.secs || 0) >= 60) {
+      await q(
+        'INSERT INTO match_players (server_id, steam_id, name, faction, kills, deaths, seconds, won) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [serverId, sid, String(p.name || '').slice(0, 64), p.faction || '', p.kills || 0, p.deaths || 0, p.secs, won],
+      ).catch((e) => console.warn('[tracker] match row', e.message));
+    }
   }
 }
 
@@ -49,6 +58,7 @@ export async function pollServer(server) {
   let state = row?.state && row.state.key ? row.state : { key: matchKey(status), total: totalScore(status), scores: status.factionScores || [], players: {}, at: Date.now() };
 
   const now = Date.now();
+  const before = state.players || {}; // who was on at the last check (for cheat watch's join alerts)
   const newMatch = state.key !== matchKey(status) || totalScore(status) + 5 < (state.total || 0);
   // A queued map has started (or it's been hours): put the server's normal rotation back.
   const queued = await queuedMap(server.id);
@@ -80,8 +90,11 @@ export async function pollServer(server) {
       [server.id, sid, name, dk, dd, prev ? 0 : 1, secs],
     );
     if (!exists) await claimImported(server.id, sid, name);
-    state.players[sid] = { kills, deaths, faction: p.faction || '', seen: now };
+    // secs: time in this match; hist: kills over the last few minutes (for live spike alerts).
+    const hist = [...(prev?.hist || []).filter(([t]) => now - t <= 7 * 60 * 1000), [now, kills]];
+    state.players[sid] = { kills, deaths, faction: p.faction || '', seen: now, name, secs: (prev?.secs || 0) + secs, hist };
   }
+  await watchPoll(server, players, { players: before }, state).catch((e) => console.warn('[tracker] cheat watch', e.message));
   state.scores = status.factionScores || [];
   state.total = totalScore(status);
   state.at = now;

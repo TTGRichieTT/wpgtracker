@@ -28,6 +28,10 @@ const DEFAULT_SETTINGS = {
   discord_post_promotions: 'true',
   discord_post_medals: 'true',
   discord_post_wpg_ranks: 'true',
+  // Cheat watch: staff-only alerts (Discord channel ID empty = app alerts only).
+  discord_staff_channel: '',
+  cheat_alerts: 'true',
+  cheat_live_kills: '15',
 };
 
 // Insignia combine US and UK army symbols:

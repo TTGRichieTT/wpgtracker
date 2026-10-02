@@ -329,6 +329,26 @@ async function queueMap(s, b) {
   );
 }
 
+// Points the game server's kill feed ([WDServerFeed] Url + Token) at a web address. Only that section
+// is changed. The game server reads it at its next restart.
+export async function setKillFeed(s, url, token) {
+  if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9/_-]*$/.test(url) || !/^[0-9a-f]{32,64}$/.test(token)) throw new HttpError(400, 'Bad kill feed address or token.');
+  const cfg = await rcon(s, 'GET', '/config');
+  if (!cfg?.writable) throw new HttpError(400, "This server's config can't be changed over RCON.");
+  const text = String(cfg.text || '');
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim() === '[WDServerFeed]');
+  if (start >= 0) {
+    let end = lines.findIndex((l, i) => i > start && l.trim().startsWith('['));
+    if (end < 0) end = lines.length;
+    lines.splice(start, end - start);
+  }
+  while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+  lines.push('', '[WDServerFeed]', `Url=${url}`, `Token=${token}`, '');
+  await saveConfig(s, lines.join(eol), cfg.revision);
+}
+
 // Puts the saved rotation back. Safe to call when nothing is queued.
 export async function restoreRotation(s) {
   const saved = await queuedMap(s.id);

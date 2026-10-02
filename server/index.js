@@ -16,6 +16,7 @@ import { startServerTracker, pushMemberStats } from './servertracker.js';
 import { startWarconSync } from './warcon.js';
 import { startProgressSync } from './progress.js';
 import { discordBot, startDiscordBot } from './discordbot.js';
+import { killFeed, cheat, startCheatWatch } from './cheatwatch.js';
 import { startKeepAwake } from './keepawake.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
@@ -77,6 +78,7 @@ app.use((_req, res, next) => {
 });
 // Discord bot commands: before the JSON parser, because the signature check needs the raw body.
 app.use(discordBot);
+app.use(killFeed); // game server kill feed: also reads the raw body (any format)
 app.use(express.json({ limit: '200kb' }));
 app.use(sessionMiddleware);
 
@@ -190,6 +192,7 @@ app.post('/auth/logout', async (req, res) => {
 app.use('/api/ingest', ingest);
 app.use('/api/admin', admin);
 app.use('/api', servers);
+app.use('/api', cheat);
 app.use('/api', discord);
 app.use('/api', api);
 app.use('/api', (_req, _res) => {
@@ -230,6 +233,7 @@ startPlayingWatch();
 startWarconSync(pushMemberStats);
 startProgressSync();
 startDiscordBot();
+startCheatWatch();
 startKeepAwake();
 setInterval(() => {
   store.prune().catch(() => {});

@@ -571,6 +571,25 @@ async function cmdUnlink(_data, caller) {
   return { content: u ? 'Your Discord is no longer linked to the Barracks app.' : "Your Discord wasn't linked." };
 }
 
+// /report: tell staff about a suspected cheater. Only the reporter sees the reply.
+const reportTimes = new Map();
+async function cmdReport(data, caller, callerName) {
+  const times = (reportTimes.get(caller) || []).filter((t) => Date.now() - t < 3600 * 1000);
+  if (times.length >= 5) return { content: 'You have sent a lot of reports — please try again later.' };
+  const linked = caller ? await one("SELECT id, persona_name FROM users WHERE discord_id=$1 AND status='active'", [caller]) : null;
+  const { createReport } = await import('./cheatwatch.js');
+  try {
+    const r = await createReport({
+      name: option(data, 'player'), reason: option(data, 'reason'),
+      reporterUserId: linked?.id || null, reporterName: linked?.persona_name || callerName || 'Discord member', source: 'discord',
+    });
+    reportTimes.set(caller, [...times, Date.now()]);
+    return { content: `Thanks — your report about **${r.name || 'that player'}** has been sent to WPG staff. They'll look into it.` };
+  } catch (e) {
+    return { content: e.message || 'Could not send that report.' };
+  }
+}
+
 const COMMANDS = {
   stats: { run: cmdStats, description: 'Wardogs stats: level, cash, worth, classes, world ranks' },
   rank: { run: cmdRank, description: 'WPG rank + WPG XP, and clan rank' },
@@ -582,6 +601,7 @@ const COMMANDS = {
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
   unlink: { run: cmdUnlink, description: 'Unlink your Discord from the Barracks app', private: true },
+  report: { run: cmdReport, description: 'Report a suspected cheater on the WPG server to staff', private: true },
 };
 const WHO = [
   { type: 6, name: 'member', description: 'Which member (leave empty for yourself)', required: false },
@@ -602,6 +622,12 @@ function commandDefinitions() {
         type: 3, name: 'sort', description: 'Order by (WPG XP if left empty)', required: false,
         choices: Object.entries(SERVER_SORTS).map(([v, [n]]) => ({ name: n, value: v })),
       }];
+    }
+    if (name === 'report') {
+      def.options = [
+        { type: 3, name: 'player', description: 'Their in-game name', required: true, max_length: 64 },
+        { type: 3, name: 'reason', description: 'What you saw (when, which map, what happened)', required: true, max_length: 500 },
+      ];
     }
     return def;
   });
@@ -798,14 +824,20 @@ async function drain() {
   }
   posting = false;
 }
-export async function postToChannel(payload) {
+// Posts to the channel in a setting: the public post channel, or the staff channel for cheat watch.
+export async function postToChannel(payload, settingKey = 'discord_post_channel') {
   if (!TOKEN()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set' };
-  const channel = String((await setting('discord_post_channel')) || '').trim();
-  if (!/^\d{15,22}$/.test(channel)) return { ok: false, reason: 'No post channel set (Admin → Settings)' };
+  const channel = String((await setting(settingKey)) || '').trim();
+  if (!/^\d{15,22}$/.test(channel)) return { ok: false, reason: 'No channel set for that (Admin → Settings)' };
   postQueue.push({ channel, payload });
   drain();
   return { ok: true };
 }
+
+// Cheat watch alerts and reports go to the staff channel (never the public one).
+bus.on('staff:alert', (payload) => {
+  postToChannel(payload, 'discord_staff_channel').catch((e) => problem('Staff alert', e.message));
+});
 
 const mentionFor = (u) => (u?.discord_id ? ` (<@${u.discord_id}>)` : '');
 // Other parts of the app raise 'announce' events; each type can be switched off in Admin → Settings.
