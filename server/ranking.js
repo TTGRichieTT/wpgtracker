@@ -28,7 +28,7 @@ async function totalPlayers() {
 const blockCache = new Map();
 async function levelBlock(block) {
   const hit = blockCache.get(block);
-  if (hit && Date.now() - hit.at < 20 * 60 * 1000) return hit.rows;
+  if (hit && Date.now() - hit.at < 2 * 60 * 1000) return hit.rows; // short: just enough to share during an "everyone" sync
   const data = await getJson(`${BASE}?by=level&dir=desc&block=${block}`);
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   blockCache.set(block, { at: Date.now(), rows });
