@@ -615,3 +615,6 @@ body::after { display: none; }
 .playing-tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font: 600 12px var(--head); letter-spacing: .3px; color: var(--muted); border: 1px solid var(--line2); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .playing-tag.wd { color: var(--green); border-color: rgba(64,200,120,.5); background: rgba(64,200,120,.1); }
 .playing-tag[hidden] { display: none; }
+
+/* Buttons and tags hidden with the hidden attribute stay hidden */
+.btn[hidden] { display: none; }

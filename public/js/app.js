@@ -1709,18 +1709,17 @@ async function viewTools(main) {
       <div class="pg-nums"><span><em>${t.bought}/${t.count}</em>Bought</span><span><em>${t.ready}</em>Ready</span>
         <span><em>${fmtMoney(t.spent)}</em>Spent</span><span><em>${fmtMoney(t.togo)}</em>To go</span></div></a>`;
 
+  const cardsHtml = () => `${card('all', 'Totals', totals(list), false).replace('<a class="pg-card"', '<div class="pg-card total"').replace(/<\/a>$/, '</div>')}
+        ${TOOL_ROLES.map(([k, l]) => card(k, l, totals(list.filter((u) => u.role === k)), k === tab)).join('')}`;
   const reachedNotBought = items.filter((u) => statusOf(u) === 'ready').length;
   main.innerHTML = `<h1>Progression</h1>
     <div class="stack">
-      <div class="pg-cards">
-        ${card('all', 'Totals', totals(list), false).replace('<a class="pg-card"', '<div class="pg-card total"').replace(/<\/a>$/, '</div>')}
-        ${TOOL_ROLES.map(([k, l]) => card(k, l, totals(list.filter((u) => u.role === k)), k === tab)).join('')}
-      </div>
+      <div class="pg-cards" id="pgCards">${cardsHtml()}</div>
       ${off ? '' : `<p class="muted small" style="margin:0">${state.realSteam && !state.trackerLinked ? 'Add your in-game name on HQ so your levels fill in Ready and Bought.' : 'Your class levels are not known yet.'}</p>`}
       <div class="panel">
         <div class="row between" style="margin-bottom:10px">
           <div class="panel-title" style="margin:0">${icon('unlock')} ${esc(TOOL_ROLES.find(([k]) => k === tab)?.[1] || tab)} <span class="sub">${tab === 'career' ? 'Wardog level' : 'class'} unlocks</span></div>
-          ${level !== null && reachedNotBought ? `<button class="btn small" id="pgAll">${icon('unlock')} Mark all ${reachedNotBought} reached as bought</button>` : ''}
+          ${level !== null ? `<button class="btn small" id="pgAll"${reachedNotBought ? '' : ' hidden'}>${icon('unlock')} Mark all <span id="pgAllN">${reachedNotBought}</span> reached as bought</button>` : ''}
         </div>
         <div class="row" style="gap:6px;margin-bottom:10px">
           <a class="btn small${!kind ? ' primary' : ''}" href="${link({ kind: '' })}">All</a>
@@ -1741,7 +1740,7 @@ async function viewTools(main) {
               <td>${s === 'locked'
                 ? `<span class="muted small">${level === null ? 'Locked' : `${u.level - level} to go`}</span>`
                 : free ? '<span class="pg-ok">✓ Unlocked</span>'
-                : `<label class="pg-tick"><input type="checkbox" data-buy="${esc(u.name)}" ${s === 'bought' ? 'checked' : ''}> ${s === 'bought' ? 'Bought' : 'Ready'}</label>`}</td>
+                : `<label class="pg-tick"><input type="checkbox" data-buy="${esc(u.name)}" ${s === 'bought' ? 'checked' : ''}> <span>${s === 'bought' ? 'Bought' : 'Ready'}</span></label>`}</td>
             </tr>`;
           }).join('') || '<tr><td colspan="7" class="muted">Nothing here.</td></tr>'}</tbody>
         </table></div>
@@ -1749,12 +1748,28 @@ async function viewTools(main) {
       </div>
     </div>`;
 
+  // Ticking a box updates just that row and the totals in place (no page reload), then saves.
+  const showTick = (cb) => {
+    const key = `${tab}|${cb.dataset.buy}`;
+    if (cb.checked) bought.add(key); else bought.delete(key);
+    const row = cb.closest('tr');
+    row.className = `pg-${cb.checked ? 'bought' : 'ready'}`;
+    cb.nextElementSibling.textContent = cb.checked ? 'Bought' : 'Ready';
+    document.getElementById('pgCards').innerHTML = cardsHtml();
+    const left = items.filter((u) => statusOf(u) === 'ready').length;
+    const all = document.getElementById('pgAll');
+    if (all) { all.hidden = !left; document.getElementById('pgAllN').textContent = left; }
+  };
   main.querySelectorAll('[data-buy]').forEach((cb) => {
     cb.onchange = async () => {
+      showTick(cb);
       try {
         await api('me/unlocks', { method: 'POST', body: { role: tab, name: cb.dataset.buy, bought: cb.checked } });
-        route();
-      } catch (x) { fail(x); cb.checked = !cb.checked; }
+      } catch (x) {
+        fail(x);
+        cb.checked = !cb.checked;
+        showTick(cb);
+      }
     };
   });
   document.getElementById('pgAll')?.addEventListener('click', async () => {
