@@ -7,21 +7,21 @@ import { fileURLToPath } from 'url';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
 
 const ASSETS = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets');
-const W = 1536;
+export const W = 1536;
 // The design's panels end at y=905 on the left (class cards) but y=880 on the right, where the footer
 // art ("PLAY HARDER TOGETHER", soldiers) already starts. So: the top is copied down to SPLIT, the new
 // band goes below it, then the footer art from FOOT_SRC; the overlapping strips are painted over.
-const SPLIT = 908;
+export const SPLIT = 908;
 const RIGHT_END = 882; // right-hand panel's bottom edge
-const MID_X = 826; // gap between the left and right panels
-const FOOT_SRC = 880;
-const FOOT = 1024 - FOOT_SRC;
+export const MID_X = 826; // gap between the left and right panels
+export const FOOT_SRC = 880;
+export const FOOT = 1024 - FOOT_SRC;
 const BAND = 250;
-const BAND_BG = '#040b14';
+export const BAND_BG = '#040b14';
 
 // Value boxes in the design: x, y, width, height (measured from the artwork).
 const BOX = {
-  name: [397, 315, 851, 37], steam: [405, 396, 253, 33], discord: [774, 396, 248, 33], member: [1144, 397, 333, 32],
+  name: [397, 315 + 38, 851, 37], // moved down 38 px (see careerTemplate)
   publicRank: [115, 565, 151, 32], level: [381, 565, 156, 34], totalXp: [638, 565, 156, 34],
   cash: [115, 640, 283, 35], worth: [518, 640, 257, 35],
   serverRank: [929, 566, 125, 34], wpgRank: [1166, 566, 117, 34], wpgXp: [1393, 566, 100, 34],
@@ -30,17 +30,17 @@ const BOX = {
   recon: [44, 871, 107, 25], assault: [172, 871, 107, 25], medic: [300, 871, 106, 25],
   support: [426, 871, 107, 25], driver: [555, 871, 108, 25], pilot: [687, 871, 117, 25],
 };
-const BOX_FILL = 'rgb(21,44,63)';
-const WHITE = '#f3f7fb';
-const CYAN = '#33d1ff';
-const GREEN = '#4ade80';
-const AMBER = '#f5a524';
+export const BOX_FILL = 'rgb(21,44,63)';
+export const WHITE = '#f3f7fb';
+export const CYAN = '#33d1ff';
+export const GREEN = '#4ade80';
+export const AMBER = '#f5a524';
 
-const VALUE_FONT = 'Inter, InterExt, InterCyr';
-const LABEL_FONT = 'Rajdhani, RajdhaniExt';
+export const VALUE_FONT = 'Inter, InterExt, InterCyr';
+export const LABEL_FONT = 'Rajdhani, RajdhaniExt';
 
 let setup = null;
-function prepare() {
+export function prepare() {
   if (!setup) {
     setup = (async () => {
       const font = (file, family) => GlobalFonts.registerFromPath(path.join(ASSETS, 'fonts', file), family);
@@ -61,7 +61,7 @@ function prepare() {
 
 // Steam achievement icons, fetched once and kept.
 const iconCache = new Map();
-async function icon(url) {
+export async function icon(url) {
   if (!/^https:\/\//.test(url || '')) return null;
   if (iconCache.has(url)) return iconCache.get(url);
   const img = await fetch(url, { signal: AbortSignal.timeout(8000) })
@@ -74,7 +74,7 @@ async function icon(url) {
 }
 
 // Writes text centred in a box, shrinking it until it fits.
-function fitText(g, text, cx, cy, maxW, size, { font = VALUE_FONT, weight = 800, color = WHITE, minSize = 10 } = {}) {
+export function fitText(g, text, cx, cy, maxW, size, { font = VALUE_FONT, weight = 800, color = WHITE, minSize = 10 } = {}) {
   let s = size;
   g.font = `${weight} ${s}px ${font}`;
   while (s > minSize && g.measureText(text).width > maxW) {
@@ -92,7 +92,7 @@ function fitText(g, text, cx, cy, maxW, size, { font = VALUE_FONT, weight = 800,
   g.fillText(shown, cx, cy + 1);
 }
 
-function roundRect(g, x, y, w, h, r) {
+export function roundRect(g, x, y, w, h, r) {
   g.beginPath();
   g.moveTo(x + r, y);
   g.arcTo(x + w, y, x + w, y + h, r);
@@ -132,7 +132,7 @@ function value(g, key, text, opts = {}) {
 }
 
 // A panel in the style of the design: dark, cut corners, thin glowing cyan edge.
-function panel(g, x, y, w, h) {
+export function panel(g, x, y, w, h) {
   const c = 16;
   g.beginPath();
   g.moveTo(x + c, y); g.lineTo(x + w, y); g.lineTo(x + w, y + h - c); g.lineTo(x + w - c, y + h); g.lineTo(x, y + h); g.lineTo(x, y + c);
@@ -149,7 +149,7 @@ function panel(g, x, y, w, h) {
 }
 
 // Section title like the design's: white words, then a cyan word in brackets.
-function title(g, x, y, main, accent) {
+export function title(g, x, y, main, accent) {
   g.textAlign = 'left';
   g.textBaseline = 'middle';
   g.font = `700 30px ${LABEL_FONT}`;
@@ -163,7 +163,7 @@ function title(g, x, y, main, accent) {
   g.fillText(accent, x + mw + 12, y);
 }
 
-function medalIcon(g, cx, cy) {
+export function medalIcon(g, cx, cy) {
   g.save();
   g.fillStyle = '#e8f4ff';
   g.beginPath(); g.moveTo(cx - 11, cy - 16); g.lineTo(cx - 3, cy - 16); g.lineTo(cx + 3, cy - 4); g.lineTo(cx - 5, cy - 4); g.closePath(); g.fill();
@@ -180,7 +180,7 @@ function medalIcon(g, cx, cy) {
   g.restore();
 }
 
-function trophyIcon(g, cx, cy) {
+export function trophyIcon(g, cx, cy) {
   g.save();
   g.fillStyle = '#e8f4ff';
   g.beginPath(); g.moveTo(cx - 12, cy - 14); g.lineTo(cx + 12, cy - 14); g.lineTo(cx + 9, cy + 2); g.quadraticCurveTo(cx, cy + 9, cx - 9, cy + 2); g.closePath(); g.fill();
@@ -192,7 +192,7 @@ function trophyIcon(g, cx, cy) {
   g.restore();
 }
 
-function ribbon(g, x, y, w, h, colors) {
+export function ribbon(g, x, y, w, h, colors) {
   const list = String(colors || '#888888').split(',').map((c) => (/^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : '#888888'));
   const step = w / list.length;
   g.save();
@@ -213,7 +213,7 @@ function ribbon(g, x, y, w, h, colors) {
 }
 
 // Wraps a short name onto up to two centred lines.
-function twoLines(g, text, cx, y, maxW) {
+export function twoLines(g, text, cx, y, maxW) {
   const words = String(text).split(/\s+/);
   const lines = [''];
   for (const wd of words) {
@@ -353,15 +353,68 @@ function playtime(secs) {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 }
 
-// d: { name, steamId, discord, member, official{...}|null, worldRank, wpg{rank,xp,position}, server{...}, medals[], achievements{} }
+// The design, adjusted once for Discord: the Steam ID / Discord / WPG member row is removed (private,
+// and not needed there), the player name row moves down into that space, and ENGINEER reads DRIVER.
+const NAME_SHIFT = 38;
+let template = null;
+async function careerTemplate() {
+  if (template) return template;
+  const art = await prepare();
+  const c = createCanvas(art.width, art.height);
+  const g = c.getContext('2d');
+  g.drawImage(art, 0, 0);
+  // Keep the name row (icon, label, box) to put back lower down.
+  const nameRow = g.getImageData(316, 286, 936, 70);
+  // Repaint the panel from just under its title to its bottom edge, column by column, blending the
+  // clean background rows above (y 284) and below (y 356) the name row so the panel's shading stays.
+  const top = 284;
+  const bottom = 444;
+  const x0 = 330;
+  const x1 = 1252;
+  const above = g.getImageData(x0, top, x1 - x0, 1).data;
+  const below = g.getImageData(x0, 356, x1 - x0, 1).data;
+  for (let i = 0; i < x1 - x0; i++) {
+    const shade = g.createLinearGradient(0, top, 0, bottom);
+    shade.addColorStop(0, `rgb(${above[i * 4]},${above[i * 4 + 1]},${above[i * 4 + 2]})`);
+    shade.addColorStop(1, `rgb(${below[i * 4]},${below[i * 4 + 1]},${below[i * 4 + 2]})`);
+    g.fillStyle = shade;
+    g.fillRect(x0 + i, top, 1, bottom - top);
+  }
+  // Right end: the wolf artwork behind the old row fades out instead of being cut off.
+  const wolf = g.createLinearGradient(0, 352, 0, 400);
+  wolf.addColorStop(0, 'rgba(2,15,24,0)');
+  wolf.addColorStop(1, 'rgb(2,15,24)');
+  g.fillStyle = wolf;
+  g.fillRect(x1, 352, 1494 - x1, 48);
+  g.fillStyle = 'rgb(2,15,24)';
+  g.fillRect(x1, 400, 1494 - x1, bottom - 400);
+  g.putImageData(nameRow, 316, 286 + NAME_SHIFT);
+
+  // The design's fifth class card says ENGINEER; Wardogs calls that class DRIVER.
+  g.fillStyle = 'rgb(1,2,5)';
+  g.fillRect(566, 845, 84, 24);
+  g.font = `700 19px ${LABEL_FONT}`;
+  const labelShade = g.createLinearGradient(0, 850, 0, 866);
+  labelShade.addColorStop(0, '#ffffff');
+  labelShade.addColorStop(1, '#c4ccd4');
+  g.fillStyle = labelShade;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('DRIVER', 608, 858);
+  template = c;
+  return template;
+}
+
+// d: { name, official{...}|null, worldRank, wpg{rank,xp,position}, server{...}, medals[], achievements{} }
 export async function renderCareerCard(d) {
   const art = await prepare();
+  const top = await careerTemplate();
   const FOOT_Y = SPLIT + BAND; // where the footer art starts on the card
   const canvas = createCanvas(W, FOOT_Y + FOOT);
   const g = canvas.getContext('2d');
 
   // Artwork: panels on top, new band in the middle, footer art at the bottom.
-  g.drawImage(art, 0, 0, W, SPLIT, 0, 0, W, SPLIT);
+  g.drawImage(top, 0, 0, W, SPLIT, 0, 0, W, SPLIT);
   g.drawImage(art, 0, FOOT_SRC, W, FOOT, 0, FOOT_Y, W, FOOT);
   g.fillStyle = BAND_BG;
   g.fillRect(0, SPLIT, W, BAND);
@@ -394,23 +447,8 @@ export async function renderCareerCard(d) {
   g.fillStyle = seam;
   g.fillRect(MID_X, FOOT_Y, W - MID_X, 14);
 
-  // The design's fifth class card says ENGINEER; Wardogs calls that class DRIVER.
-  g.fillStyle = 'rgb(1,2,5)';
-  g.fillRect(566, 845, 84, 24);
-  g.font = `700 19px ${LABEL_FONT}`;
-  const labelShade = g.createLinearGradient(0, 850, 0, 866);
-  labelShade.addColorStop(0, '#ffffff');
-  labelShade.addColorStop(1, '#c4ccd4');
-  g.fillStyle = labelShade;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText('DRIVER', 608, 858);
-
-  // Player information.
+  // Player information: just the name (moved down into the removed row's space).
   value(g, 'name', d.name || 'Unknown', { size: 22 });
-  value(g, 'steam', d.steamId || '—', { size: 17 });
-  value(g, 'discord', d.discord || '—', { size: 17 });
-  value(g, 'member', d.member || 'YES', { size: 17, color: d.member === 'PMC' ? AMBER : GREEN });
 
   // Official Wardogs (global).
   const o = d.official;

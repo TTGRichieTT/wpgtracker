@@ -611,7 +611,7 @@ async function discordBotPanel(el) {
       <button type="button" class="btn" id="dbTest"${d.token && d.post_channel ? '' : ' disabled'}>Send a test post</button>
       <button type="button" class="btn ghost" id="dbReg"${d.token ? '' : ' disabled'}>Re-check &amp; fix Discord setup</button>
     </div>
-    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /live /link /unlink. Members type /link once to connect their Discord.</p>`;
+    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /serverboard /live /link /unlink. Members type /link once to connect their Discord.</p>`;
   el.querySelector('#dbTest').onclick = async () => {
     try { await api('admin/discord-bot/test', { method: 'POST', body: {} }); toast('Sent', 'Check the post channel in Discord.'); } catch (x) { fail(x); }
   };

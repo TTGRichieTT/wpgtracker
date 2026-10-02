@@ -11,6 +11,7 @@ import { bus } from './bus.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly } from './routes.js';
 import { liveMatch } from './servers.js';
+import { cleanName } from './util.js';
 
 const API = 'https://discord.com/api/v10';
 const WPG_APP_ID = '1555526462319366165';
@@ -148,10 +149,8 @@ async function careerData(u) {
   }
   return {
     // The name used on the WPG server (with the clan tag), else the Steam name.
-    name: String(prog?.bot_name || srv?.name || u.persona_name || '').trim() || u.persona_name,
-    steamId: u.steam_id,
-    discord: u.custom_fields?.discord || '',
-    member: u.membership === 'pmc' ? 'PMC' : 'YES',
+    // (No Steam ID or Discord name: cards are posted in Discord, so they stay private.)
+    name: cleanName(prog?.bot_name || srv?.name, '') || cleanName(u.persona_name),
     official: ws?.official || null,
     worldRank: ws?.ranks?.level || null,
     wpg: { rank: prog?.rank_name || 'RECRUIT I', xp: prog?.xp || 0, position: pos?.n || null },
@@ -212,13 +211,53 @@ async function statsEmbed(f) {
   };
 }
 
+// Sends a picture card, or the text version if the picture can't be made. The picture code is loaded
+// only when needed, so a problem with it can never stop the app starting.
+async function asPicture(name, render, fallback, link) {
+  try {
+    const cards = await import('./cards.js');
+    const jpg = await render(cards);
+    const out = { files: [{ name: `wpg-${name}.jpg`, data: jpg, type: 'image/jpeg' }] };
+    if (link) out.components = [{ type: 1, components: [{ type: 2, style: 5, label: link.label, url: link.url }] }];
+    return out;
+  } catch (e) {
+    console.warn(`[discord bot] ${name} card failed, sending text instead:`, e.message);
+    return fallback();
+  }
+}
+const profileLink = (u) => ({ label: 'Open in WPG Barracks', url: `${SITE()}/#/u/${u.id}` });
+const avatarOf = (u) => {
+  const a = u.custom_avatar || u.avatar || '';
+  return /^https:\/\//.test(a) ? a : '';
+};
+// How a member shows on cards: their name on the WPG server (with the clan tag), else the Steam name.
+async function cardName(u) {
+  const r = await one(
+    `SELECT COALESCE(
+        (SELECT NULLIF(TRIM(bot_name), '') FROM server_progress WHERE steam_id=$1),
+        (SELECT NULLIF(TRIM(name), '') FROM server_players WHERE steam_id=$1 ORDER BY last_seen DESC NULLS LAST LIMIT 1)
+      ) AS name`,
+    [u.steam_id],
+  );
+  return cleanName(r?.name, '') || cleanName(u.persona_name);
+}
+
 async function cmdRank(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
   const p = await one('SELECT xp, rank_name FROM server_progress WHERE steam_id=$1', [f.user.steam_id]);
-  const pos = p ? await one('SELECT COUNT(*)::int + 1 AS n FROM server_progress WHERE xp > $1', [p.xp]) : null;
+  const [pos, total, ranks] = await Promise.all([
+    p ? one('SELECT COUNT(*)::int + 1 AS n FROM server_progress WHERE xp > $1', [p.xp]) : null,
+    one('SELECT COUNT(*)::int AS n FROM server_progress'),
+    q('SELECT * FROM ranks ORDER BY sort_order, id'),
+  ]);
   const pmc = f.user.membership === 'pmc';
-  return {
+  const cur = ranks.find((r) => r.id === f.user.rank_id) || null;
+  // Next rank earned by XP (none if the current rank is appointed by command).
+  const next = !pmc && (!cur || cur.auto)
+    ? ranks.find((r) => r.auto && (!cur || r.sort_order > cur.sort_order) && r.min_xp > (Number(f.user.xp) || 0)) || null
+    : null;
+  const text = () => ({
     embeds: [{
       ...header(f.user),
       title: 'Ranks',
@@ -232,29 +271,49 @@ async function cmdRank(data, caller) {
       ],
       footer: { text: 'WPG rank and WPG XP come from the WPG Discord bot · WPG Barracks' },
     }],
-  };
+  });
+  return asPicture('rank', async (cards) => cards.renderRankCard({
+    name: await cardName(f.user),
+    avatar: avatarOf(f.user),
+    wpg: { rank: p?.rank_name || 'RECRUIT I', xp: p?.xp || 0, position: pos?.n || null, total: total?.n || 0 },
+    clan: { pmc, rank: cur, xp: Number(f.user.xp) || 0, next, from: cur?.auto ? cur.min_xp : 0 },
+  }), text, profileLink(f.user));
 }
 
 async function cmdMedals(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
   const awards = topTierOnly(await q(
-    `SELECT ua.id, ua.given_at, a.name, a.description, a.auto_rule, a.sort_order
+    `SELECT ua.id, ua.given_at, a.name, a.description, a.colors, a.auto_rule, a.sort_order
        FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY a.sort_order, ua.given_at`,
     [f.user.id],
   ));
-  const ach = await one('SELECT COUNT(*)::int AS n FROM user_achievements WHERE user_id=$1', [f.user.id]);
-  const list = awards.map((a) => `🎖️ **${a.name}**`).join('\n');
-  return {
+  const game = await one('SELECT app_id, name FROM games WHERE enabled = true ORDER BY featured DESC, name LIMIT 1');
+  const [total, earned] = game ? await Promise.all([
+    one('SELECT COUNT(*)::int AS n FROM steam_achievements WHERE app_id=$1', [game.app_id]),
+    q(
+      `SELECT sa.name, sa.icon, sa.percent::float AS percent FROM user_achievements ua
+         JOIN steam_achievements sa ON sa.app_id = ua.app_id AND sa.api_name = ua.api_name
+        WHERE ua.user_id=$1 AND ua.app_id=$2 ORDER BY sa.percent ASC NULLS LAST, sa.sort_order`,
+      [f.user.id, game.app_id],
+    ),
+  ]) : [null, []];
+  const text = () => ({
     embeds: [{
       ...header(f.user),
       title: `Medals (${awards.length})`,
       color: GOLD,
-      description: (list || 'No medals yet.').slice(0, 3900),
-      fields: [{ name: 'Steam achievements', value: num(ach?.n), inline: true }],
+      description: (awards.map((a) => `🎖️ **${a.name}**`).join('\n') || 'No medals yet.').slice(0, 3900),
+      fields: [{ name: 'Steam achievements', value: `${num(earned.length)}${total?.n ? ` / ${num(total.n)}` : ''}`, inline: true }],
       footer,
     }],
-  };
+  });
+  return asPicture('medals', async (cards) => cards.renderMedalsCard({
+    name: await cardName(f.user),
+    avatar: avatarOf(f.user),
+    medals: awards,
+    achievements: { game: game?.name || '', total: total?.n || 0, earned },
+  }), text, profileLink(f.user));
 }
 
 async function cmdServer(data, caller) {
@@ -267,7 +326,14 @@ async function cmdServer(data, caller) {
     [f.user.steam_id],
   );
   if (!s?.seen && !s?.t) return { content: `**${f.user.persona_name}** hasn't played on the WPG server yet.` };
-  return {
+  // Positions among everyone who has played (all WPG servers added together).
+  const [killsPos, playPos, players, p] = await Promise.all([
+    one('SELECT COUNT(*)::int + 1 AS n FROM (SELECT steam_id, SUM(kills) k FROM server_players GROUP BY steam_id) t WHERE k > $1', [s.k]),
+    one('SELECT COUNT(*)::int + 1 AS n FROM (SELECT steam_id, SUM(playtime_s) pt FROM server_players GROUP BY steam_id) t WHERE pt > $1', [s.t]),
+    one('SELECT COUNT(DISTINCT steam_id)::int AS n FROM server_players'),
+    one('SELECT xp, rank_name FROM server_progress WHERE steam_id=$1', [f.user.steam_id]),
+  ]);
+  const text = () => ({
     embeds: [{
       ...header(f.user),
       title: 'WPG server stats (all time)',
@@ -283,7 +349,14 @@ async function cmdServer(data, caller) {
       footer,
       timestamp: s.seen || undefined,
     }],
-  };
+  });
+  return asPicture('server', async (cards) => cards.renderServerCard({
+    name: await cardName(f.user),
+    avatar: avatarOf(f.user),
+    kills: s.k, deaths: s.d, matches: s.m, wins: s.w, losses: s.l, playtime: s.t, lastSeen: s.seen,
+    killsPos: killsPos?.n, playtimePos: playPos?.n, players: players?.n,
+    wpgRank: p?.rank_name || 'RECRUIT I', wpgXp: p?.xp || 0,
+  }), text, profileLink(f.user));
 }
 
 const BOARDS = {
@@ -291,66 +364,152 @@ const BOARDS = {
     title: 'WPG rank',
     sql: `SELECT bot_name AS name, xp AS v, rank_name AS extra FROM server_progress ORDER BY xp DESC, bot_name LIMIT 10`,
     show: (r) => `**${num(r.v)}** WPG XP · ${wpgRank(r.extra)}`,
+    value: (r) => `${num(r.v)} XP`,
   },
   clan: {
     title: 'Clan XP',
     sql: `SELECT persona_name AS name, xp AS v FROM users WHERE status='active' ORDER BY xp DESC LIMIT 10`,
     show: (r) => `**${num(r.v)}** Clan XP`,
+    value: (r) => `${num(r.v)} XP`,
   },
   level: {
     title: 'Wardog level',
     sql: `SELECT u.persona_name AS name, (ws.official->>'wardogLevel')::int AS v FROM users u JOIN wardogs_stats ws ON ws.user_id=u.id
            WHERE u.status='active' AND ws.official IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
     show: (r) => `Level **${num(r.v)}**`,
+    value: (r) => `LEVEL ${num(r.v)}`,
   },
   worth: {
     title: 'Account worth',
     sql: `SELECT u.persona_name AS name, (ws.official->>'worth')::bigint AS v FROM users u JOIN wardogs_stats ws ON ws.user_id=u.id
            WHERE u.status='active' AND ws.official->>'worth' IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
     show: (r) => `**${money(r.v)}**`,
+    value: (r) => money(r.v),
   },
   kills: {
     title: 'WPG server kills',
-    sql: `SELECT name, kills AS v FROM server_players ORDER BY kills DESC LIMIT 10`,
+    sql: `SELECT MAX(name) AS name, SUM(kills)::int AS v FROM server_players GROUP BY steam_id ORDER BY v DESC LIMIT 10`,
     show: (r) => `**${num(r.v)}** kills`,
+    value: (r) => `${num(r.v)} KILLS`,
   },
 };
 async function cmdLeaderboard(data) {
   const b = BOARDS[option(data, 'board')] || BOARDS.wpg;
   const rows = await q(b.sql);
   const medal = ['🥇', '🥈', '🥉'];
-  return {
+  const text = () => ({
     embeds: [{
       title: `🏆 ${b.title} — top 10`,
       url: `${SITE()}/#/leaderboard`,
       color: GOLD,
-      description: rows.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${String(r.name || '').trim() || 'Unknown'} — ${b.show(r)}`).join('\n') || 'No data yet.',
+      description: rows.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — ${b.show(r)}`).join('\n') || 'No data yet.',
       footer,
     }],
-  };
+  });
+  return asPicture('leaderboard', (cards) => cards.renderLeaderboardCard({
+    title: b.title,
+    accent: 'top 10',
+    rows: rows.map((r) => ({ name: cleanName(r.name), value: b.value(r), extra: r.extra || '' })),
+  }), text, { label: 'All leaderboards', url: `${SITE()}/#/leaderboard` });
+}
+
+// When the tracker last read the server, as a short time ("7:07 AM", or "2 OCT 7:07 AM" if not today).
+function updatedText(at) {
+  if (!at) return '—';
+  const d = new Date(at);
+  const tz = 'Europe/London';
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz }).toUpperCase();
+  const day = (x) => x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: tz });
+  return day(d) === day(new Date()) ? time : `${day(d).toUpperCase()} ${time}`;
+}
+
+// Server rank = place on the main board (by WPG XP, ties split by kills, then playtime), so it's unique.
+const MAIN_ORDER = 'COALESCE(wpg_xp, 0) DESC, kills DESC, playtime_s DESC, name';
+const SERVER_SORTS = {
+  wpgxp: ['WPG XP', MAIN_ORDER],
+  kills: ['Kills', 'kills DESC, playtime_s DESC, name'],
+  kd: ['K/D', '(kills::float / GREATEST(deaths, 1)) DESC, kills DESC, name'],
+  wins: ['Wins', 'wins DESC, matches DESC, name'],
+  matches: ['Matches', 'matches DESC, playtime_s DESC, name'],
+  playtime: ['Playtime', 'playtime_s DESC, name'],
+};
+// Names are cleaned with cleanName (util.js): invisible-only names show as "Unknown player", never a Steam ID.
+// /serverboard: the WPG server leaderboard (same numbers as the app's WPG server board).
+async function cmdServerBoard(data) {
+  const server = await one("SELECT * FROM game_servers WHERE enabled = true AND rcon_url <> '' ORDER BY sort_order, id LIMIT 1");
+  if (!server) return { content: 'No WPG game server is set up yet.' };
+  const sortKey = SERVER_SORTS[option(data, 'sort')] ? option(data, 'sort') : 'wpgxp';
+  const [sortLabel, order] = SERVER_SORTS[sortKey];
+  const rows = await q(
+    `WITH board AS (
+       SELECT sp.name, sp.kills, sp.deaths, sp.matches, sp.wins, sp.losses, sp.playtime_s, sp.last_seen, p.xp AS wpg_xp, p.rank_name
+         FROM server_players sp LEFT JOIN server_progress p ON p.steam_id = sp.steam_id
+        WHERE sp.server_id = $1
+     ), ranked AS (
+       SELECT board.*, ROW_NUMBER() OVER (ORDER BY ${MAIN_ORDER})::int AS server_rank FROM board
+     )
+     SELECT * FROM ranked ORDER BY ${order} LIMIT 14`,
+    [server.id],
+  );
+  // When the board last changed: the tracker's last check, else the latest activity on it.
+  const st = await one(
+    `SELECT COALESCE((SELECT updated_at FROM server_track_state WHERE server_id=$1), (SELECT MAX(last_seen) FROM server_players WHERE server_id=$1)) AS at`,
+    [server.id],
+  );
+  const live = await liveMatch(server).catch(() => null);
+  const text = () => ({
+    embeds: [{
+      title: `🏆 WPG server leaderboard — by ${sortLabel}`,
+      url: `${SITE()}/#/leaderboard?by=server`,
+      color: GOLD,
+      description: rows.map((r, i) => `**${i + 1}.** ${cleanName(r.name)} — ${num(r.wpg_xp)} WPG XP · ${num(r.kills)} kills · ${hours(r.playtime_s)}`).join('\n') || 'Nobody on the board yet.',
+      footer,
+    }],
+  });
+  return asPicture('serverboard', (cards) => cards.renderServerBoardCard({
+    serverName: '[WPG] WASTED PRODIGY',
+    map: live?.map || '—',
+    updated: updatedText(st?.at),
+    sortLabel: sortKey === 'wpgxp' ? '' : sortLabel,
+    rows: rows.map((r) => ({
+      name: cleanName(r.name), serverRank: r.server_rank, kills: r.kills, deaths: r.deaths, matches: r.matches,
+      wins: r.wins, losses: r.losses, playtime: r.playtime_s, wpgRank: r.rank_name || 'RECRUIT I', wpgXp: r.wpg_xp || 0,
+    })),
+  }), text, { label: 'Full board in WPG Barracks', url: `${SITE()}/#/leaderboard?by=server` });
 }
 
 async function cmdLive() {
   const servers = await q("SELECT * FROM game_servers WHERE enabled = true AND rcon_url <> '' AND rcon_password <> '' ORDER BY sort_order, id");
   if (!servers.length) return { content: 'No game server is set up for live info yet.' };
-  const embeds = [];
+  const matches = [];
   for (const s of servers.slice(0, 3)) {
     const m = await liveMatch(s).catch((e) => ({ error: e.message }));
-    if (m.error) { embeds.push({ title: s.name || 'Game server', color: 0xe05252, description: `Can't reach the server right now.` }); continue; }
-    embeds.push({
-      title: `🎮 ${m.name || s.name || 'WPG server'}`,
-      url: `${SITE()}/#/servers`,
-      color: COLOR,
-      description: `**${m.map}** · ${[m.mode, ...(m.modifiers || [])].join(' + ')} · ${m.lighting}${m.zone ? ` · ${m.zone}` : ''}`,
-      fields: [
-        { name: 'Players', value: `${num(m.players)} / ${num(m.maxPlayers)}`, inline: true },
-        ...m.scores.map((f) => ({ name: f.name, value: num(f.score), inline: true })),
-        ...(m.next ? [{ name: 'Next map', value: `${m.next.map}${m.next.mode ? ` · ${m.next.mode}` : ''}` }] : []),
-      ],
-      footer: { text: `Join code: ${s.join_code} · WPG Barracks` },
-    });
+    matches.push({ s, m });
   }
-  return { embeds };
+  const text = () => ({
+    embeds: matches.map(({ s, m }) => (m.error
+      ? { title: s.name || 'Game server', color: 0xe05252, description: "Can't reach the server right now." }
+      : {
+        title: `🎮 ${m.name || s.name || 'WPG server'}`,
+        url: `${SITE()}/#/servers`,
+        color: COLOR,
+        description: `**${m.map}** · ${[m.mode, ...(m.modifiers || [])].join(' + ')} · ${m.lighting}${m.zone ? ` · ${m.zone}` : ''}`,
+        fields: [
+          { name: 'Players', value: `${num(m.players)} / ${num(m.maxPlayers)}`, inline: true },
+          ...m.scores.map((x) => ({ name: x.name, value: num(x.score), inline: true })),
+          ...(m.next ? [{ name: 'Next map', value: `${m.next.map}${m.next.mode ? ` · ${m.next.mode}` : ''}` }] : []),
+        ],
+        footer: { text: `Join code: ${s.join_code} · WPG Barracks` },
+      })),
+  });
+  return asPicture('live', (cards) => cards.renderLiveCard({
+    servers: matches.map(({ s, m }) => (m.error
+      ? { name: s.name || 'WPG server', error: true }
+      : {
+        name: m.name || s.name, joinCode: s.join_code, map: m.map, mode: [m.mode, ...(m.modifiers || [])].filter((x) => x && x !== '—').join(' + '),
+        lighting: m.lighting, zone: m.zone, players: m.players, maxPlayers: m.maxPlayers, scoreCap: m.scoreCap, scores: m.scores, next: m.next,
+      })),
+  }), text, { label: 'Servers in WPG Barracks', url: `${SITE()}/#/servers` });
 }
 
 async function cmdProgress(data, caller) {
@@ -359,31 +518,43 @@ async function cmdProgress(data, caller) {
   const ws = await one('SELECT official FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
   const o = ws?.official;
   if (!o) return { content: `**${f.user.persona_name}** has no Wardogs stats yet. They add their in-game name (Name#1234) on HQ in the app.` };
-  const unlocks = await q('SELECT role, level, name, cost FROM unlocks ORDER BY level, name');
+  const unlocks = await q('SELECT role, level, name, cost, image FROM unlocks ORDER BY level, name');
   const bought = new Set((await q('SELECT role, name FROM user_unlocks WHERE user_id=$1', [f.user.id])).map((r) => `${r.role}|${r.name}`));
   const levelOf = (role) => (role === 'career' ? Number(o.wardogLevel) || 0 : Number(o.roles?.[role]?.level ?? o.roles?.[role]) || 0);
   let readyCount = 0;
   let readyCost = 0;
-  const lines = [['career', 'Career'], ...ROLES].map(([role, label]) => {
+  let spent = 0;
+  const COLORS = { career: '#c9a227', recon: '#e53935', assault: '#1e88e5', medic: '#2ecc71', support: '#f5a524', driver: '#b84dff', pilot: '#29b6f6' };
+  const rows = [['career', 'Career'], ['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot']].map(([role, label]) => {
     const lvl = levelOf(role);
     const mine = unlocks.filter((u) => u.role === role);
     for (const u of mine) {
-      if (u.level <= lvl && u.cost > 0 && !bought.has(`${role}|${u.name}`)) { readyCount++; readyCost += u.cost; }
+      const isBought = bought.has(`${role}|${u.name}`);
+      if (isBought) spent += u.cost;
+      else if (u.level <= lvl && u.cost > 0) { readyCount++; readyCost += u.cost; }
     }
     const next = mine.find((u) => u.level > lvl);
-    return `**${label}** ${lvl} → ${next ? `next: ${next.name} at ${next.level}` : 'all unlocked'}`;
+    return { role, label, color: COLORS[role], level: lvl, max: mine.length ? Math.max(...mine.map((u) => u.level)) : 0, next: next ? { name: next.name, level: next.level, image: next.image } : null };
   });
-  return {
+  const text = () => ({
     embeds: [{
       ...header(f.user),
       title: 'Progression',
       url: `${SITE()}/#/progression`,
       color: COLOR,
-      description: lines.join('\n'),
+      description: rows.map((r) => `**${r.label}** ${r.level} → ${r.next ? `next: ${r.next.name} at ${r.next.level}` : 'all unlocked'}`).join('\n'),
       fields: [{ name: 'Reached but not bought', value: readyCount ? `${num(readyCount)} items · ${money(readyCost)}` : 'Nothing waiting' }],
       footer: { text: 'Tick what you have bought on the Progression page · WPG Barracks' },
     }],
-  };
+  });
+  return asPicture('progress', async (cards) => cards.renderProgressCard({
+    name: await cardName(f.user),
+    avatar: avatarOf(f.user),
+    rows,
+    readyCount,
+    readyCost,
+    spent,
+  }), text, { label: 'Open Progression', url: `${SITE()}/#/progression` });
 }
 
 async function cmdLink(_data, caller, callerName) {
@@ -407,6 +578,7 @@ const COMMANDS = {
   server: { run: cmdServer, description: 'WPG server stats: kills, K/D, matches, playtime' },
   progress: { run: cmdProgress, description: 'Next unlocks for each class' },
   leaderboard: { run: cmdLeaderboard, description: 'Top 10 leaderboards' },
+  serverboard: { run: cmdServerBoard, description: 'The WPG server leaderboard (top 14)' },
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
   unlink: { run: cmdUnlink, description: 'Unlink your Discord from the Barracks app', private: true },
@@ -423,6 +595,12 @@ function commandDefinitions() {
       def.options = [{
         type: 3, name: 'board', description: 'Which leaderboard', required: false,
         choices: [['WPG rank', 'wpg'], ['Clan XP', 'clan'], ['Wardog level', 'level'], ['Account worth', 'worth'], ['Server kills', 'kills']].map(([n, v]) => ({ name: n, value: v })),
+      }];
+    }
+    if (name === 'serverboard') {
+      def.options = [{
+        type: 3, name: 'sort', description: 'Order by (WPG XP if left empty)', required: false,
+        choices: Object.entries(SERVER_SORTS).map(([v, [n]]) => ({ name: n, value: v })),
       }];
     }
     return def;

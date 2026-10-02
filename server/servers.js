@@ -3,7 +3,7 @@
 import express from 'express';
 import { q, one, audit } from './db.js';
 import { usersWithRanks } from './routes.js';
-import { HttpError, member, role, roleAtLeast, str, int } from './util.js';
+import { HttpError, member, role, roleAtLeast, str, int, cleanName } from './util.js';
 
 export const servers = express.Router();
 
@@ -478,8 +478,8 @@ servers.get('/server-leaderboard', member, async (req, res) => {
     by,
     updated: st?.updated_at || null,
     rows: rows.map((r) => ({
-      // Some in-game names are blank or only invisible characters.
-      name: String(r.name || '').replace(/[\s​-‏⁠﻿]+/g, ' ').trim() || `Player …${String(r.steam_id).slice(-4)}`,
+      // Some in-game names are blank or only invisible characters (cleanName handles that).
+      name: cleanName(r.name),
       kills: r.kills,
       deaths: r.deaths,
       matches: r.matches,

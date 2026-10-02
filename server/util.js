@@ -86,6 +86,14 @@ export function role(min) {
 export function str(v, max = 500) {
   return String(v ?? '').trim().slice(0, max);
 }
+
+// In-game names can be made of invisible characters (format/tag characters, unassigned code points,
+// blank "filler" letters). Strip those; a name with nothing visible left gets the fallback.
+const FILLERS = String.fromCodePoint(0x115f, 0x1160, 0x2800, 0x3164, 0xffa0);
+const INVISIBLE = new RegExp(`[\\p{Cf}\\p{Cc}\\p{Cn}\\p{Z}${FILLERS}]+`, 'gu');
+export function cleanName(name, fallback = 'Unknown player') {
+  return String(name ?? '').replace(INVISIBLE, ' ').trim() || fallback;
+}
 export function int(v, fallback = 0) {
   const n = Number.parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
