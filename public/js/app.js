@@ -554,6 +554,7 @@ async function syncMine(e) {
 // ---------- Wardogs stats linking ----------
 // Global stats are found by the member's in-game name (Name#1234). Once found they update by themselves.
 const needsTracker = () => state.realSteam && !state.trackerLinked;
+const WARDOGS_LINK = 'https://wardogs.tools/account';
 
 function trackerCardHtml() {
   return `<div class="panel glow tracker-card" data-tracker-card>
@@ -562,11 +563,11 @@ function trackerCardHtml() {
       <form class="grow" style="min-width:220px" data-tracker-form>
         <div class="panel-title" style="margin-bottom:8px">${icon('target')} Link your <span class="sub">Wardogs stats</span></div>
         <p style="margin:0 0 10px">One time only, about a minute. After this your level, XP, cash and class levels show here and <b>update by themselves</b>.</p>
-        <p style="margin:0 0 6px"><b>1.</b> Link your Wardogs account on wardogs.tools (sign in there and link it).</p>
+        <p style="margin:0 0 6px"><b>1.</b> Open wardogs.tools, sign in and link your Wardogs account. It then shows your <b>in-game name with its 4 numbers</b> — copy it.</p>
         <div class="row" style="margin:0 0 12px">
-          <a class="btn" href="https://wardogs.tools/account" target="_blank" rel="noopener">${icon('target')} Link on wardogs.tools</a>
+          <a class="btn" href="${WARDOGS_LINK}" target="_blank" rel="noopener">${icon('target')} Link on wardogs.tools</a>
         </div>
-        <p style="margin:0 0 6px"><b>2.</b> Type your <b>in-game name</b> with its 4 numbers, like <b>Richie_TT#6201</b> (open your profile in game to see it).</p>
+        <p style="margin:0 0 6px"><b>2.</b> Paste your <b>in-game name</b> here, like <b>Richie_TT#6201</b>, and press Find my stats.</p>
         <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
         <div class="row">
           <input type="text" name="wardogs_name" maxlength="60" placeholder="Name#1234" class="grow" style="min-width:160px">
@@ -871,7 +872,8 @@ async function viewEditProfile(main) {
         <label class="field"><span>Country</span><select name="country">${COUNTRIES.map(([c, n]) => `<option value="${c}" ${u.country === c ? 'selected' : ''}>${flag(c)} ${n}</option>`).join('')}</select></label>
         ${fields.map((f) => `<label class="field"><span>${esc(f.label)}</span>${f.type === 'select'
           ? `<select name="cf_${esc(f.key)}"><option value="">—</option>${f.options.split(',').map((o) => o.trim()).filter(Boolean).map((o) => `<option ${u.custom_fields?.[f.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
-          : `<input type="text" name="cf_${esc(f.key)}" maxlength="200" value="${esc(u.custom_fields?.[f.key] || '')}">`}</label>`).join('')}
+          : `<input type="text" name="cf_${esc(f.key)}" maxlength="200" value="${esc(u.custom_fields?.[f.key] || '')}"${f.key === 'wardogs_name' ? ' placeholder="Name#1234"' : ''}>`}${f.key === 'wardogs_name'
+          ? `<small class="muted">First time? <a href="${WARDOGS_LINK}" target="_blank" rel="noopener">Link your account on wardogs.tools</a> — once you're signed in there it shows your in-game name with its 4 numbers.</small>` : ''}</label>`).join('')}
       </div>
       <label class="field"><span>About me</span><textarea name="bio" maxlength="1000">${esc(u.bio)}</textarea></label>
       <div class="form-grid">
