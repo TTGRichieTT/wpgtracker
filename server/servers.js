@@ -427,6 +427,30 @@ const BOARD_SORT = {
   playtime: 'playtime_s DESC',
   wpgxp: 'COALESCE(p.xp, 0) DESC, kills DESC',
 };
+// WPG rank leaderboard: exactly the Discord bot's progression (WPG XP + rank), every player it knows.
+servers.get('/wpg-ranking', member, async (_req, res) => {
+  const rows = await q(
+    `SELECT p.steam_id, p.bot_name, p.xp, p.rank_level, p.rank_name, p.synced_at, u.id AS user_id
+       FROM server_progress p LEFT JOIN users u ON u.steam_id = p.steam_id AND u.status = 'active'
+      ORDER BY p.xp DESC, p.rank_level DESC, p.bot_name LIMIT 250`,
+  );
+  const memberIds = rows.map((r) => r.user_id).filter(Boolean);
+  const members = memberIds.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [memberIds])) : [];
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const last = await one('SELECT MAX(synced_at) AS at, COUNT(*)::int AS n FROM server_progress');
+  res.json({
+    updated: last?.at || null,
+    total: last?.n || 0,
+    rows: rows.map((r) => ({
+      name: String(r.bot_name || '').trim() || `Player …${String(r.steam_id).slice(-4)}`,
+      xp: r.xp,
+      level: r.rank_level,
+      rank: r.rank_name || 'RECRUIT I',
+      member: r.user_id ? byId.get(r.user_id) || null : null,
+    })),
+  });
+});
+
 servers.get('/server-leaderboard', member, async (req, res) => {
   const list = await q("SELECT id, name, join_code FROM game_servers WHERE enabled = true AND rcon_url <> '' ORDER BY sort_order, id");
   const server = list.find((s) => s.id === int(req.query.server)) || list[0];

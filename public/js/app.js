@@ -1593,8 +1593,36 @@ async function serverBoardHtml(sort, serverId) {
 }
 
 async function viewLeaderboard(main) {
-  const by = query().get('by') || 'xp';
-  const tabs = [['server', `${state.settings.clan_tag || 'WPG'} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const by = query().get('by') || 'wpg';
+  const tag = state.settings.clan_tag || 'WPG';
+  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  // WPG rank: the Discord bot's own progression board (same numbers as Discord).
+  if (by === 'wpg') {
+    const d = await api('wpg-ranking');
+    const mine = d.rows.findIndex((r) => r.member?.id === state.me.id);
+    main.innerHTML = `<h1>Leaderboard</h1>
+      <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
+      <div class="panel glow">
+        <div class="row between" style="margin-bottom:10px">
+          <div class="panel-title" style="margin:0">${icon('trophy')} ${esc(tag)} rank <span class="sub">Recruit I → Wardog X</span></div>
+          <span class="muted small">${d.updated ? `From the ${esc(tag)} Discord bot · updated ${timeAgo(d.updated)}` : 'Waiting for the Discord bot'}</span>
+        </div>
+        ${mine >= 0 ? `<p class="small" style="margin:0 0 10px">You're <b>#${mine + 1}</b> — ${esc(wpgRankName(d.rows[mine].rank))} · ${fmtNum(d.rows[mine].xp)} ${esc(tag)} XP</p>` : ''}
+        <div class="table-wrap"><table class="sb-table">
+          <thead><tr><th>#</th><th>Player</th><th>${esc(tag)} rank</th><th>${esc(tag)} XP</th><th class="sb-x">Role</th></tr></thead>
+          <tbody>${d.rows.map((r, i) => `<tr${r.member?.id === state.me.id ? ' style="background:rgba(41,182,246,.08)"' : ''}>
+            <td><b style="color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">${i + 1}</b></td>
+            <td class="sb-name">${r.member ? `<a href="#/u/${r.member.id}">${esc(r.name)}</a>` : esc(r.name)}</td>
+            <td><span class="accent" style="font:700 13px var(--head);text-transform:uppercase;white-space:nowrap">${esc(wpgRankName(r.rank))}</span></td>
+            <td><b>${fmtNum(r.xp)}</b></td>
+            <td class="sb-x">${r.member ? esc(roleName(r.member)) : '<span class="muted small">Not in app</span>'}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="muted">No data from the Discord bot yet.</td></tr>'}</tbody>
+        </table></div>
+        <p class="muted small" style="margin:10px 0 0">Earned only on the ${esc(tag)} server: +15 XP per kill, +5 XP every 5 minutes played, +100 XP per completed match, +250 XP per win. ${fmtNum(d.total)} players ranked. Updates every 5 minutes.</p>
+      </div>`;
+    onLive('server-board', () => route());
+    return;
+  }
   if (by === 'server') {
     main.innerHTML = `<h1>Leaderboard</h1>
       <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
