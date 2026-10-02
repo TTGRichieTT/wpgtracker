@@ -32,6 +32,9 @@ const DEFAULT_SETTINGS = {
   discord_staff_channel: '',
   cheat_alerts: 'true',
   cheat_live_kills: '15',
+  // Streams: Discord post when an approved streamer goes live (channel ID empty = no posts).
+  discord_stream_channel: '',
+  discord_post_streams: 'true',
 };
 
 // Insignia combine US and UK army symbols:

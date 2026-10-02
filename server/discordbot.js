@@ -840,6 +840,26 @@ bus.on('staff:alert', (payload) => {
 });
 
 const mentionFor = (u) => (u?.discord_id ? ` (<@${u.discord_id}>)` : '');
+
+const STREAM_COLORS = { twitch: 0x9146ff, youtube: 0xff0000, kick: 0x53fc18 };
+// "🔴 X is live on Twitch" with a link to the stream and to watch it in the app.
+function streamEmbed(s, u) {
+  const watch = s.live_url || (s.platform === 'youtube' && s.video_id ? `https://www.youtube.com/watch?v=${s.video_id}` : s.channel_url);
+  const lines = [
+    s.title ? `**${s.title.slice(0, 200)}**` : '',
+    s.game ? `Playing ${s.game.slice(0, 100)}` : '',
+    `[Watch on ${s.platform_name}](${watch}) · [Watch in the Barracks app](${SITE()}/#/streams/${s.id})`,
+  ].filter(Boolean);
+  return {
+    embeds: [{
+      color: STREAM_COLORS[s.platform] || COLOR,
+      title: `🔴 ${u.persona_name} is live on ${s.platform_name}`,
+      url: watch,
+      description: `${lines.join('\n')}${mentionFor(u) ? `\n${mentionFor(u).trim().replace(/^\(|\)$/g, '')}` : ''}`,
+      ...(s.thumbnail ? { image: { url: `${s.thumbnail}${s.thumbnail.includes('?') ? '&' : '?'}t=${Date.now()}` } } : {}),
+    }],
+  };
+}
 // Other parts of the app raise 'announce' events; each type can be switched off in Admin → Settings.
 bus.on('announce', async (a) => {
   try {
@@ -852,6 +872,10 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
       await postToChannel({ embeds: [{ color: COLOR, title: '📈 WPG rank up', description: `**${u?.persona_name || a.name}**${mentionFor(u)} reached **${wpgRank(a.rank)}** (${num(a.xp)} WPG XP).` }] });
+    } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
+      const { streamForAnnounce } = await import('./streams.js');
+      const d = await streamForAnnounce(a.accountId);
+      if (d?.user) await postToChannel(streamEmbed(d.stream, d.user), 'discord_stream_channel');
     }
   } catch (e) {
     console.warn('[discord bot] announce failed', e.message);

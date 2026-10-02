@@ -2,7 +2,7 @@
 // the app syncs the database to it on every start (adding only, never deleting),
 // and `npm run db:push` does the same by hand.
 import {
-  pgTable, serial, text, integer, boolean, jsonb, timestamp, numeric, primaryKey, index,
+  pgTable, serial, text, integer, boolean, jsonb, timestamp, numeric, primaryKey, index, uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 const now = () => timestamp({ withTimezone: true }).notNull().defaultNow();
@@ -410,3 +410,55 @@ export const watchAlerts = pgTable('watch_alerts', {
   kind: text().notNull(),
   sent_at: now(),
 }, (t) => [primaryKey({ name: 'watch_alerts_pkey', columns: [t.steam_id, t.kind] })]);
+
+// ---------- Streams ----------
+// A member's channel on Twitch, YouTube or Kick (one per platform). Staff approve it before it shows.
+export const streamAccounts = pgTable('stream_accounts', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  platform: text().notNull(), // twitch | youtube | kick
+  handle: text().notNull().default(''), // channel name / @handle / UC… id
+  channel_id: text().notNull().default(''), // the platform's id for the channel (Twitch/Kick user id, YouTube UC…), found by the checker
+  status: text().notNull().default('pending'), // pending | approved | rejected
+  reviewed_by: integer(),
+  reviewed_at: timestamp({ withTimezone: true }),
+  // The member's stream key, encrypted. Write-only: no part of the app ever sends it back out.
+  stream_key_enc: text().notNull().default(''),
+  key_set_at: timestamp({ withTimezone: true }),
+  is_live: boolean().notNull().default(false),
+  manual: boolean().notNull().default(false), // set live by the streamer ("I'm live"), not found by the checker
+  title: text().notNull().default(''),
+  game: text().notNull().default(''),
+  viewers: integer(),
+  thumbnail: text().notNull().default(''),
+  video_id: text().notNull().default(''), // YouTube video of the current stream (its chat needs it)
+  live_url: text().notNull().default(''), // unused since Facebook was dropped
+  live_since: timestamp({ withTimezone: true }),
+  announced_at: timestamp({ withTimezone: true }),
+  last_checked: timestamp({ withTimezone: true }),
+  created_at: now(),
+}, (t) => [uniqueIndex('stream_accounts_user_platform_key').on(t.user_id, t.platform)]);
+
+// WPG's own chat under each streamer's stream (shared by all their platforms).
+export const streamMessages = pgTable('stream_messages', {
+  id: serial().primaryKey(),
+  streamer_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  user_id: integer().references(() => users.id, { onDelete: 'cascade' }),
+  body: text().notNull(),
+  deleted: boolean().notNull().default(false),
+  created_at: now(),
+}, (t) => [index('stream_messages_streamer_idx').on(t.streamer_id, t.id.desc())]);
+
+// Members' own Twitch / Kick sign-ins, so they can chat in streams as themselves from the app.
+// Tokens are encrypted (secretbox.js) and only ever used by the server.
+export const chatLogins = pgTable('chat_logins', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  platform: text().notNull(), // twitch | kick
+  platform_user_id: text().notNull().default(''),
+  login: text().notNull().default(''),
+  display_name: text().notNull().default(''),
+  access_enc: text().notNull().default(''),
+  refresh_enc: text().notNull().default(''),
+  expires_at: timestamp({ withTimezone: true }),
+  created_at: now(),
+}, (t) => [primaryKey({ name: 'chat_logins_pkey', columns: [t.user_id, t.platform] })]);

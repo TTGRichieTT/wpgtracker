@@ -18,6 +18,7 @@ const TABS = [
   { key: 'profile-fields', label: 'Profile fields' },
   { key: 'settings', label: 'Settings' },
   { key: 'cheatwatch', label: 'Cheat watch', mod: true },
+  { key: 'streams', label: 'Streams', mod: true },
   { key: 'audit', label: 'Audit log', mod: true },
 ];
 
@@ -191,6 +192,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'settings') return settingsTab(body);
   if (tab.key === 'audit') return auditTab(body);
   if (tab.key === 'cheatwatch') return cheatTab(body);
+  if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
   return resourceTab(body, tab.key);
 }
 
@@ -587,6 +589,10 @@ const SETTINGS = [
     ['discord_post_promotions', 'Post clan promotions', 'check'],
     ['discord_post_medals', 'Post new medals', 'check'],
     ['discord_post_wpg_ranks', 'Post WPG rank-ups (from the WPG bot)', 'check'],
+  ]],
+  ['Streams', [
+    ['discord_stream_channel', 'Discord channel ID for "… is live" posts (right-click the channel → Copy Channel ID). Empty = no posts'],
+    ['discord_post_streams', 'Post in Discord when an approved streamer goes live', 'check'],
   ]],
   ['Cheat watch (staff only)', [
     ['discord_staff_channel', 'Staff-only Discord channel ID for cheat alerts and reports (keep this channel private!). Empty = app alerts only'],
