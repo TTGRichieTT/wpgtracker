@@ -418,7 +418,7 @@ function updatedText(at) {
   if (!at) return '—';
   const d = new Date(at);
   const tz = 'Europe/London';
-  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: tz }).toUpperCase();
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h12', timeZone: tz }).toUpperCase(); // h12: "12:32 PM", not "0:32 PM"
   const day = (x) => x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: tz });
   return day(d) === day(new Date()) ? time : `${day(d).toUpperCase()} ${time}`;
 }
