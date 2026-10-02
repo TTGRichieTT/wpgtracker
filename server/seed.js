@@ -204,6 +204,13 @@ export async function seed({ q, one }) {
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_server_board_v2', 'true') ON CONFLICT DO NOTHING");
   }
 
+  // Streams now use each platform's own chat box, so the app no longer keeps members' Twitch / YouTube /
+  // Kick chat sign-ins. Delete the stored (encrypted) tokens once.
+  if (!(await one("SELECT value FROM settings WHERE key = '_cleared_chat_logins'"))) {
+    await q('DELETE FROM chat_logins').catch(() => {});
+    await q("INSERT INTO settings (key, value) VALUES ('_cleared_chat_logins', 'true') ON CONFLICT DO NOTHING");
+  }
+
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
     await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");

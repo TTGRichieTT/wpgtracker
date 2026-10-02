@@ -40,11 +40,6 @@ services:
         sync: false
       - key: KICK_CLIENT_SECRET
         sync: false
-      # YouTube sign-in (Google OAuth client) so members can chat in YouTube streams as themselves.
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
       # Optional: encrypts members' stream keys (without it the app makes its own and keeps it in the
       # database). Only set it before anyone saves a stream key, and never change it after.
       - key: STREAM_KEY_SECRET

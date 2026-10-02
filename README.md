@@ -92,27 +92,15 @@ Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
 
 Members who stream on Twitch, YouTube or Kick link their channel in **Edit profile → My streams**.
 A mod approves it in **Command panel → Streams** (open the link first and check it's really theirs). Approved streamers show
-on the **Streams** tab with the stream's player, its chat, and a WPG chat everyone in the app can use.
+on the **Streams** tab with the stream's player, the platform's own chat box, and a WPG chat everyone in the app can use.
 
 - **Spotting who's live** (optional, Render → Environment). Without a key, streamers on that platform press **I'm live** instead.
   - Twitch: `TWITCH_CLIENT_ID` + `TWITCH_CLIENT_SECRET` from https://dev.twitch.tv/console/apps
   - YouTube: `YOUTUBE_API_KEY` (Google Cloud → enable *YouTube Data API v3* → Credentials → API key)
   - Kick: `KICK_CLIENT_ID` + `KICK_CLIENT_SECRET` from https://kick.com/settings/developer
 - **WPG chat** under each stream stays inside the app: only members see it and nothing is sent to Twitch, YouTube or Kick.
-- **Stream chats** (Twitch, YouTube, Kick) only show for members signed in with their own account on that platform.
-- **Linked accounts (no bot).** Linking Twitch, YouTube and Kick accounts is for viewing, chatting and streaming within the
-  app on live streams. Members link them in **Edit profile → Linked accounts** (or the button under a stream's chat), and
-  their messages go out under their own name. Same keys as above, plus:
-  - Twitch developer console → the app → add the **OAuth Redirect URL** shown in Command panel → Streams.
-  - YouTube: Google Cloud (the project with *YouTube Data API v3* turned on) → Credentials → **OAuth client ID (Web application)** with the
-    redirect URI shown in Command panel → Streams; put its ID and secret in `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`.
-    On the OAuth consent screen add the `youtube.force-ssl` scope and **Publish app**. Until Google verifies the app, members
-    see an "unverified app" warning and only 100 can link. YouTube's free daily allowance is small: chat is only read while
-    a signed-in member has the stream open, and sending uses about 50 of the 10,000 daily units per message. When it runs out
-    the app says so and YouTube's own chat box still works. None of this costs money: Google only charges if you turn on billing.
-  - Kick developer settings → the app → add the **Redirect URL**, turn **Webhooks** on with the webhook URL (both shown in
-    Command panel → Streams), and allow the `user:read`, `chat:write` and `events:subscribe` scopes. The app then asks Kick to
-    send each approved streamer's chat by itself.
+- **Stream chats** are each platform's own chat box (Twitch, YouTube, Kick), shown inside the app. People sign in to
+  Twitch / YouTube / Kick inside that box to type. The app doesn't read or send stream chat itself.
 - **Discord "… is live" posts**: Command panel → Settings → Streams → paste the channel ID.
 - **Stream keys** are optional. They're encrypted when saved and never shown again, to anyone. The app doesn't use them.
 

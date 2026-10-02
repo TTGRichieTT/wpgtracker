@@ -426,7 +426,6 @@ function connectSocket() {
     emitLive('stream:chat', d);
   });
   socket.on('stream:chat:deleted', (d) => emitLive('stream:chat:deleted', d));
-  socket.on('platform:chat', (d) => emitLive('platform:chat', d));
   socket.on('config:changed', async (name) => {
     if (name === 'settings') state.settings = await api('settings/public').catch(() => state.settings);
     emitLive('config', name);
@@ -922,11 +921,8 @@ async function viewEditProfile(main) {
         : `<p style="margin:0">Link once so the Barracks bot in Discord knows who you are. In Discord, type <b>/link</b>. The bot gives you a code — type it here.</p>
            <div class="row"><input type="text" name="code" maxlength="12" placeholder="Code from /link" class="grow" style="min-width:140px;text-transform:uppercase"><button class="btn primary">${icon('discord')} Link</button></div>`}
     </form>
-    <div class="panel stack" id="chatLogins" style="margin-top:16px"><div class="spinner"></div></div>
     <div class="panel stack" id="streams" style="margin-top:16px"><div class="spinner"></div></div>`;
   import('./streams.js').then(async (m) => {
-    const cl = document.getElementById('chatLogins');
-    if (cl) m.chatLoginsPanel(cl).catch((x) => { cl.innerHTML = `<p class="muted small">${esc(x.message)}</p>`; });
     const el = document.getElementById('streams');
     if (!el) return;
     await m.myStreamsPanel(el);
