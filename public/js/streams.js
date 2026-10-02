@@ -114,7 +114,13 @@ async function viewWatch(main, id, alive) {
       <a class="btn small" href="${esc(watchOutside(s))}" target="_blank" rel="noopener">Open on ${esc(NAMES[s.platform])}</a></div></div>`;
   };
 
+  const signedIn = () => !!logins?.logins.some((l) => l.platform === s.platform);
   const platformChatHtml = () => {
+    // Stream chats are only for members signed in with their own account on that platform.
+    if (native && !signedIn()) {
+      return `<div class="msgs pchat"><div class="empty"><p>Sign in with your own ${esc(NAMES[s.platform])} account to see and join this stream's chat.</p></div></div>
+        <div id="pfoot">${chatFootHtml(s, logins)}</div>`;
+    }
     if (native && !useOwnBox) {
       return `<div class="msgs pchat" id="pmsgs"><p class="empty small" data-pwait>Connecting to ${esc(NAMES[s.platform])} chat…</p></div>
         <div id="pfoot">${chatFootHtml(s, logins)}</div>`;
@@ -143,6 +149,7 @@ async function viewWatch(main, id, alive) {
         </div>
         <div class="stream-chat" data-pane="platform"></div>
         <div class="stream-chat" data-pane="wpg">
+          <div class="pchat-note small muted" style="border-top:0;border-bottom:1px solid var(--line)">${icon('lock', 'width="13" height="13" style="vertical-align:-2px"')} WPG chat stays inside the app — only WPG members see it.</div>
           <div class="msgs" id="smsgs"><div class="spinner"></div></div>
           <form class="composer" id="scomposer"><textarea name="body" placeholder="Chat with WPG" maxlength="500" rows="1"></textarea><button class="btn primary" aria-label="Send">${icon('send')}</button></form>
         </div>
@@ -205,6 +212,7 @@ async function viewWatch(main, id, alive) {
     pane.innerHTML = platformChatHtml();
     pane.querySelector('[data-ownbox]')?.addEventListener('click', (e) => { e.preventDefault(); useOwnBox = false; startPlatformChat(); });
     if (!native || useOwnBox) return;
+    if (!signedIn()) { bindChatFoot(pane.querySelector('#pfoot'), s, logins, () => {}); return; }
     const pbox = pane.querySelector('#pmsgs');
     stopReader = startReader(s, pbox, alive);
     bindChatFoot(pane.querySelector('#pfoot'), s, logins, () => { useOwnBox = true; startPlatformChat(); });
@@ -250,13 +258,13 @@ const signInUrl = (platform, ret) => `/auth/${platform}/start?return=${enc(ret)}
 function chatFootHtml(s, logins) {
   const n = NAMES[s.platform];
   const mine = logins.logins.find((l) => l.platform === s.platform);
-  const twitchBox = chatSrc(s) ? ` · <a href="#" data-useown>Use ${n}'s own chat box</a>` : '';
+  const twitchBox = chatSrc(s) && mine ? ` · <a href="#" data-useown>Use ${n}'s own chat box</a>` : '';
   if (!logins.available[s.platform]) {
     return `<div class="pchat-note small muted">Chatting from the app isn't set up for ${n} yet. <a href="${esc(chatOutside(s))}" target="_blank" rel="noopener">Open ${n} chat</a>${twitchBox}</div>`;
   }
   if (!mine) {
     return `<div class="pchat-note"><a class="btn primary small plat-btn ${s.platform}" href="${esc(signInUrl(s.platform, `#/streams/${s.id}`))}">Sign in with ${n} to chat</a>
-      <div class="small muted" style="margin-top:6px">You chat with your own ${n} account. No account? Make one on ${n} first, or use WPG chat.${twitchBox}</div></div>`;
+      <div class="small muted" style="margin-top:6px">Stream chat is only for members signed in with their own ${n} account. No account? Make one on ${n} first, or use WPG chat.</div></div>`;
   }
   return `<form class="composer" id="pcomposer"><textarea name="body" placeholder="Chat on ${n} as ${esc(mine.display_name || mine.login)}" maxlength="500" rows="1"></textarea><button class="btn primary" aria-label="Send">${icon('send')}</button></form>
     <div class="pchat-note small muted" style="padding-top:0">Chatting as <b>${esc(mine.display_name || mine.login)}</b> on ${n}${twitchBox}</div>`;
@@ -334,7 +342,10 @@ function startReader(s, box, alive) {
       const wait = box.querySelector('[data-pwait]');
       if (wait) wait.textContent = r.reading ? 'No chat yet. Say hello!' : 'Kick chat messages show here once staff finish setting up Kick chat. You can still send messages.';
       r.messages.forEach((m) => addLine(box, m));
-    }).catch(() => {});
+    }).catch((x) => {
+      const wait = box.querySelector('[data-pwait]');
+      if (wait && x.code === 'chat_signin') wait.textContent = 'Your Kick sign-in has ended. Sign in again in Edit profile → Linked accounts.';
+    });
     onLive('platform:chat', (d) => { if (d.platform === 'kick' && d.channel === s.channel_id) addLine(box, d.message); });
     return () => {};
   }
@@ -349,7 +360,6 @@ function youtubeReader(s, box, alive) {
   let timer;
   const status = (text) => { const w = box.querySelector('[data-pwait]'); if (w) w.textContent = text; };
   const PROBLEMS = {
-    setup: 'Reading YouTube chat in the app isn\'t set up yet (staff need the YouTube API key). Use YouTube\'s own chat box below.',
     notlive: 'YouTube chat shows here while the stream is live.',
     nochat: 'This stream has no live chat (or the streamer turned it off).',
     ended: 'This stream\'s chat has ended.',
@@ -365,7 +375,9 @@ function youtubeReader(s, box, alive) {
       r.messages.forEach((m) => addLine(box, m));
       if (r.problem) status(PROBLEMS[r.problem] || `YouTube chat: ${r.problem}`);
       else status('Connected. Waiting for chat…');
-    } catch { /* try again next time */ }
+    } catch (x) {
+      if (x.code === 'chat_signin') { status('Your YouTube sign-in has ended. Sign in again in Edit profile → Linked accounts.'); return; }
+    }
     timer = setTimeout(tick, 5000);
   };
   tick();
@@ -442,7 +454,7 @@ export async function chatLoginsPanel(el) {
   };
   el.innerHTML = `<div class="panel-title" style="margin:0">${icon('chat')} Linked accounts <span class="sub">Twitch · YouTube · Kick</span></div>
     <p style="margin:0"><b>Linking these 3 accounts is for viewing, chatting and streaming within the app on live streams.</b></p>
-    <p class="muted small" style="margin:0">Watch WPG streams here, chat in them under your own name (just like typing on the site — there's no bot), and if you stream, link your channel in <b>My streams</b> below so your live stream shows here. You only need an account on the platforms you use. Everyone can use WPG chat.</p>
+    <p class="muted small" style="margin:0">Watch WPG streams here, see and join their chat under your own name (just like typing on the site — there's no bot), and if you stream, link your channel in <b>My streams</b> below so your live stream shows here. A stream's chat only shows once you've linked that platform. WPG chat stays inside the app and every member can use it.</p>
     ${SIGN_IN.map(row).join('')}`;
   el.querySelectorAll('[data-signout]').forEach((b) => {
     b.onclick = async () => {
@@ -580,7 +592,7 @@ export async function streamsAdminTab(body) {
       <div class="panel-title">${icon('chat')} Linked accounts <span class="sub">members chat with their own Twitch / YouTube / Kick account</span></div>
       <p class="small" style="margin:0 0 8px"><b>Twitch</b> ${c.twitch.ready ? '✅' : '⬜ needs TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET'} — in the Twitch developer console, add this <b>OAuth Redirect URL</b> to the app: ${copy(c.twitch.redirect)}</p>
       <p class="small" style="margin:0 0 6px"><b>Kick</b> ${c.kick.ready ? '✅' : '⬜ needs KICK_CLIENT_ID + KICK_CLIENT_SECRET'} — in Kick's developer settings for the app: <b>Redirect URL</b> ${copy(c.kick.redirect)}, turn <b>Webhooks</b> on with the URL ${copy(c.kick.webhook)}, and tick the <b>chat:write</b>, <b>user:read</b> and <b>events:subscribe</b> scopes.</p>
-      <p class="small" style="margin:0 0 8px"><b>YouTube</b> ${c.youtube.ready ? '✅' : '⬜ needs GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET'}${c.youtube.api_key ? '' : ' · ⬜ reading chat needs YOUTUBE_API_KEY'} — in Google Cloud (same project as the API key): <b>APIs &amp; Services → Credentials → Create OAuth client ID → Web application</b>, add the <b>Authorized redirect URI</b> ${copy(c.youtube.redirect)}. On the <b>OAuth consent screen</b> add the <b>youtube.force-ssl</b> scope and press <b>Publish app</b> (Google shows members an "unverified app" warning until Google verifies it).${c.youtube.quota_problem_at ? ` <span style="color:var(--red)">YouTube allowance ran out ${esc(timeAgo(c.youtube.quota_problem_at))}.</span>` : ''}</p>
+      <p class="small" style="margin:0 0 8px"><b>YouTube</b> ${c.youtube.ready ? '✅' : '⬜ needs GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET'} — in Google Cloud (the project with <b>YouTube Data API v3</b> turned on): <b>APIs &amp; Services → Credentials → Create OAuth client ID → Web application</b>, add the <b>Authorized redirect URI</b> ${copy(c.youtube.redirect)}. On the <b>OAuth consent screen</b> add the <b>youtube.force-ssl</b> scope and press <b>Publish app</b> (Google shows members an "unverified app" warning until Google verifies it).${c.youtube.quota_problem_at ? ` <span style="color:var(--red)">YouTube allowance ran out ${esc(timeAgo(c.youtube.quota_problem_at))}.</span>` : ''}</p>
       <p class="small muted" style="margin:0">Kick chat: reading ${fmtNum(c.kick.channels_reading)} channel${c.kick.channels_reading === 1 ? '' : 's'}${c.kick.last_message_at ? `, last message ${esc(timeAgo(c.kick.last_message_at))}` : ''}${c.kick.problem ? ` · <span style="color:var(--red)">${esc(c.kick.problem)}</span>` : ''}</p>
     </div>` : '';
   body.innerHTML = `<div class="stack">

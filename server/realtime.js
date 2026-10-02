@@ -70,7 +70,10 @@ export function startRealtime(httpServer, sessionMiddleware) {
     const [user] = author ? await usersWithRanks([author]) : [null];
     io.emit('stream:chat', { message: msg, user });
   });
-  bus.on('platform:chat', (d) => io.emit('platform:chat', d));
+  // Stream chat from Kick: only to members signed in with Kick.
+  bus.on('platform:chat', async (d, viewers) => {
+    for (const id of await viewers()) io.to(`u:${id}`).emit('platform:chat', d);
+  });
   bus.on('stream:chat:deleted', (d) => io.emit('stream:chat:deleted', d));
   bus.on('server:board', (serverId) => io.emit('server:board', serverId));
   bus.on('playing', (map) => io.emit('playing', map));
