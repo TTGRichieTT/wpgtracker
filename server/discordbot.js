@@ -15,10 +15,17 @@ import { liveMatch } from './servers.js';
 const API = 'https://discord.com/api/v10';
 const WPG_APP_ID = '1555526462319366165';
 const WPG_PUBLIC_KEY = 'f7572684d37e69c27da9c32bcd5519eb2d94683760a64776c155246159f48710';
-const APP_ID = () => process.env.DISCORD_APP_ID || WPG_APP_ID;
-const TOKEN = () => process.env.DISCORD_BOT_TOKEN || '';
-const PUBLIC_KEY = () => process.env.DISCORD_PUBLIC_KEY || WPG_PUBLIC_KEY;
+// Values pasted into the host's settings sometimes carry spaces, quotes or a "Bot " prefix.
+const clean = (v) => String(v || '').trim().replace(/^['"]+|['"]+$/g, '').trim();
+const APP_ID = () => (/^\d{15,22}$/.test(clean(process.env.DISCORD_APP_ID)) ? clean(process.env.DISCORD_APP_ID) : WPG_APP_ID);
+const TOKEN = () => clean(process.env.DISCORD_BOT_TOKEN).replace(/^Bot\s+/i, '');
+let keyFromDiscord = ''; // the app's public key as Discord itself reports it (read with the bot token)
+// Any of these may sign a genuine request: the key in the host's settings, the built-in WPG key, and
+// the key Discord reports. Bad or empty ones are skipped.
+const PUBLIC_KEYS = () => [...new Set([clean(process.env.DISCORD_PUBLIC_KEY), keyFromDiscord, WPG_PUBLIC_KEY]
+  .map((k) => k.toLowerCase()).filter((k) => /^[0-9a-f]{64}$/.test(k)))];
 const SITE = () => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || 'https://wpg-barracks.onrender.com').replace(/\/$/, '');
+const ENDPOINT = () => `${SITE()}/discord/interactions`;
 const COLOR = 0x29b6f6;
 const GOLD = 0xc9a227;
 
@@ -60,17 +67,20 @@ async function discordFetch(path, method = 'GET', body) {
 function verified(req, raw) {
   const sig = req.get('X-Signature-Ed25519');
   const ts = req.get('X-Signature-Timestamp');
-  if (!sig || !ts || !PUBLIC_KEY()) return false;
-  try {
-    const key = crypto.createPublicKey({
-      key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), Buffer.from(PUBLIC_KEY(), 'hex')]),
-      format: 'der',
-      type: 'spki',
-    });
-    return crypto.verify(null, Buffer.concat([Buffer.from(ts), raw]), key, Buffer.from(sig, 'hex'));
-  } catch {
-    return false;
-  }
+  if (!sig || !ts || !/^[0-9a-f]{128}$/i.test(sig)) return false;
+  const signed = Buffer.concat([Buffer.from(ts), raw]);
+  return PUBLIC_KEYS().some((hex) => {
+    try {
+      const key = crypto.createPublicKey({
+        key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), Buffer.from(hex, 'hex')]),
+        format: 'der',
+        type: 'spki',
+      });
+      return crypto.verify(null, signed, key, Buffer.from(sig, 'hex'));
+    } catch {
+      return false;
+    }
+  });
 }
 
 // ---------- Who is this about? ----------
@@ -355,13 +365,53 @@ async function remember(key, value) {
   await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [key, value]);
 }
 
+// The app's own settings as Discord has them (read with the bot token): its ID, public key and the
+// address Discord sends commands to.
+let appFromDiscord = null;
+let lastEndpointProblem = null;
+async function readApplication() {
+  const a = await discordFetch('/applications/@me');
+  appFromDiscord = a;
+  if (/^[0-9a-f]{64}$/i.test(a?.verify_key || '')) keyFromDiscord = a.verify_key.toLowerCase();
+  return a;
+}
+const realAppId = () => appFromDiscord?.id || APP_ID();
+
+// Points Discord at this app ("Interactions Endpoint URL"), so nobody has to paste it in by hand.
+// Discord checks the address straight away by sending it a test message, which this app answers.
+export async function ensureEndpoint() {
+  const a = await readApplication();
+  if (a?.interactions_endpoint_url === ENDPOINT()) { lastEndpointProblem = null; return { ok: true, url: ENDPOINT(), changed: false }; }
+  try {
+    const updated = await discordFetch('/applications/@me', 'PATCH', { interactions_endpoint_url: ENDPOINT() });
+    appFromDiscord = { ...a, ...updated };
+    lastEndpointProblem = null;
+    return { ok: updated?.interactions_endpoint_url === ENDPOINT(), url: updated?.interactions_endpoint_url || '', changed: true };
+  } catch (e) {
+    lastEndpointProblem = e.message;
+    throw e;
+  }
+}
+
 // Tells Discord which commands exist (for every server the bot is in, so it works whichever order
 // the setup steps are done in). Running it again just replaces the list.
 export async function registerCommands() {
   if (!botReady()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set in Render yet' };
-  const done = await discordFetch(`/applications/${APP_ID()}/commands`, 'PUT', commandDefinitions());
+  if (!appFromDiscord) await readApplication();
+  const done = await discordFetch(`/applications/${realAppId()}/commands`, 'PUT', commandDefinitions());
+  // An earlier version set commands up for the WPG server only; clear those so nothing shows twice.
+  const guild = await guildId().catch(() => null);
+  if (guild) await discordFetch(`/applications/${realAppId()}/guilds/${guild}/commands`, 'PUT', []).catch(() => {});
   await remember('_discord_commands_ok', new Date().toISOString());
   return { ok: true, count: done?.length || 0, where: 'every server the bot is in' };
+}
+
+// Everything the app can set up on Discord by itself: the address and the commands.
+export async function setupDiscord() {
+  if (!botReady()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set in Render yet' };
+  const endpoint = await ensureEndpoint().catch((e) => ({ ok: false, reason: e.message }));
+  const commands = await registerCommands().catch((e) => ({ ok: false, reason: e.message }));
+  return { ok: !!(endpoint.ok && commands.ok), endpoint, commands };
 }
 
 // Setup checklist for Admin → Settings: each step is ticked once it has really worked.
@@ -371,6 +421,9 @@ export async function botStatus() {
   const out = {
     token: botReady(),
     endpoint_checked: endpoint?.value || null,
+    endpoint_on_discord: null,
+    endpoint_wanted: ENDPOINT(),
+    endpoint_problem: lastEndpointProblem,
     commands_ready: commands?.value || null,
     bot_name: null,
     in_server: null,
@@ -378,7 +431,10 @@ export async function botStatus() {
   };
   if (botReady()) {
     try {
-      out.bot_name = (await discordFetch('/users/@me'))?.username || null;
+      const a = await readApplication();
+      out.endpoint_on_discord = a?.interactions_endpoint_url || '';
+      if (out.endpoint_on_discord === ENDPOINT() && !out.endpoint_checked) out.endpoint_checked = 'set';
+      out.bot_name = a?.bot?.username || a?.name || null;
       const guild = await guildId().catch(() => null);
       const guilds = await discordFetch('/users/@me/guilds');
       out.in_server = guild ? (guilds || []).some((g) => g.id === guild) : (guilds || []).length > 0;
@@ -417,7 +473,8 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
     console.warn('[discord bot]', name, e.message);
     reply = { content: 'Something went wrong getting that. Try again in a minute.' };
   }
-  await fetch(`${API}/webhooks/${APP_ID()}/${body.token}/messages/@original`, {
+  const appId = /^\d{15,22}$/.test(String(body.application_id || '')) ? body.application_id : APP_ID();
+  await fetch(`${API}/webhooks/${appId}/${body.token}/messages/@original`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ allowed_mentions: { parse: [] }, ...reply }),
@@ -467,19 +524,21 @@ bus.on('announce', async (a) => {
   }
 });
 
-// Sets the commands up on every start, and keeps retrying every 10 minutes until it works.
+// On every start: point Discord at this app and set the commands up, retrying every 10 minutes until
+// both work. The first try waits a minute so the host has switched visitors over to this copy of the app.
 export function startDiscordBot() {
   if (!botReady()) {
     console.log('[WPG] Discord bot: commands answer, but DISCORD_BOT_TOKEN is not set, so no command setup or channel posts.');
     return;
   }
-  const attempt = () => {
-    registerCommands()
-      .then((r) => console.log(`[discord bot] ${r.count} commands ready (${r.where})`))
-      .catch((e) => {
-        console.warn('[discord bot] could not set up commands, trying again in 10 minutes:', e.message);
-        setTimeout(attempt, 10 * 60 * 1000);
-      });
+  const attempt = async () => {
+    const r = await setupDiscord().catch((e) => ({ ok: false, reason: e.message }));
+    if (r.ok) {
+      console.log(`[discord bot] ready: address ${r.endpoint.changed ? 'set' : 'already set'}, ${r.commands.count} commands`);
+    } else {
+      console.warn('[discord bot] setup not finished, trying again in 10 minutes:', r.reason || r.endpoint?.reason || r.commands?.reason);
+      setTimeout(attempt, 10 * 60 * 1000);
+    }
   };
-  setTimeout(attempt, 10 * 1000);
+  setTimeout(attempt, 60 * 1000);
 }

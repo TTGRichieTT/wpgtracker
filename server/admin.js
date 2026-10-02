@@ -5,7 +5,7 @@ import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
 import { giveAutoMedalsToAll } from './medals.js';
-import { botStatus, discordAppId, inviteUrl, postToChannel, registerCommands } from './discordbot.js';
+import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord } from './discordbot.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -454,10 +454,11 @@ admin.post('/discord-bot/test', role('admin'), async (req, res) => {
   if (!r.ok) throw new HttpError(400, r.reason);
   res.json({ ok: true });
 });
+// Points Discord at the app and sets the commands up again (the app also does this by itself).
 admin.post('/discord-bot/register', role('admin'), async (_req, res) => {
-  const r = await registerCommands();
-  if (!r.ok) throw new HttpError(400, r.reason);
-  res.json(r);
+  const r = await setupDiscord();
+  if (!r.ok) throw new HttpError(400, r.reason || [r.endpoint?.reason && `Address: ${r.endpoint.reason}`, r.commands?.reason && `Commands: ${r.commands.reason}`].filter(Boolean).join(' · '));
+  res.json({ ok: true, count: r.commands.count, endpoint_changed: r.endpoint.changed });
 });
 
 // Syncs every member (Steam, Wardogs stats, medals) and tells the admin how it went when finished.

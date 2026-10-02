@@ -599,15 +599,17 @@ async function discordBotPanel(el) {
   el.innerHTML = `<div class="panel-title">${icon('discord')} Barracks Discord bot <span class="sub">${allDone ? '✅ all set' : 'setup'}${d.bot_name ? ` · ${esc(d.bot_name)}` : ''}</span></div>
     ${d.token_problem ? `<p style="color:var(--red);margin:0 0 10px">${esc(d.token_problem)}</p>` : ''}
     <ol style="margin:0 0 6px;padding-left:4px;list-style:none">
-      ${step(d.endpoint_checked, 'Discord can reach the app', `Open the ${portal} → <b>General Information</b> → paste ${copy(d.interactions_url)} into <b>Interactions Endpoint URL</b> → <b>Save Changes</b>. (Open this app first so it's awake. If Discord says it can't verify, wait a minute and save again.)`)}
+      ${step(d.endpoint_checked, 'Discord can reach the app', `${d.token
+        ? `The app sets this up by itself once the token is in. Press <b>Re-check &amp; fix Discord setup</b> below to try now.${d.endpoint_on_discord !== null ? `<br>Discord has: ${d.endpoint_on_discord ? copy(d.endpoint_on_discord) : '<b>nothing yet</b>'} — it should be ${copy(d.endpoint_wanted || d.interactions_url)}` : ''}${d.endpoint_problem ? `<br><span style="color:var(--red)">${esc(d.endpoint_problem)}</span>` : ''}`
+        : `Happens by itself once the bot token is in Render. (Or by hand: ${portal} → <b>General Information</b> → <b>Interactions Endpoint URL</b> = ${copy(d.interactions_url)} → <b>Save Changes</b>.)`}`)}
       ${step(d.token, 'Bot token added to Render', `In the ${portal} → <b>Bot</b> → <b>Reset Token</b> → copy it. In Render → your app → <b>Environment</b> → add <b>DISCORD_BOT_TOKEN</b> with the token → <b>Save</b>. The app restarts by itself (a few minutes). Never share the token anywhere else.`)}
       ${step(d.in_server, 'Bot added to the WPG Discord', `<a class="btn small" href="${esc(d.invite_url)}" target="_blank" rel="noopener">${icon('discord')} Add the bot to Discord</a>${d.token ? '' : ' (you can do this before or after the token)'}`)}
-      ${step(d.commands_ready, 'Commands set up', d.token ? 'This happens by itself within a few minutes, or press <b>Refresh bot commands</b> below.' : 'Happens by itself once the token is added.')}
+      ${step(d.commands_ready, 'Commands set up', d.token ? 'This happens by itself within a few minutes, or press <b>Re-check &amp; fix Discord setup</b> below.' : 'Happens by itself once the token is added.')}
       ${step(d.post_channel, 'Channel for automatic posts', 'In Discord, right-click the channel → <b>Copy Channel ID</b> (turn on Developer Mode in Discord settings → Advanced if you can\'t see it). Paste it in <b>Channel ID for posts</b> above, press <b>Save settings</b>, then <b>Send a test post</b>.')}
     </ol>
     <div class="row">
       <button type="button" class="btn" id="dbTest"${d.token && d.post_channel ? '' : ' disabled'}>Send a test post</button>
-      <button type="button" class="btn ghost" id="dbReg"${d.token ? '' : ' disabled'}>Refresh bot commands</button>
+      <button type="button" class="btn ghost" id="dbReg"${d.token ? '' : ' disabled'}>Re-check &amp; fix Discord setup</button>
     </div>
     <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /live /link /unlink. Members type /link once to connect their Discord.</p>`;
   el.querySelector('#dbTest').onclick = async () => {
@@ -616,7 +618,7 @@ async function discordBotPanel(el) {
   el.querySelector('#dbReg').onclick = async () => {
     try {
       const r = await api('admin/discord-bot/register', { method: 'POST', body: {} });
-      toast('Commands ready', `${r.count} commands set up. They can take a minute to appear in Discord.`);
+      toast('Discord set up', `${r.endpoint_changed ? 'Discord now sends commands to the app. ' : ''}${r.count} commands ready. They can take a minute to appear in Discord.`);
       discordBotPanel(el);
     } catch (x) { fail(x); }
   };

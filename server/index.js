@@ -16,6 +16,7 @@ import { startServerTracker, pushMemberStats } from './servertracker.js';
 import { startWarconSync } from './warcon.js';
 import { startProgressSync } from './progress.js';
 import { discordBot, startDiscordBot } from './discordbot.js';
+import { startKeepAwake } from './keepawake.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
@@ -229,6 +230,7 @@ startPlayingWatch();
 startWarconSync(pushMemberStats);
 startProgressSync();
 startDiscordBot();
+startKeepAwake();
 setInterval(() => {
   store.prune().catch(() => {});
   q("DELETE FROM remember_tokens WHERE last_used < now() - interval '120 days'").catch(() => {});
