@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@napi-rs/canvas": "^0.1.100",
     "dotenv": "^18.0.5",
     "drizzle-kit": "^0.31.11",
     "drizzle-orm": "^0.45.3",

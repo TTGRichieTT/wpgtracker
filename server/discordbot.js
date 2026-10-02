@@ -113,10 +113,79 @@ const header = (u) => ({
 });
 const footer = { text: 'WPG Barracks' };
 
+// Everything on the career card for one member.
+async function careerData(u) {
+  const [ws, prog, srv, awards, game] = await Promise.all([
+    one('SELECT official, ranks FROM wardogs_stats WHERE user_id=$1', [u.id]),
+    one('SELECT xp, rank_name, bot_name FROM server_progress WHERE steam_id=$1', [u.steam_id]),
+    one(
+      `SELECT COALESCE(SUM(kills),0)::int kills, COALESCE(SUM(deaths),0)::int deaths, COALESCE(SUM(matches),0)::int matches,
+              COALESCE(SUM(wins),0)::int wins, COALESCE(SUM(losses),0)::int losses, COALESCE(SUM(playtime_s),0)::int playtime,
+              (ARRAY_AGG(name ORDER BY last_seen DESC NULLS LAST))[1] AS name
+         FROM server_players WHERE steam_id=$1`,
+      [u.steam_id],
+    ),
+    q(
+      `SELECT ua.id, ua.given_at, a.name, a.colors, a.auto_rule, a.sort_order
+         FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY a.sort_order, ua.given_at`,
+      [u.id],
+    ),
+    one('SELECT app_id, name FROM games WHERE enabled = true ORDER BY featured DESC, name LIMIT 1'),
+  ]);
+  const pos = prog ? await one('SELECT COUNT(*)::int + 1 AS n FROM server_progress WHERE xp > $1', [prog.xp]) : null;
+  let achievements = { earned: [], total: 0, game: '' };
+  if (game) {
+    const [total, earned] = await Promise.all([
+      one('SELECT COUNT(*)::int AS n FROM steam_achievements WHERE app_id=$1', [game.app_id]),
+      q(
+        `SELECT sa.name, sa.icon, sa.percent::float AS percent FROM user_achievements ua
+           JOIN steam_achievements sa ON sa.app_id = ua.app_id AND sa.api_name = ua.api_name
+          WHERE ua.user_id=$1 AND ua.app_id=$2 ORDER BY sa.percent ASC NULLS LAST, sa.sort_order`,
+        [u.id, game.app_id],
+      ),
+    ]);
+    achievements = { game: game.name, total: total?.n || 0, earned };
+  }
+  return {
+    // The name used on the WPG server (with the clan tag), else the Steam name.
+    name: String(prog?.bot_name || srv?.name || u.persona_name || '').trim() || u.persona_name,
+    steamId: u.steam_id,
+    discord: u.custom_fields?.discord || '',
+    member: u.membership === 'pmc' ? 'PMC' : 'YES',
+    official: ws?.official || null,
+    worldRank: ws?.ranks?.level || null,
+    wpg: { rank: prog?.rank_name || 'RECRUIT I', xp: prog?.xp || 0, position: pos?.n || null },
+    server: srv || {},
+    medals: topTierOnly(awards),
+    achievements,
+  };
+}
+
+// The career card picture (JPEG) for one member. The picture library is loaded only when needed, so a
+// problem with it can never stop the app starting.
+export async function careerCard(user) {
+  const { renderCareerCard } = await import('./careercard.js');
+  return renderCareerCard(await careerData(user));
+}
+
 // ---------- Commands ----------
+// /stats: the WPG career card picture (falls back to a text card if the picture can't be made).
 async function cmdStats(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
+  try {
+    const card = await careerCard(f.user);
+    return {
+      files: [{ name: 'wpg-career.jpg', data: card, type: 'image/jpeg' }],
+      components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open in WPG Barracks', url: `${SITE()}/#/u/${f.user.id}` }] }],
+    };
+  } catch (e) {
+    console.warn('[discord bot] career card failed, sending text instead:', e.message);
+    return statsEmbed(f);
+  }
+}
+
+async function statsEmbed(f) {
   const ws = await one('SELECT official, ranks, official_synced FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
   const o = ws?.official;
   if (!o) return { content: `**${f.user.persona_name}** has no Wardogs stats yet. They add their in-game name (Name#1234) on HQ in the app.` };
@@ -474,13 +543,29 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
     reply = { content: 'Something went wrong getting that. Try again in a minute.' };
   }
   const appId = /^\d{15,22}$/.test(String(body.application_id || '')) ? body.application_id : APP_ID();
-  await fetch(`${API}/webhooks/${appId}/${body.token}/messages/@original`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ allowed_mentions: { parse: [] }, ...reply }),
-    signal: AbortSignal.timeout(15000),
-  }).catch((e) => console.warn('[discord bot] reply failed', e.message));
+  await sendReply(`${API}/webhooks/${appId}/${body.token}/messages/@original`, reply);
 });
+
+// Fills in the "thinking…" message. Pictures (files) are sent as attachments.
+async function sendReply(url, reply) {
+  const { files, ...rest } = reply;
+  const payload = { allowed_mentions: { parse: [] }, ...rest };
+  let init;
+  if (files?.length) {
+    const form = new FormData();
+    form.append('payload_json', JSON.stringify({ ...payload, attachments: files.map((f, i) => ({ id: i, filename: f.name })) }));
+    files.forEach((f, i) => form.append(`files[${i}]`, new Blob([f.data], { type: f.type || 'application/octet-stream' }), f.name));
+    init = { method: 'PATCH', body: form, signal: AbortSignal.timeout(30000) };
+  } else {
+    init = { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000) };
+  }
+  try {
+    const res = await fetch(url, init);
+    if (!res.ok) console.warn('[discord bot] reply failed', res.status, (await res.text().catch(() => '')).slice(0, 300));
+  } catch (e) {
+    console.warn('[discord bot] reply failed', e.message);
+  }
+}
 
 // ---------- Automatic posts ----------
 const postQueue = [];
