@@ -12,7 +12,8 @@ import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop 
 import { api } from './routes.js';
 import { admin, ingest } from './admin.js';
 import { servers } from './servers.js';
-import { startServerTracker } from './servertracker.js';
+import { startServerTracker, pushMemberStats } from './servertracker.js';
+import { startWarconSync } from './warcon.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
 import { startRealtime } from './realtime.js';
@@ -221,6 +222,7 @@ startRealtime(server, sessionMiddleware);
 startSyncLoop();
 startServerTracker();
 startPlayingWatch();
+startWarconSync(pushMemberStats);
 setInterval(() => {
   store.prune().catch(() => {});
   q("DELETE FROM remember_tokens WHERE last_used < now() - interval '120 days'").catch(() => {});
