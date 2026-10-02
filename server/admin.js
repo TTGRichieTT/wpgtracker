@@ -5,7 +5,7 @@ import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
 import { giveAutoMedalsToAll } from './medals.js';
-import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord } from './discordbot.js';
+import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem } from './discordbot.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -459,6 +459,20 @@ admin.post('/discord-bot/register', role('admin'), async (_req, res) => {
   const r = await setupDiscord();
   if (!r.ok) throw new HttpError(400, r.reason || [r.endpoint?.reason && `Address: ${r.endpoint.reason}`, r.commands?.reason && `Commands: ${r.commands.reason}`].filter(Boolean).join(' · '));
   res.json({ ok: true, count: r.commands.count, endpoint_changed: r.endpoint.changed });
+});
+// Makes a command's card here on the server, exactly as the bot would, and sends the picture back.
+admin.post('/discord-bot/preview', role('admin'), async (req, res) => {
+  const command = str(req.body?.command, 30);
+  let reply;
+  try {
+    reply = await previewCommand(command, req.user);
+  } catch (e) {
+    // Admins see the real reason, so a screenshot is enough to fix it.
+    return res.json({ text: 'The command crashed.', problem: { where: `/${command}`, message: e.message } });
+  }
+  const file = reply.files?.[0];
+  if (file) return res.type('image/jpeg').send(file.data);
+  res.json({ text: reply.content || reply.embeds?.[0]?.title || 'The bot sent a text reply.', problem: latestProblem(15) });
 });
 
 // Syncs every member (Steam, Wardogs stats, medals) and tells the admin how it went when finished.

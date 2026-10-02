@@ -595,7 +595,11 @@ async function discordBotPanel(el) {
   const copy = (text) => `<code style="overflow-wrap:anywhere;background:#06101c;border:1px solid var(--line);border-radius:6px;padding:4px 8px">${esc(text)}</code>`;
   const portal = `<a href="https://discord.com/developers/applications/${esc(d.app_id)}/information" target="_blank" rel="noopener">Discord Developer Portal</a>`;
   const step = (done, title, todo) => `<li style="margin-bottom:10px"><b>${done ? '✅' : '⬜'} ${title}</b>${done ? '' : `<div class="small muted" style="margin-top:4px">${todo}</div>`}</li>`;
-  const allDone = d.endpoint_checked && d.token && d.in_server && d.commands_ready && d.post_channel;
+  // Commands the app has that Discord doesn't (yet).
+  const missing = Array.isArray(d.commands_on_discord) ? (d.commands_wanted || []).filter((c) => !d.commands_on_discord.includes(c)) : [];
+  const commandsOk = d.commands_ready && !missing.length;
+  const allDone = d.endpoint_checked && d.token && d.in_server && commandsOk && d.post_channel;
+  const when = (iso) => { try { return timeAgo(iso); } catch { return ''; } };
   el.innerHTML = `<div class="panel-title">${icon('discord')} Barracks Discord bot <span class="sub">${allDone ? '✅ all set' : 'setup'}${d.bot_name ? ` · ${esc(d.bot_name)}` : ''}</span></div>
     ${d.token_problem ? `<p style="color:var(--red);margin:0 0 10px">${esc(d.token_problem)}</p>` : ''}
     <ol style="margin:0 0 6px;padding-left:4px;list-style:none">
@@ -604,14 +608,51 @@ async function discordBotPanel(el) {
         : `Happens by itself once the bot token is in Render. (Or by hand: ${portal} → <b>General Information</b> → <b>Interactions Endpoint URL</b> = ${copy(d.interactions_url)} → <b>Save Changes</b>.)`}`)}
       ${step(d.token, 'Bot token added to Render', `In the ${portal} → <b>Bot</b> → <b>Reset Token</b> → copy it. In Render → your app → <b>Environment</b> → add <b>DISCORD_BOT_TOKEN</b> with the token → <b>Save</b>. The app restarts by itself (a few minutes). Never share the token anywhere else.`)}
       ${step(d.in_server, 'Bot added to the WPG Discord', `<a class="btn small" href="${esc(d.invite_url)}" target="_blank" rel="noopener">${icon('discord')} Add the bot to Discord</a>${d.token ? '' : ' (you can do this before or after the token)'}`)}
-      ${step(d.commands_ready, 'Commands set up', d.token ? 'This happens by itself within a few minutes, or press <b>Re-check &amp; fix Discord setup</b> below.' : 'Happens by itself once the token is added.')}
+      ${step(commandsOk, 'Commands set up', d.token
+        ? `${missing.length ? `<span style="color:var(--red)">Discord is missing: ${missing.map((c) => `/${esc(c)}`).join(' ')}</span><br>` : ''}This happens by itself within a few minutes, or press <b>Re-check &amp; fix Discord setup</b> below.`
+        : 'Happens by itself once the token is added.')}
+      ${Array.isArray(d.commands_on_discord) && commandsOk ? `<li class="small muted" style="margin:-6px 0 10px 26px">Discord has: ${d.commands_on_discord.map((c) => `/${esc(c)}`).join(' ')}. New commands can take a minute to show — restart Discord (Ctrl+R) if one is missing from the list.</li>` : ''}
       ${step(d.post_channel, 'Channel for automatic posts', 'In Discord, right-click the channel → <b>Copy Channel ID</b> (turn on Developer Mode in Discord settings → Advanced if you can\'t see it). Paste it in <b>Channel ID for posts</b> above, press <b>Save settings</b>, then <b>Send a test post</b>.')}
     </ol>
     <div class="row">
       <button type="button" class="btn" id="dbTest"${d.token && d.post_channel ? '' : ' disabled'}>Send a test post</button>
       <button type="button" class="btn ghost" id="dbReg"${d.token ? '' : ' disabled'}>Re-check &amp; fix Discord setup</button>
     </div>
-    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /serverboard /live /link /unlink. Members type /link once to connect their Discord.</p>`;
+    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /serverboard /live /link /unlink. Members type /link once to connect their Discord.</p>
+    <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+      <b>Preview a card</b> <span class="muted small">— made here exactly as the bot makes it, without Discord.</span>
+      <div class="row" style="margin-top:8px">
+        <select id="dbCmd">${(d.commands_wanted || []).filter((c) => !['link', 'unlink'].includes(c)).map((c) => `<option value="${esc(c)}">/${esc(c)}</option>`).join('')}</select>
+        <button type="button" class="btn" id="dbPreview">Preview</button>
+      </div>
+      <div id="dbPreviewOut" style="margin-top:10px"></div>
+    </div>
+    ${d.recent?.length ? `<div style="margin-top:12px"><b>Recent commands</b><div class="small muted">${d.recent.map((r) => `${esc(r.name)} — ${esc(r.how)} · ${esc(when(r.at))}`).join('<br>')}</div></div>` : ''}
+    ${d.problems?.length ? `<div style="margin-top:12px"><b style="color:var(--red)">Recent problems</b><div class="small">${d.problems.map((p) => `<div style="margin-top:4px"><b>${esc(p.where)}</b> · <span class="muted">${esc(when(p.at))}</span><br><span class="muted">${esc(p.message)}</span></div>`).join('')}</div></div>` : ''}`;
+  el.querySelector('#dbPreview').onclick = async () => {
+    const out = el.querySelector('#dbPreviewOut');
+    const btn = el.querySelector('#dbPreview');
+    btn.disabled = true;
+    out.innerHTML = '<div class="spinner" style="margin:6px 0"></div>';
+    try {
+      const res = await fetch('/api/admin/discord-bot/preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: el.querySelector('#dbCmd').value }),
+      });
+      if ((res.headers.get('content-type') || '').startsWith('image/')) {
+        // The page only allows data: pictures, so turn the picture into one.
+        const blob = await res.blob();
+        const url = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); });
+        out.innerHTML = `<img src="${url}" alt="Card preview" style="max-width:100%;border-radius:8px;border:1px solid var(--line)">`;
+      } else {
+        const j = await res.json().catch(() => ({}));
+        out.innerHTML = `<p class="small" style="margin:0">${esc(j.text || j.error || `Preview failed (${res.status})`)}</p>${j.problem ? `<p class="small" style="color:var(--red);margin:6px 0 0">${esc(j.problem.where)}: ${esc(j.problem.message)}</p>` : ''}`;
+      }
+    } catch (x) {
+      out.innerHTML = `<p class="small" style="color:var(--red);margin:0">${esc(x.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
   el.querySelector('#dbTest').onclick = async () => {
     try { await api('admin/discord-bot/test', { method: 'POST', body: {} }); toast('Sent', 'Check the post channel in Discord.'); } catch (x) { fail(x); }
   };

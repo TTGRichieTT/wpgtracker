@@ -179,7 +179,7 @@ async function cmdStats(data, caller) {
       components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open in WPG Barracks', url: `${SITE()}/#/u/${f.user.id}` }] }],
     };
   } catch (e) {
-    console.warn('[discord bot] career card failed, sending text instead:', e.message);
+    problem('/stats picture (sent text instead)', e.message);
     return statsEmbed(f);
   }
 }
@@ -221,7 +221,7 @@ async function asPicture(name, render, fallback, link) {
     if (link) out.components = [{ type: 1, components: [{ type: 2, style: 5, label: link.label, url: link.url }] }];
     return out;
   } catch (e) {
-    console.warn(`[discord bot] ${name} card failed, sending text instead:`, e.message);
+    problem(`/${name} picture (sent text instead)`, e.message);
     return fallback();
   }
 }
@@ -658,7 +658,36 @@ export async function setupDiscord() {
   if (!botReady()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set in Render yet' };
   const endpoint = await ensureEndpoint().catch((e) => ({ ok: false, reason: e.message }));
   const commands = await registerCommands().catch((e) => ({ ok: false, reason: e.message }));
+  if (!endpoint.ok) problem('Setting the bot address', endpoint.reason || 'Discord did not accept it');
+  if (!commands.ok) problem('Setting up the commands', commands.reason || 'Discord did not accept them');
   return { ok: !!(endpoint.ok && commands.ok), endpoint, commands };
+}
+
+// Recent problems and commands, shown in Admin → Settings so anyone can see what went wrong.
+const problems = [];
+const recent = [];
+function problem(where, message) {
+  problems.unshift({ at: new Date().toISOString(), where, message: String(message || '').slice(0, 300) });
+  problems.length = Math.min(problems.length, 12);
+  console.warn('[discord bot]', where, message);
+}
+// The newest problem, if it happened in the last `seconds` seconds.
+export function latestProblem(seconds) {
+  const p = problems[0];
+  return p && Date.now() - new Date(p.at).getTime() < seconds * 1000 ? p : null;
+}
+function noteCommand(name, how) {
+  recent.unshift({ at: new Date().toISOString(), name, how });
+  recent.length = Math.min(recent.length, 12);
+}
+
+// Runs a command as if it came from Discord (for the Preview button in Admin → Settings).
+export async function previewCommand(name, user) {
+  const cmd = COMMANDS[name];
+  if (!cmd || cmd.private) throw new Error('That command has no preview.');
+  // Member cards are for the admin themself: by linked Discord, or by their name if not linked.
+  const options = user.discord_id ? [] : [{ name: 'name', value: user.persona_name }];
+  return cmd.run({ name, options }, String(user.discord_id || ''), user.persona_name);
 }
 
 // Setup checklist for Admin → Settings: each step is ticked once it has really worked.
@@ -672,9 +701,13 @@ export async function botStatus() {
     endpoint_wanted: ENDPOINT(),
     endpoint_problem: lastEndpointProblem,
     commands_ready: commands?.value || null,
+    commands_on_discord: null,
+    commands_wanted: Object.keys(COMMANDS),
     bot_name: null,
     in_server: null,
     token_problem: null,
+    problems,
+    recent,
   };
   if (botReady()) {
     try {
@@ -685,6 +718,9 @@ export async function botStatus() {
       const guild = await guildId().catch(() => null);
       const guilds = await discordFetch('/users/@me/guilds');
       out.in_server = guild ? (guilds || []).some((g) => g.id === guild) : (guilds || []).length > 0;
+      // The commands Discord actually has for the bot right now.
+      const cmds = await discordFetch(`/applications/${realAppId()}/commands`);
+      out.commands_on_discord = (cmds || []).map((c) => c.name);
     } catch (e) {
       out.token_problem = /401/.test(e.message) ? 'Discord says the bot token is wrong — reset it on the Bot page and paste the new one into Render.' : e.message;
     }
@@ -717,11 +753,12 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
   try {
     reply = cmd ? await cmd.run(body.data || {}, String(who.id || ''), who.global_name || who.username) : { content: 'Unknown command.' };
   } catch (e) {
-    console.warn('[discord bot]', name, e.message);
+    problem(`/${name}`, e.message);
     reply = { content: 'Something went wrong getting that. Try again in a minute.' };
   }
   const appId = /^\d{15,22}$/.test(String(body.application_id || '')) ? body.application_id : APP_ID();
-  await sendReply(`${API}/webhooks/${appId}/${body.token}/messages/@original`, reply);
+  const sent = await sendReply(`${API}/webhooks/${appId}/${body.token}/messages/@original`, reply);
+  noteCommand(`/${name}`, !sent ? 'reply failed' : reply.files?.length ? 'picture' : 'text');
 });
 
 // Fills in the "thinking…" message. Pictures (files) are sent as attachments.
@@ -739,10 +776,12 @@ async function sendReply(url, reply) {
   }
   try {
     const res = await fetch(url, init);
-    if (!res.ok) console.warn('[discord bot] reply failed', res.status, (await res.text().catch(() => '')).slice(0, 300));
+    if (res.ok) return true;
+    problem('Sending the reply to Discord', `${res.status} ${(await res.text().catch(() => '')).slice(0, 250)}`);
   } catch (e) {
-    console.warn('[discord bot] reply failed', e.message);
+    problem('Sending the reply to Discord', e.message);
   }
+  return false;
 }
 
 // ---------- Automatic posts ----------
