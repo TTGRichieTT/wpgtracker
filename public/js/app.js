@@ -20,12 +20,24 @@ export function esc(v) {
 
 export async function api(path, { method = 'GET', body } = {}) {
   const url = path.startsWith('/') ? path : `/api/${path}`;
-  const res = await fetch(url, {
+  const send = () => fetch(url, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
     credentials: 'same-origin',
   });
+  // 502/503/504 come from the host while the app restarts (an update, or waking up): wait and try again.
+  const down = (r) => !r || [502, 503, 504].includes(r.status);
+  let res = await send().catch(() => null);
+  for (let wait = 3000; down(res) && wait <= 12000; wait *= 2) {
+    await new Promise((r) => setTimeout(r, wait));
+    res = await send().catch(() => null);
+  }
+  if (down(res)) {
+    const err = new Error('The app is restarting (usually after an update). Please try again in a minute.');
+    err.status = res?.status || 0;
+    throw err;
+  }
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
   if (!res.ok) {
