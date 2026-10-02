@@ -374,7 +374,7 @@ function youtubeReader(s, box, alive) {
       r.deleted.forEach((id) => box.querySelector(`[data-pid="${CSS.escape(id)}"]`)?.remove());
       r.messages.forEach((m) => addLine(box, m));
       if (r.problem) status(PROBLEMS[r.problem] || `YouTube chat: ${r.problem}`);
-      else status('Connected. Waiting for chat…');
+      else status('✓ Connected to YouTube chat. No messages yet — new ones show here as soon as someone types.');
     } catch (x) {
       if (x.code === 'chat_signin') { status('Your YouTube sign-in has ended. Sign in again in Edit profile → Linked accounts.'); return; }
     }
@@ -415,7 +415,7 @@ function twitchReader(channel, box, alive) {
         if (!m) continue;
         const tags = m[1] ? tagsOf(m[1].trim()) : {};
         const cmd = m[3];
-        if (cmd === 'JOIN' || cmd === 'ROOMSTATE') status('Connected. Waiting for chat…');
+        if (cmd === 'JOIN' || cmd === 'ROOMSTATE') status('✓ Connected to Twitch chat. No messages yet — new ones show here as soon as someone types (Twitch only sends new messages, not older ones).');
         if (cmd === 'PRIVMSG') {
           let text = m[4] || '';
           const action = /^\u0001ACTION (.*)\u0001$/.exec(text);
