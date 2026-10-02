@@ -1,11 +1,11 @@
 import express from 'express';
 import crypto from 'node:crypto';
-import { q, one, audit, getSettings, clearSettingsCache } from './db.js';
+import { q, one, audit, getSettings, clearSettingsCache, setting } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
 import { giveAutoMedalsToAll } from './medals.js';
-import { botReady, postToChannel, registerCommands } from './discordbot.js';
+import { botStatus, discordAppId, inviteUrl, postToChannel, registerCommands } from './discordbot.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -442,12 +442,11 @@ admin.put('/settings', role('admin'), async (req, res) => {
 // ---------- Barracks Discord bot (admins) ----------
 admin.get('/discord-bot', role('admin'), async (_req, res) => {
   res.json({
-    ready: botReady(),
-    missing: ['DISCORD_APP_ID', 'DISCORD_PUBLIC_KEY', 'DISCORD_BOT_TOKEN'].filter((k) => !process.env[k]),
-    interactions_url: `${(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '') || '(your app address)'}/discord/interactions`,
-    invite_url: process.env.DISCORD_APP_ID
-      ? `https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_APP_ID}&scope=bot%20applications.commands&permissions=18432`
-      : '',
+    ...(await botStatus()),
+    app_id: discordAppId(),
+    interactions_url: `${(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || 'https://wpg-barracks.onrender.com').replace(/\/$/, '')}/discord/interactions`,
+    invite_url: inviteUrl(),
+    post_channel: !!String((await setting('discord_post_channel')) || '').trim(),
   });
 });
 admin.post('/discord-bot/test', role('admin'), async (req, res) => {

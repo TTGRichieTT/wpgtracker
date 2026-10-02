@@ -1,7 +1,9 @@
 // WPG Barracks Discord bot. Slash commands are answered by this app: Discord sends each command to
 // POST /discord/interactions, so no always-on bot connection is needed. It also posts promotions,
 // medals and WPG rank-ups to a channel set in Admin → Settings.
-// Needs DISCORD_APP_ID, DISCORD_PUBLIC_KEY and DISCORD_BOT_TOKEN in the host's environment (never in code).
+// The app ID and public key below are public by design (the key only checks that messages really come
+// from Discord). The bot token is a password: it lives only in the host's environment as DISCORD_BOT_TOKEN.
+// DISCORD_APP_ID / DISCORD_PUBLIC_KEY in the environment override the built-in ones (e.g. a new Discord app).
 import express from 'express';
 import crypto from 'crypto';
 import { q, one, setting, flag } from './db.js';
@@ -11,14 +13,19 @@ import { usersWithRanks, topTierOnly } from './routes.js';
 import { liveMatch } from './servers.js';
 
 const API = 'https://discord.com/api/v10';
-const APP_ID = () => process.env.DISCORD_APP_ID || '';
+const WPG_APP_ID = '1555526462319366165';
+const WPG_PUBLIC_KEY = 'f7572684d37e69c27da9c32bcd5519eb2d94683760a64776c155246159f48710';
+const APP_ID = () => process.env.DISCORD_APP_ID || WPG_APP_ID;
 const TOKEN = () => process.env.DISCORD_BOT_TOKEN || '';
-const PUBLIC_KEY = () => process.env.DISCORD_PUBLIC_KEY || '';
+const PUBLIC_KEY = () => process.env.DISCORD_PUBLIC_KEY || WPG_PUBLIC_KEY;
 const SITE = () => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || 'https://wpg-barracks.onrender.com').replace(/\/$/, '');
 const COLOR = 0x29b6f6;
 const GOLD = 0xc9a227;
 
-export const botReady = () => !!(APP_ID() && TOKEN() && PUBLIC_KEY());
+export const botReady = () => !!TOKEN();
+export const discordAppId = APP_ID;
+// Bot permissions asked for in the invite: View Channels + Send Messages + Embed Links.
+export const inviteUrl = () => `https://discord.com/oauth2/authorize?client_id=${APP_ID()}&scope=bot%20applications.commands&permissions=19456`;
 
 // ---------- Small helpers ----------
 const num = (n) => Number(n || 0).toLocaleString('en-GB');
@@ -343,13 +350,43 @@ function commandDefinitions() {
   });
 }
 
-// Tells Discord which commands exist. Server-only commands show up straight away.
+// Remembers setup milestones (shown as ticks in Admin → Settings). Hidden settings start with "_".
+async function remember(key, value) {
+  await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [key, value]);
+}
+
+// Tells Discord which commands exist (for every server the bot is in, so it works whichever order
+// the setup steps are done in). Running it again just replaces the list.
 export async function registerCommands() {
-  if (!botReady()) return { ok: false, reason: 'Discord bot settings are missing' };
-  const guild = await guildId().catch(() => null);
-  const path = guild ? `/applications/${APP_ID()}/guilds/${guild}/commands` : `/applications/${APP_ID()}/commands`;
-  const done = await discordFetch(path, 'PUT', commandDefinitions());
-  return { ok: true, count: done?.length || 0, where: guild ? 'WPG Discord server' : 'everywhere' };
+  if (!botReady()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set in Render yet' };
+  const done = await discordFetch(`/applications/${APP_ID()}/commands`, 'PUT', commandDefinitions());
+  await remember('_discord_commands_ok', new Date().toISOString());
+  return { ok: true, count: done?.length || 0, where: 'every server the bot is in' };
+}
+
+// Setup checklist for Admin → Settings: each step is ticked once it has really worked.
+export async function botStatus() {
+  const endpoint = await one("SELECT value FROM settings WHERE key='_discord_endpoint_ok'");
+  const commands = await one("SELECT value FROM settings WHERE key='_discord_commands_ok'");
+  const out = {
+    token: botReady(),
+    endpoint_checked: endpoint?.value || null,
+    commands_ready: commands?.value || null,
+    bot_name: null,
+    in_server: null,
+    token_problem: null,
+  };
+  if (botReady()) {
+    try {
+      out.bot_name = (await discordFetch('/users/@me'))?.username || null;
+      const guild = await guildId().catch(() => null);
+      const guilds = await discordFetch('/users/@me/guilds');
+      out.in_server = guild ? (guilds || []).some((g) => g.id === guild) : (guilds || []).length > 0;
+    } catch (e) {
+      out.token_problem = /401/.test(e.message) ? 'Discord says the bot token is wrong — reset it on the Bot page and paste the new one into Render.' : e.message;
+    }
+  }
+  return out;
 }
 
 // ---------- Incoming commands ----------
@@ -361,7 +398,11 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
   let body;
   try { body = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).send('Bad JSON'); }
 
-  if (body.type === 1) return res.json({ type: 1 }); // Discord checking the address works
+  if (body.type === 1) {
+    // Discord checking the address works (it does this when the Interactions Endpoint URL is saved).
+    remember('_discord_endpoint_ok', new Date().toISOString()).catch(() => {});
+    return res.json({ type: 1 });
+  }
   if (body.type !== 2) return res.status(400).json({ error: 'Unsupported' });
 
   const name = body.data?.name;
@@ -426,14 +467,19 @@ bus.on('announce', async (a) => {
   }
 });
 
+// Sets the commands up on every start, and keeps retrying every 10 minutes until it works.
 export function startDiscordBot() {
   if (!botReady()) {
-    console.log('[WPG] Discord bot not set up (DISCORD_APP_ID, DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN).');
+    console.log('[WPG] Discord bot: commands answer, but DISCORD_BOT_TOKEN is not set, so no command setup or channel posts.');
     return;
   }
-  setTimeout(() => {
+  const attempt = () => {
     registerCommands()
-      .then((r) => console.log(`[discord bot] ${r.ok ? `${r.count} commands ready (${r.where})` : r.reason}`))
-      .catch((e) => console.warn('[discord bot] could not register commands', e.message));
-  }, 10 * 1000);
+      .then((r) => console.log(`[discord bot] ${r.count} commands ready (${r.where})`))
+      .catch((e) => {
+        console.warn('[discord bot] could not set up commands, trying again in 10 minutes:', e.message);
+        setTimeout(attempt, 10 * 60 * 1000);
+      });
+  };
+  setTimeout(attempt, 10 * 1000);
 }
