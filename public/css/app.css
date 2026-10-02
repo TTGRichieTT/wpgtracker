@@ -660,3 +660,4 @@ body::after { display: none; }
 .pchat-note { padding: 10px 12px; border-top: 1px solid var(--line); }
 .btn.plat-btn.twitch { background: #6441a5; border-color: #9146ff; color: #fff; }
 .btn.plat-btn.kick { background: #2f7a1d; border-color: #53fc18; color: #fff; }
+.btn.plat-btn.youtube { background: #c4302b; border-color: #ff4e45; color: #fff; }

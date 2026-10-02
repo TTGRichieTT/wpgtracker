@@ -98,16 +98,21 @@ on the **Streams** tab with the stream's player, its chat, and a WPG chat everyo
   - Twitch: `TWITCH_CLIENT_ID` + `TWITCH_CLIENT_SECRET` from https://dev.twitch.tv/console/apps
   - YouTube: `YOUTUBE_API_KEY` (Google Cloud → enable *YouTube Data API v3* → Credentials → API key)
   - Kick: `KICK_CLIENT_ID` + `KICK_CLIENT_SECRET` from https://kick.com/settings/developer
-- **Chatting in streams (no bot).** To type in a Twitch or Kick stream's chat, members sign in with their *own* Twitch / Kick
-  account (Edit profile → Chat in streams, or the button under the chat). Messages go out under their own name. Same keys as above, plus:
+- **Linked accounts (no bot).** Linking Twitch, YouTube and Kick accounts is for viewing, chatting and streaming within the
+  app on live streams. Members link them in **Edit profile → Linked accounts** (or the button under a stream's chat), and
+  their messages go out under their own name. Same keys as above, plus:
   - Twitch developer console → the app → add the **OAuth Redirect URL** shown in Command panel → Streams.
+  - YouTube: Google Cloud (same project as `YOUTUBE_API_KEY`) → Credentials → **OAuth client ID (Web application)** with the
+    redirect URI shown in Command panel → Streams; put its ID and secret in `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`.
+    On the OAuth consent screen add the `youtube.force-ssl` scope and **Publish app**. Until Google verifies the app, members
+    see an "unverified app" warning and only 100 can link. YouTube's free daily allowance is small: chat is only read while
+    someone has the stream open, and sending uses about 50 of the 10,000 daily units per message. When it runs out the app says
+    so and YouTube's own chat box still works.
   - Kick developer settings → the app → add the **Redirect URL**, turn **Webhooks** on with the webhook URL (both shown in
     Command panel → Streams), and allow the `user:read`, `chat:write` and `events:subscribe` scopes. The app then asks Kick to
     send each approved streamer's chat by itself.
-  - YouTube streams keep YouTube's own chat box: viewers sign in to Google inside it.
 - **Discord "… is live" posts**: Command panel → Settings → Streams → paste the channel ID.
 - **Stream keys** are optional. They're encrypted when saved and never shown again, to anyone. The app doesn't use them.
-- Rebuild the Android app after this update, so Twitch / Kick sign-in stays inside the app.
 
 ## 5. How stats and XP work
 

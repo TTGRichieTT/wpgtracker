@@ -1,10 +1,11 @@
-// Chat in streams as yourself: members sign in with their own Twitch or Kick account, then chat in that
-// platform's streams from the app. There is no bot: every message is sent with the member's own account,
+// Chat in streams as yourself: members sign in with their own Twitch, YouTube or Kick account, then chat in
+// that platform's streams from the app. There is no bot: every message is sent with the member's own account,
 // so anyone who wants to talk in a stream needs an account on that streamer's platform.
 //  - Reading Twitch chat: the browser connects to Twitch's public chat itself (no sign-in needed to read).
 //  - Reading Kick chat: Kick sends every chat message to /hooks/kick (a webhook); the app passes them on live.
 //    Set the webhook address in the Kick app settings (Command panel → Streams shows it).
-//  - YouTube keeps YouTube's own chat box (viewers sign in to Google inside it).
+//  - Reading YouTube chat: the server reads it with the YouTube API key, only while someone in the app has that
+//    stream open, and shares it between everyone watching (YouTube's daily API allowance is small).
 // Sign-in tokens are encrypted (secretbox.js), only used here on the server, and never sent to a browser.
 import crypto from 'node:crypto';
 import express from 'express';
@@ -33,6 +34,19 @@ async function call(url, { method = 'GET', token, clientId, form, json } = {}) {
   try { data = await res.json(); } catch { /* empty */ }
   return { status: res.status, ok: res.ok, data };
 }
+
+// YouTube live chat for a video: the chat's id comes from the video (1 API unit, kept).
+const ytChatIds = new Map(); // video id -> live chat id
+async function ytChatId(videoId, token) {
+  if (!videoId) return '';
+  if (ytChatIds.has(videoId)) return ytChatIds.get(videoId);
+  const key = env('YOUTUBE_API_KEY');
+  const r = await call(`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${encodeURIComponent(videoId)}${key ? `&key=${key}` : ''}`, key ? {} : { token });
+  const id = r.data?.items?.[0]?.liveStreamingDetails?.activeLiveChatId || '';
+  if (id) ytChatIds.set(videoId, id);
+  return id;
+}
+const ytError = (r) => r.data?.error?.errors?.[0]?.reason || r.data?.error?.message || `YouTube answered ${r.status}`;
 
 const PLATFORMS = {
   twitch: {
@@ -88,6 +102,39 @@ const PLATFORMS = {
     },
   },
 };
+PLATFORMS.youtube = {
+  name: 'YouTube',
+  id: () => env('GOOGLE_CLIENT_ID'),
+  secret: () => env('GOOGLE_CLIENT_SECRET'),
+  authorize: 'https://accounts.google.com/o/oauth2/v2/auth',
+  token: 'https://oauth2.googleapis.com/token',
+  scope: 'https://www.googleapis.com/auth/youtube.force-ssl',
+  pkce: true,
+  extra: { access_type: 'offline', prompt: 'consent' }, // so Google gives a refresh token
+  async me(token) {
+    const r = await call('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true', { token });
+    if (!r.ok) throw new Error(ytError(r));
+    const c = r.data?.items?.[0];
+    if (!c) throw Object.assign(new Error('Google account has no YouTube channel'), { code: 'nochannel' });
+    return { id: String(c.id), login: String(c.snippet?.customUrl || c.snippet?.title || ''), name: String(c.snippet?.title || '') };
+  },
+  revoke(token) {
+    return call(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' });
+  },
+  async send(token, _login, stream, message) {
+    const chatId = await ytChatId(stream.video_id, token);
+    if (!chatId) return { ok: false, reason: 'this stream has no live chat right now' };
+    const r = await call('https://www.googleapis.com/youtube/v3/liveChat/messages?part=snippet', {
+      method: 'POST', token, json: { snippet: { liveChatId: chatId, type: 'textMessageEvent', textMessageDetails: { messageText: message } } },
+    });
+    if (r.status === 401) return { auth: false };
+    if (r.ok) return { ok: true, id: r.data?.id };
+    const why = ytError(r);
+    if (why === 'quotaExceeded') return { ok: false, reason: 'the app has used up today\'s YouTube allowance. Use YouTube\'s own chat box until tomorrow' };
+    return { ok: false, reason: why };
+  },
+};
+
 const ready = (p) => !!(PLATFORMS[p]?.id() && PLATFORMS[p]?.secret());
 
 // ---------- Sign in with Twitch / Kick ----------
@@ -108,6 +155,7 @@ chatAuth.get('/auth/:platform/start', async (req, res, next) => {
   const url = new URL(p.authorize);
   url.search = new URLSearchParams({
     response_type: 'code', client_id: p.id(), redirect_uri: redirectUri(req, platform), scope: p.scope, state,
+    ...(p.extra || {}),
     ...(p.pkce ? { code_challenge: b64url(crypto.createHash('sha256').update(verifier).digest()), code_challenge_method: 'S256' } : {}),
   }).toString();
   res.redirect(url.toString());
@@ -148,7 +196,7 @@ chatAuth.get('/auth/:platform/return', async (req, res, next) => {
     back('ok');
   } catch (e) {
     console.warn(`[stream chat] ${platform} sign-in failed:`, e.message);
-    back('failed');
+    back(e.code === 'nochannel' ? 'nochannel' : 'failed');
   }
 });
 
@@ -176,7 +224,7 @@ async function memberToken(userId, platform, { force = false } = {}) {
 
 streamChat.get('/me/chat-logins', member, async (req, res) => {
   const rows = await q('SELECT platform, login, display_name, created_at FROM chat_logins WHERE user_id=$1', [req.user.id]);
-  res.json({ logins: rows, available: { twitch: ready('twitch'), kick: ready('kick') } });
+  res.json({ logins: rows, available: { twitch: ready('twitch'), youtube: ready('youtube'), kick: ready('kick') } });
 });
 
 streamChat.delete('/me/chat-logins/:platform', member, async (req, res) => {
@@ -207,7 +255,8 @@ streamChat.post('/streams/:id/platform-chat', member, async (req, res) => {
   lastSent.set(req.user.id, Date.now());
   let t = await memberToken(req.user.id, stream.platform);
   if (!t) throw new HttpError(400, `Sign in with ${p.name} to chat here.`, 'chat_signin');
-  if (!stream.channel_id) throw new HttpError(400, `The app is still looking this ${p.name} channel up. Try again in a couple of minutes.`);
+  if (stream.platform === 'youtube' && !stream.video_id) throw new HttpError(400, 'YouTube chat opens once the app has found the live video. Try again in a couple of minutes.');
+  if (stream.platform !== 'youtube' && !stream.channel_id) throw new HttpError(400, `The app is still looking this ${p.name} channel up. Try again in a couple of minutes.`);
   let r = await p.send(t.token, t.row, stream, message);
   if (r.auth === false) {
     t = await memberToken(req.user.id, stream.platform, { force: true });
@@ -219,6 +268,9 @@ streamChat.post('/streams/:id/platform-chat', member, async (req, res) => {
   }
   if (!r.ok) throw new HttpError(400, `${p.name} didn't send it: ${r.reason}`);
   // Kick: show it straight away (the webhook copy, if it comes, has the same id and is skipped).
+  if (stream.platform === 'youtube') {
+    ytPush(ytChat(stream.video_id), { id: String(r.id || `local-${Date.now()}`), user: t.row.display_name || t.row.login, color: '', text: message, at: new Date().toISOString() });
+  }
   if (stream.platform === 'kick') {
     pushKick(stream.channel_id, {
       id: String(r.id || `local-${Date.now()}`), user: t.row.display_name || t.row.login, color: '', text: message, at: new Date().toISOString(),
@@ -314,10 +366,72 @@ bus.on('kick:channels', async (ids) => {
   }
 });
 
-// Recent Kick chat for a stream page (Twitch chat is read by the browser itself).
+// ---------- YouTube chat (read with the API key, only while someone is watching) ----------
+// Each viewer's page asks every few seconds; YouTube itself is asked at most every 10 seconds per stream
+// (or slower if YouTube says so), and the answer is shared by everyone watching.
+const YT_MIN_MS = 10 * 1000;
+const ytChats = new Map(); // video id -> { seq, items: [{ seq, msg }], deleted: [{ seq, id }], pageToken, nextAt, busy, problem, usedAt }
+const ytChat = (videoId) => {
+  if (!ytChats.has(videoId)) ytChats.set(videoId, { seq: 0, items: [], deleted: [], pageToken: '', nextAt: 0, busy: null, problem: '', usedAt: Date.now() });
+  return ytChats.get(videoId);
+};
+function ytPush(c, msg) {
+  if (c.items.some((x) => x.msg.id === msg.id)) return;
+  c.items.push({ seq: ++c.seq, msg });
+  if (c.items.length > 150) c.items.splice(0, c.items.length - 150);
+}
+let ytQuotaProblemAt = null;
+async function ytRefresh(videoId, c) {
+  const key = env('YOUTUBE_API_KEY');
+  const chatId = await ytChatId(videoId);
+  if (!chatId) { c.problem = 'nochat'; c.nextAt = Date.now() + 60 * 1000; return; }
+  const r = await call(`https://www.googleapis.com/youtube/v3/liveChat/messages?liveChatId=${encodeURIComponent(chatId)}&part=snippet,authorDetails&maxResults=200${c.pageToken ? `&pageToken=${encodeURIComponent(c.pageToken)}` : ''}&key=${key}`);
+  if (!r.ok) {
+    const why = ytError(r);
+    c.problem = why === 'quotaExceeded' ? 'quota' : why === 'liveChatEnded' ? 'ended' : why;
+    if (c.problem === 'quota') ytQuotaProblemAt = new Date().toISOString();
+    c.nextAt = Date.now() + (c.problem === 'quota' ? 15 : 2) * 60 * 1000;
+    return;
+  }
+  c.problem = '';
+  c.pageToken = r.data?.nextPageToken || c.pageToken;
+  for (const m of r.data?.items || []) {
+    const sn = m.snippet || {};
+    if (sn.type === 'messageDeletedEvent' && sn.messageDeletedDetails?.deletedMessageId) {
+      c.deleted.push({ seq: ++c.seq, id: sn.messageDeletedDetails.deletedMessageId });
+      if (c.deleted.length > 100) c.deleted.shift();
+    } else if (sn.displayMessage) {
+      const a = m.authorDetails || {};
+      ytPush(c, {
+        id: String(m.id), user: String(a.displayName || 'someone').slice(0, 60), text: String(sn.displayMessage).slice(0, 1000),
+        color: a.isChatOwner ? '#ffd479' : a.isChatModerator ? '#5865f2' : '', at: sn.publishedAt,
+      });
+    }
+  }
+  c.nextAt = Date.now() + Math.max(YT_MIN_MS, Number(r.data?.pollingIntervalMillis) || 0);
+}
+setInterval(() => { for (const [k, c] of ytChats) if (Date.now() - c.usedAt > 10 * 60 * 1000) ytChats.delete(k); }, 5 * 60 * 1000).unref();
+
+// Chat for a stream page: recent Kick chat, or new YouTube chat since `since`. (Twitch is read by the browser.)
 streamChat.get('/streams/:id/platform-chat', member, async (req, res) => {
-  const s = await one("SELECT platform, channel_id FROM stream_accounts WHERE id=$1 AND status='approved'", [Number(req.params.id) || 0]);
+  const s = await one("SELECT platform, channel_id, video_id, is_live FROM stream_accounts WHERE id=$1 AND status='approved'", [Number(req.params.id) || 0]);
   if (!s) throw new HttpError(404, 'Stream not found.');
+  if (s.platform === 'youtube') {
+    if (!env('YOUTUBE_API_KEY')) return res.json({ messages: [], deleted: [], seq: 0, reading: false, problem: 'setup' });
+    if (!s.is_live || !s.video_id) return res.json({ messages: [], deleted: [], seq: 0, reading: false, problem: 'notlive' });
+    const c = ytChat(s.video_id);
+    c.usedAt = Date.now();
+    if (Date.now() >= c.nextAt) {
+      c.busy ||= ytRefresh(s.video_id, c).catch((e) => { c.problem = e.message; c.nextAt = Date.now() + 60 * 1000; }).finally(() => { c.busy = null; });
+      await c.busy;
+    }
+    const since = Number(req.query.since) || 0;
+    return res.json({
+      messages: c.items.filter((x) => x.seq > since).map((x) => x.msg),
+      deleted: c.deleted.filter((x) => x.seq > since).map((x) => x.id),
+      seq: c.seq, reading: !c.problem, problem: c.problem,
+    });
+  }
   res.json({ messages: s.platform === 'kick' ? kickRecent.get(s.channel_id) || [] : [], reading: s.platform !== 'kick' || kickSubbed.has(s.channel_id) });
 });
 
@@ -325,6 +439,7 @@ streamChat.get('/streams/:id/platform-chat', member, async (req, res) => {
 streamChat.get('/admin/stream-chat', role('mod'), async (req, res) => {
   res.json({
     twitch: { ready: ready('twitch'), redirect: redirectUri(req, 'twitch') },
+    youtube: { ready: ready('youtube'), redirect: redirectUri(req, 'youtube'), api_key: !!env('YOUTUBE_API_KEY'), reading: ytChats.size, quota_problem_at: ytQuotaProblemAt },
     kick: {
       ready: ready('kick'), redirect: redirectUri(req, 'kick'), webhook: `${site(req)}/hooks/kick`,
       channels_reading: kickSubbed.size, last_message_at: kickLastMessageAt, problem: kickSubProblem,

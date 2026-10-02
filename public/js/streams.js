@@ -1,13 +1,13 @@
 // Streams tab: who is live, the stream's own player and chat, and WPG chat underneath.
-// Twitch and Kick chat are shown by the app itself; members sign in with their own Twitch / Kick account to
-// type in them (no bot). YouTube uses YouTube's own chat box.
+// Twitch, YouTube and Kick chat are shown by the app itself; members sign in with their own account on that
+// platform to type in them (no bot). Twitch and YouTube can also use the platform's own chat box.
 // Also the "Chat in streams" and "My streams" boxes on Edit profile and the Streams tab in the Command panel.
 import { api, esc, state, toast, fail, confirmBox, onLive, avatar, fmtNum, fmtTime, fmtDate, timeAgo, userLine, query } from './app.js';
 import { icon } from './icons.js';
 
 const PLATFORM_ORDER = ['twitch', 'youtube', 'kick'];
 const NAMES = { twitch: 'Twitch', youtube: 'YouTube', kick: 'Kick' };
-const SIGN_IN = ['twitch', 'kick']; // platforms where members chat from the app with their own account
+const SIGN_IN = ['twitch', 'youtube', 'kick']; // members link their own account on each to chat from the app
 const enc = encodeURIComponent;
 const isStaff = () => ['mod', 'admin'].includes(state.me?.role);
 const platformPill = (p) => `<span class="pill plat ${esc(p)}">${esc(NAMES[p] || p)}</span>`;
@@ -89,7 +89,7 @@ async function viewWatch(main, id, alive) {
   const streamerId = s.user?.id;
   const native = SIGN_IN.includes(s.platform);
   let chatTab = native || chatSrc(s) ? 'platform' : 'wpg';
-  let useTwitchBox = false; // Twitch's own chat box instead of the app's
+  let useOwnBox = false; // the platform's own chat box (Twitch / YouTube) instead of the app's
   const logins = native ? await api('me/chat-logins').catch(() => ({ logins: [], available: {} })) : null;
   if (!alive()) return;
   signinNotice();
@@ -115,15 +115,14 @@ async function viewWatch(main, id, alive) {
   };
 
   const platformChatHtml = () => {
-    if (native && !useTwitchBox) {
+    if (native && !useOwnBox) {
       return `<div class="msgs pchat" id="pmsgs"><p class="empty small" data-pwait>Connecting to ${esc(NAMES[s.platform])} chat…</p></div>
         <div id="pfoot">${chatFootHtml(s, logins)}</div>`;
     }
     const src = chatSrc(s);
     if (src) {
       return frame(src, `${NAMES[s.platform]} chat`, 'stream-chat-frame')
-        + (s.platform === 'twitch' ? '<div class="pchat-note small"><a href="#" data-twitchbox="0">Back to the app\'s Twitch chat</a></div>' : '')
-        + (s.platform === 'youtube' ? '<div class="pchat-note small muted">Sign in to Google in the chat box to type. On the Android app, Google may only allow this if you\'re already signed in.</div>' : '');
+        + `<div class="pchat-note small"><a href="#" data-ownbox="0">Back to the app's ${esc(NAMES[s.platform])} chat</a></div>`;
     }
     const why = s.is_live ? 'YouTube chat shows here once the app knows which video is live.' : 'YouTube chat shows here while the stream is live.';
     return `<div class="empty"><p>${esc(why)}</p><a class="btn small" href="${esc(chatOutside(s))}" target="_blank" rel="noopener">Open ${esc(NAMES[s.platform])} chat</a>
@@ -204,11 +203,11 @@ async function viewWatch(main, id, alive) {
     stopReader();
     const pane = main.querySelector('[data-pane="platform"]');
     pane.innerHTML = platformChatHtml();
-    pane.querySelector('[data-twitchbox]')?.addEventListener('click', (e) => { e.preventDefault(); useTwitchBox = e.currentTarget.dataset.twitchbox === '1'; startPlatformChat(); });
-    if (!native || useTwitchBox) return;
+    pane.querySelector('[data-ownbox]')?.addEventListener('click', (e) => { e.preventDefault(); useOwnBox = false; startPlatformChat(); });
+    if (!native || useOwnBox) return;
     const pbox = pane.querySelector('#pmsgs');
     stopReader = startReader(s, pbox, alive);
-    bindChatFoot(pane.querySelector('#pfoot'), s, logins, () => { useTwitchBox = true; startPlatformChat(); });
+    bindChatFoot(pane.querySelector('#pfoot'), s, logins, () => { useOwnBox = true; startPlatformChat(); });
   };
   startPlatformChat();
 
@@ -223,11 +222,12 @@ async function viewWatch(main, id, alive) {
     if (old.is_live !== s.is_live || old.video_id !== s.video_id || old.live_url !== s.live_url) {
       document.getElementById('playerBox').innerHTML = playerHtml();
       if (!native) main.querySelector('[data-pane="platform"]').innerHTML = platformChatHtml();
+      else if (s.platform === 'youtube') startPlatformChat(); // new live video: new chat
     }
   });
 }
 
-// ---------- Twitch / Kick chat ----------
+// ---------- Twitch / YouTube / Kick chat ----------
 // "Signed in with Twitch" etc. after coming back from the platform's sign-in page.
 function signinNotice() {
   const qs = query();
@@ -240,6 +240,7 @@ function signinNotice() {
     expired: ['Sign-in timed out', 'Please try again.'],
     failed: [`${n} sign-in didn't work`, 'Please try again in a minute.'],
     setup: [`${n} sign-in isn't set up yet`, 'Staff need to add the app keys first.'],
+    nochannel: ['No YouTube channel', 'Chatting on YouTube needs a YouTube channel on your Google account. Make one on youtube.com, then sign in again.'],
   }[r] || ['Sign-in', ''];
   toast(title, body, { error: r !== 'ok' });
   history.replaceState(null, '', location.href.split('?')[0]);
@@ -249,7 +250,7 @@ const signInUrl = (platform, ret) => `/auth/${platform}/start?return=${enc(ret)}
 function chatFootHtml(s, logins) {
   const n = NAMES[s.platform];
   const mine = logins.logins.find((l) => l.platform === s.platform);
-  const twitchBox = s.platform === 'twitch' ? ' · <a href="#" data-usetwitch>Use Twitch\'s own chat box</a>' : '';
+  const twitchBox = chatSrc(s) ? ` · <a href="#" data-useown>Use ${n}'s own chat box</a>` : '';
   if (!logins.available[s.platform]) {
     return `<div class="pchat-note small muted">Chatting from the app isn't set up for ${n} yet. <a href="${esc(chatOutside(s))}" target="_blank" rel="noopener">Open ${n} chat</a>${twitchBox}</div>`;
   }
@@ -260,8 +261,8 @@ function chatFootHtml(s, logins) {
   return `<form class="composer" id="pcomposer"><textarea name="body" placeholder="Chat on ${n} as ${esc(mine.display_name || mine.login)}" maxlength="500" rows="1"></textarea><button class="btn primary" aria-label="Send">${icon('send')}</button></form>
     <div class="pchat-note small muted" style="padding-top:0">Chatting as <b>${esc(mine.display_name || mine.login)}</b> on ${n}${twitchBox}</div>`;
 }
-function bindChatFoot(foot, s, logins, useTwitchBox) {
-  foot.querySelector('[data-usetwitch]')?.addEventListener('click', (e) => { e.preventDefault(); useTwitchBox(); });
+function bindChatFoot(foot, s, logins, useOwnBox) {
+  foot.querySelector('[data-useown]')?.addEventListener('click', (e) => { e.preventDefault(); useOwnBox(); });
   const form = foot.querySelector('#pcomposer');
   if (!form) return;
   const ta = form.body;
@@ -281,7 +282,7 @@ function bindChatFoot(foot, s, logins, useTwitchBox) {
       if (x.code === 'chat_signin') {
         logins.logins = logins.logins.filter((l) => l.platform !== s.platform);
         foot.innerHTML = chatFootHtml(s, logins);
-        bindChatFoot(foot, s, logins, useTwitchBox);
+        bindChatFoot(foot, s, logins, useOwnBox);
       }
     }
   };
@@ -337,7 +338,38 @@ function startReader(s, box, alive) {
     onLive('platform:chat', (d) => { if (d.platform === 'kick' && d.channel === s.channel_id) addLine(box, d.message); });
     return () => {};
   }
+  if (s.platform === 'youtube') return youtubeReader(s, box, alive);
   return twitchReader(s.handle, box, alive);
+}
+
+// YouTube chat comes through the app (it reads it once for everyone watching), asked for every 5 seconds.
+function youtubeReader(s, box, alive) {
+  let stopped = false;
+  let seq = 0;
+  let timer;
+  const status = (text) => { const w = box.querySelector('[data-pwait]'); if (w) w.textContent = text; };
+  const PROBLEMS = {
+    setup: 'Reading YouTube chat in the app isn\'t set up yet (staff need the YouTube API key). Use YouTube\'s own chat box below.',
+    notlive: 'YouTube chat shows here while the stream is live.',
+    nochat: 'This stream has no live chat (or the streamer turned it off).',
+    ended: 'This stream\'s chat has ended.',
+    quota: 'The app has used up today\'s YouTube allowance. Use YouTube\'s own chat box below until tomorrow.',
+  };
+  const tick = async () => {
+    if (stopped || !alive()) return;
+    try {
+      const r = await api(`streams/${s.id}/platform-chat?since=${seq}`);
+      if (stopped || !alive()) return;
+      seq = r.seq;
+      r.deleted.forEach((id) => box.querySelector(`[data-pid="${CSS.escape(id)}"]`)?.remove());
+      r.messages.forEach((m) => addLine(box, m));
+      if (r.problem) status(PROBLEMS[r.problem] || `YouTube chat: ${r.problem}`);
+      else status('Connected. Waiting for chat…');
+    } catch { /* try again next time */ }
+    timer = setTimeout(tick, 5000);
+  };
+  tick();
+  return () => { stopped = true; clearTimeout(timer); };
 }
 
 // Twitch chat is public: the browser joins it anonymously to read (sending goes through the app with the
@@ -396,7 +428,7 @@ function twitchReader(channel, box, alive) {
   return stop;
 }
 
-// ---------- Edit profile: Chat in streams (my Twitch / Kick sign-ins) ----------
+// ---------- Edit profile: Linked accounts (my Twitch / YouTube / Kick sign-ins) ----------
 export async function chatLoginsPanel(el) {
   const d = await api('me/chat-logins');
   signinNotice();
@@ -408,8 +440,9 @@ export async function chatLoginsPanel(el) {
         : '<span class="muted small">Not set up yet</span>';
     return `<div class="row between stream-acct" style="flex-direction:row">${platformPill(p)}<div class="row" style="gap:8px">${action}</div></div>`;
   };
-  el.innerHTML = `<div class="panel-title" style="margin:0">${icon('chat')} Chat in streams <span class="sub">your own accounts</span></div>
-    <p class="muted small" style="margin:0">To talk in a WPG streamer's Twitch or Kick chat from the app, sign in with your own account on that site. Messages go out under your name, just like typing on the site. YouTube streams use YouTube's own chat box. Everyone can use WPG chat.</p>
+  el.innerHTML = `<div class="panel-title" style="margin:0">${icon('chat')} Linked accounts <span class="sub">Twitch · YouTube · Kick</span></div>
+    <p style="margin:0"><b>Linking these 3 accounts is for viewing, chatting and streaming within the app on live streams.</b></p>
+    <p class="muted small" style="margin:0">Watch WPG streams here, chat in them under your own name (just like typing on the site — there's no bot), and if you stream, link your channel in <b>My streams</b> below so your live stream shows here. You only need an account on the platforms you use. Everyone can use WPG chat.</p>
     ${SIGN_IN.map(row).join('')}`;
   el.querySelectorAll('[data-signout]').forEach((b) => {
     b.onclick = async () => {
@@ -544,9 +577,10 @@ export async function streamsAdminTab(body) {
   const c = await api('admin/stream-chat').catch(() => null);
   const copy = (t) => `<code style="overflow-wrap:anywhere;background:#06101c;border:1px solid var(--line);border-radius:6px;padding:2px 6px">${esc(t)}</code>`;
   const chatSetup = c ? `<div class="panel">
-      <div class="panel-title">${icon('chat')} Chat sign-in <span class="sub">members chat with their own Twitch / Kick account</span></div>
+      <div class="panel-title">${icon('chat')} Linked accounts <span class="sub">members chat with their own Twitch / YouTube / Kick account</span></div>
       <p class="small" style="margin:0 0 8px"><b>Twitch</b> ${c.twitch.ready ? '✅' : '⬜ needs TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET'} — in the Twitch developer console, add this <b>OAuth Redirect URL</b> to the app: ${copy(c.twitch.redirect)}</p>
       <p class="small" style="margin:0 0 6px"><b>Kick</b> ${c.kick.ready ? '✅' : '⬜ needs KICK_CLIENT_ID + KICK_CLIENT_SECRET'} — in Kick's developer settings for the app: <b>Redirect URL</b> ${copy(c.kick.redirect)}, turn <b>Webhooks</b> on with the URL ${copy(c.kick.webhook)}, and tick the <b>chat:write</b>, <b>user:read</b> and <b>events:subscribe</b> scopes.</p>
+      <p class="small" style="margin:0 0 8px"><b>YouTube</b> ${c.youtube.ready ? '✅' : '⬜ needs GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET'}${c.youtube.api_key ? '' : ' · ⬜ reading chat needs YOUTUBE_API_KEY'} — in Google Cloud (same project as the API key): <b>APIs &amp; Services → Credentials → Create OAuth client ID → Web application</b>, add the <b>Authorized redirect URI</b> ${copy(c.youtube.redirect)}. On the <b>OAuth consent screen</b> add the <b>youtube.force-ssl</b> scope and press <b>Publish app</b> (Google shows members an "unverified app" warning until Google verifies it).${c.youtube.quota_problem_at ? ` <span style="color:var(--red)">YouTube allowance ran out ${esc(timeAgo(c.youtube.quota_problem_at))}.</span>` : ''}</p>
       <p class="small muted" style="margin:0">Kick chat: reading ${fmtNum(c.kick.channels_reading)} channel${c.kick.channels_reading === 1 ? '' : 's'}${c.kick.last_message_at ? `, last message ${esc(timeAgo(c.kick.last_message_at))}` : ''}${c.kick.problem ? ` · <span style="color:var(--red)">${esc(c.kick.problem)}</span>` : ''}</p>
     </div>` : '';
   body.innerHTML = `<div class="stack">
