@@ -106,6 +106,11 @@ export function rolePill(u) {
   return dev.trim();
 }
 const isPmc = (u) => u?.membership === 'pmc';
+// WPG server rank (from the Discord bot) as shown in the app: "WPG COMMANDER IX" -> "WPG Commander IX".
+export const wpgRankName = (name) => String(name || 'RECRUIT I').split(/\s+/)
+  .map((w) => (/^(WPG|[IVX]+)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(' ');
+// Clan role, kept apart from any rank.
+const roleName = (u) => (!u ? 'Not in app' : u.role === 'admin' ? 'Admin' : u.role === 'mod' ? 'Mod' : isPmc(u) ? 'PMC' : 'Member');
 // PMCs (guests) have no rank, so they get a PMC badge instead.
 export function badgeFor(u, size) {
   return isPmc(u) ? insigniaSVG({}, { size, abbr: 'PMC', color: '#f5a524', title: 'PMC (guest)' }) : rankBadge(u?.rank, size);
@@ -191,6 +196,7 @@ function applyMe(me) {
   state.unread = me.unread_dms;
   state.friendReq = me.friend_requests;
   state.trackerLinked = !!me.tracker_linked;
+  state.wpgServer = me.wpg_server || null;
   state.realSteam = !!me.real_steam;
   state.users.set(me.user.id, me.user);
 }
@@ -272,7 +278,7 @@ const NAV = [
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
   { href: '#/progression', key: 'progression', label: 'Progression', icon: 'unlock' },
-  { href: '#/ranks', key: 'ranks', label: 'Ranks', icon: 'chevrons' },
+  { href: '#/ranks', key: 'ranks', label: 'Clan ranks', icon: 'chevrons' },
   { sep: true },
   { href: () => `#/u/${state.me.id}`, key: 'me', label: 'My career', icon: 'user' },
   { href: '#/profile/edit', key: 'edit', label: 'Edit profile', icon: 'edit' },
@@ -329,7 +335,7 @@ function updateNav() {
     `<a href="#" id="moreBtn">${icon('menu')}<span>More</span></a>`;
   document.getElementById('moreBtn').onclick = (e) => { e.preventDefault(); document.getElementById('menuBtn').click(); };
   const me = state.me;
-  document.getElementById('mecard').innerHTML = `${avatar(me, 'sm')}<div class="grow"><b>${esc(me.name)}</b><div class="muted">${isPmc(me) ? 'PMC' : me.rank ? esc(me.rank.abbr) : 'No rank'} · ${fmtNum(me.xp)} XP</div></div>
+  document.getElementById('mecard').innerHTML = `${avatar(me, 'sm')}<div class="grow"><b>${esc(me.name)}</b><div class="muted">${isPmc(me) ? 'PMC' : me.rank ? esc(me.rank.abbr) : 'No rank'} · ${fmtNum(me.xp)} Clan XP</div></div>
     <button class="btn ghost small" id="logoutBtn" title="Sign out" aria-label="Sign out">${icon('logout')}</button>`;
   document.getElementById('logoutBtn').onclick = logout;
   markActive();
@@ -452,16 +458,16 @@ async function viewHome(main) {
   const cur = me.rank;
   let progress = '';
   if (isPmc(me)) {
-    progress = `<p class="muted small">You're a PMC (guest) — PMCs don't hold a ${esc(state.settings.clan_tag || 'WPG')} rank. You still earn XP (${fmtNum(me.xp)}).</p>`;
+    progress = `<p class="muted small">You're a PMC (guest) — PMCs don't hold a ${esc(state.settings.clan_tag || 'WPG')} rank. You still earn Clan XP (${fmtNum(me.xp)}).</p>`;
   } else if (cur && !cur.auto) {
     progress = '<p class="muted small">Appointed rank — promotions from here are given by command.</p>';
   } else if (next) {
     const base = cur?.auto ? cur.min_xp : 0;
     const pct = Math.max(0, Math.min(100, ((me.xp - base) / (next.min_xp - base)) * 100));
-    progress = `<div class="row between small"><span>${fmtNum(me.xp)} XP</span><span class="muted">Next: ${esc(next.name)} at ${fmtNum(next.min_xp)} XP</span></div>
+    progress = `<div class="row between small"><span>${fmtNum(me.xp)} Clan XP</span><span class="muted">Next: ${esc(next.name)} at ${fmtNum(next.min_xp)} Clan XP</span></div>
       <div class="xpbar"><div style="width:${pct.toFixed(1)}%"></div></div>`;
   } else {
-    progress = '<p class="muted small">Top of the XP ladder. Higher ranks are appointed by command.</p>';
+    progress = '<p class="muted small">Top of the Clan XP ladder. Higher ranks are appointed by command.</p>';
   }
   // In game (from Steam, Wardogs first) and online in the app.
   const inGame = () => members.filter((u) => state.playing[u.id])
@@ -488,6 +494,8 @@ async function viewHome(main) {
             <div class="metal" style="font-size:34px;line-height:1.1;overflow-wrap:anywhere">${esc(me.name)}</div>
             <div class="accent" style="font:700 19px var(--head);text-transform:uppercase;letter-spacing:1px">${isPmc(me) ? 'PMC · Guest' : cur ? `${esc(cur.name)} · ${esc(cur.abbr)}` : 'Unranked'}</div>
             <div style="margin-top:10px;max-width:520px">${progress}</div>
+            <div class="row small" style="margin-top:8px;gap:8px"><span class="pill">${esc(state.settings.clan_tag || 'WPG')} server rank</span>
+              <b>${esc(wpgRankName(state.wpgServer?.name))}</b><span class="muted">· ${fmtNum(state.wpgServer?.xp || 0)} ${esc(state.settings.clan_tag || 'WPG')} XP</span></div>
             ${state.settings.welcome_message ? `<p class="muted" style="margin:10px 0 0;max-width:560px">${esc(state.settings.welcome_message)}</p>` : ''}
             <div class="row" style="margin-top:14px"><a class="btn primary" href="#/u/${me.id}">${icon('user')} My career</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button></div>
           </div>
@@ -767,9 +775,11 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
           <div class="tiles">
-            ${tile('trophy', 'Server rank', `#${fmtNum(p.wpg_position)}`)}
-            ${tile('chevrons', `${state.settings.clan_tag || 'WPG'} rank`, isPmc(u) ? 'PMC — no rank' : u.rank ? u.rank.name : '—', isPmc(u) ? 'pmc' : '')}
-            ${tile('star', `${state.settings.clan_tag || 'WPG'} XP`, fmtNum(u.xp))}
+            ${tile('chevrons', `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name))}
+            ${tile('star', `${state.settings.clan_tag || 'WPG'} XP`, fmtNum(p.wpg_server?.xp || 0))}
+            ${tile('trophy', 'Server position', p.wpg_server?.position ? `#${fmtNum(p.wpg_server.position)}` : '—')}
+            ${tile('shield', 'Clan rank', isPmc(u) ? 'PMC — no rank' : u.rank ? u.rank.name : '—', isPmc(u) ? 'pmc' : '')}
+            ${tile('xp', 'Clan XP', fmtNum(u.xp))}
           </div>
           <h4 style="margin:18px 0 10px" class="row">${icon('skull', 'width="18" height="18"')} ${esc(state.settings.clan_tag || 'WPG')} server stats <span class="accent">(all time)</span></h4>
           <div class="tiles" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr))">
@@ -1235,7 +1245,7 @@ async function viewMembers(main, _r, alive) {
     const list = await api(`members?search=${encodeURIComponent(input.value)}`);
     if (!alive()) return;
     document.getElementById('mlist').innerHTML = list.length ? list.map((u) => `
-      <a class="item" href="#/u/${u.id}"><div class="grow">${userLine(u, `${fmtNum(u.xp)} XP`)}</div>${flag(u.country)}</a>`).join('') : '<p class="empty">No members found.</p>';
+      <a class="item" href="#/u/${u.id}"><div class="grow">${userLine(u, `${fmtNum(u.xp)} Clan XP`)}</div>${flag(u.country)}</a>`).join('') : '<p class="empty">No members found.</p>';
   }
   input.oninput = () => { clearTimeout(t); t = setTimeout(load, 250); };
   await load();
@@ -1546,7 +1556,7 @@ async function viewServers(main, _r, alive) {
 
 // ---------- Leaderboard ----------
 // The WPG game server's own leaderboard (counted live from the server).
-const SERVER_SORTS = [['kills', 'Kills'], ['kd', 'K/D'], ['wins', 'Wins'], ['matches', 'Matches'], ['playtime', 'Playtime']];
+const SERVER_SORTS = [['wpgxp', 'WPG XP'], ['kills', 'Kills'], ['kd', 'K/D'], ['wins', 'Wins'], ['matches', 'Matches'], ['playtime', 'Playtime']];
 async function serverBoardHtml(sort, serverId) {
   const d = await api(`server-leaderboard?by=${sort}${serverId ? `&server=${serverId}` : ''}`);
   if (!d.servers.length) {
@@ -1565,28 +1575,30 @@ async function serverBoardHtml(sort, serverId) {
       <div class="row" style="gap:6px;margin-bottom:12px"><span class="muted small">Sort by</span>
         ${SERVER_SORTS.map(([k, l]) => `<a class="btn small${k === d.by ? ' primary' : ''}" href="${link({ sort: k })}">${l}</a>`).join('')}</div>
       <div class="table-wrap"><table class="sb-table">
-        <thead><tr><th>#</th><th>Player</th><th>Kills</th><th class="sb-x">Deaths</th><th>K/D</th><th class="sb-m">Matches</th><th>Wins</th><th class="sb-x">Losses</th><th class="sb-x">W/L</th><th>Playtime</th><th class="sb-x">${esc(tag)} rank</th><th class="sb-x">${esc(tag)} XP</th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Kills</th><th class="sb-x">Deaths</th><th>K/D</th><th class="sb-m">Matches</th><th>Wins</th><th class="sb-x">Losses</th><th class="sb-x">W/L</th><th>Playtime</th><th>${esc(tag)} rank</th><th class="sb-x">${esc(tag)} XP</th><th class="sb-x">Role</th><th class="sb-x">Clan rank</th></tr></thead>
         <tbody>${d.rows.map((r, i) => `<tr>
           <td><b style="color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">${i + 1}</b></td>
           <td class="sb-name">${r.member ? `<a href="#/u/${r.member.id}">${esc(r.name)}</a>` : esc(r.name)}</td>
           <td>${fmtNum(r.kills)}</td><td class="sb-x">${fmtNum(r.deaths)}</td><td>${ratio(r.kills, r.deaths)}</td>
           <td class="sb-m">${fmtNum(r.matches)}</td><td>${fmtNum(r.wins)}</td><td class="sb-x">${fmtNum(r.losses)}</td><td class="sb-x">${ratio(r.wins, r.losses)}</td>
           <td>${fmtMins(Math.floor(r.playtime_s / 60))}</td>
-          <td class="sb-x">${r.member ? `<span class="accent" style="font:700 13px var(--head);text-transform:uppercase">${esc(isPmc(r.member) ? 'PMC' : r.member.rank?.abbr || '—')}</span>` : '<span class="muted small">Guest</span>'}</td>
-          <td class="sb-x">${r.member ? fmtNum(r.member.xp) : '—'}</td>
-        </tr>`).join('') || '<tr><td colspan="12" class="muted">Nobody yet — stats appear after players join the server.</td></tr>'}</tbody>
+          <td><span class="accent" style="font:700 13px var(--head);text-transform:uppercase;white-space:nowrap">${esc(wpgRankName(r.wpg?.name))}</span></td>
+          <td class="sb-x">${fmtNum(r.wpg?.xp || 0)}</td>
+          <td class="sb-x">${r.member ? esc(roleName(r.member)) : '<span class="muted small">Not in app</span>'}</td>
+          <td class="sb-x">${r.member && !isPmc(r.member) && r.member.rank ? esc(r.member.rank.abbr) : '<span class="muted">—</span>'}</td>
+        </tr>`).join('') || '<tr><td colspan="14" class="muted">Nobody yet — stats appear after players join the server.</td></tr>'}</tbody>
       </table></div>
-      <p class="muted small" style="margin:10px 0 0">Wins and losses count when a match ends (your team had the top score). Guests are players not in the app.</p>
+      <p class="muted small" style="margin:10px 0 0">${esc(tag)} rank and ${esc(tag)} XP come from the ${esc(tag)} Discord bot, so they match Discord exactly (everyone starts at Recruit I). Clan rank is the app's own member rank. Wins and losses count when a match ends (your team had the top score).</p>
     </div>`;
 }
 
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'xp';
-  const tabs = [['server', `${state.settings.clan_tag || 'WPG'} server`], ['xp', `${state.settings.clan_tag || 'WPG'} XP`], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['server', `${state.settings.clan_tag || 'WPG'} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
   if (by === 'server') {
     main.innerHTML = `<h1>Leaderboard</h1>
       <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
-      ${await serverBoardHtml(query().get('sort') || 'kills', query().get('server'))}`;
+      ${await serverBoardHtml(query().get('sort') || 'wpgxp', query().get('server'))}`;
     onLive('server-board', () => route());
     return;
   }
@@ -1741,7 +1753,7 @@ function xpRulesHtml(x) {
   return `
     ${x.event ? `<div class="panel glow xp-event"><span class="script" style="font-size:22px">XP event</span><div style="font:700 20px var(--head);text-transform:uppercase;margin-top:6px">${esc(x.event)}</div></div>` : ''}
     <div class="panel">
-      <div class="panel-title">${icon('xp')} How to earn <span class="sub">${esc(tag)} XP</span></div>
+      <div class="panel-title">${icon('xp')} How to earn <span class="sub">Clan XP</span></div>
       <div class="xp-rules">${rows.map(([ic, what, how]) => `
         <div class="xp-rule"><span class="ic">${icon(ic)}</span><span class="grow">${esc(what)}</span><b>${esc(how)}</b></div>`).join('')}</div>
       <ul class="muted small" style="margin:14px 0 0;padding-left:18px;line-height:1.7">
@@ -1758,7 +1770,8 @@ async function viewRanks(main) {
   const [ranks, rules] = await Promise.all([api('ranks'), api('xp-rules')]);
   onLive('config', (name) => { if (['settings', 'stat-defs', 'games', 'ranks'].includes(name)) route(); });
   onLive('me', () => route());
-  main.innerHTML = `<h1>Rank structure</h1>
+  main.innerHTML = `<h1>Clan rank structure</h1>
+    <p class="muted small" style="margin:-6px 0 12px">These are the app's clan ranks, earned with Clan XP. The WPG server rank (Recruit I to Wardog X) comes from the WPG Discord bot and shows on the leaderboard and profiles.</p>
     <p class="muted">Our insignia combine US and British Army symbols: US chevrons, rockers, bars, oak leaves and stars with the British crown, pips and crossed sword &amp; baton.
     Ranks marked <b>XP</b> are earned automatically. Ranks marked <b>Appointed</b> are given by command.
     You have <b style="color:var(--text)">${fmtNum(state.me.xp)} XP</b>.</p>

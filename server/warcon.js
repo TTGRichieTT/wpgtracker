@@ -36,7 +36,7 @@ export async function syncWarcon() {
   for (const p of players) {
     const sid = String(p.steamId || '');
     if (!/^\d{17}$/.test(sid)) continue;
-    const name = String(p.name || '').slice(0, 64) || sid;
+    const name = String(p.name || '').trim().slice(0, 64) || sid;
     const num = (v) => Math.max(0, Math.round(Number(v) || 0));
     const seen = p.lastSeen && !Number.isNaN(Date.parse(p.lastSeen)) ? new Date(p.lastSeen).toISOString() : null;
     await q(

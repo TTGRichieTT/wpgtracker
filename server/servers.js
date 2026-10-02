@@ -425,14 +425,18 @@ const BOARD_SORT = {
   wins: 'wins DESC, matches DESC',
   matches: 'matches DESC, playtime_s DESC',
   playtime: 'playtime_s DESC',
+  wpgxp: 'COALESCE(p.xp, 0) DESC, kills DESC',
 };
 servers.get('/server-leaderboard', member, async (req, res) => {
   const list = await q("SELECT id, name, join_code FROM game_servers WHERE enabled = true AND rcon_url <> '' ORDER BY sort_order, id");
   const server = list.find((s) => s.id === int(req.query.server)) || list[0];
   if (!server) return res.json({ servers: [], rows: [] });
-  const by = BOARD_SORT[req.query.by] ? req.query.by : 'kills';
+  const by = BOARD_SORT[req.query.by] ? req.query.by : 'wpgxp';
   const rows = await q(
-    `SELECT sp.*, u.id AS user_id FROM server_players sp LEFT JOIN users u ON u.steam_id = sp.steam_id AND u.status = 'active'
+    `SELECT sp.*, u.id AS user_id, p.xp AS wpg_xp, p.rank_level AS wpg_rank_level, p.rank_name AS wpg_rank_name
+       FROM server_players sp
+       LEFT JOIN users u ON u.steam_id = sp.steam_id AND u.status = 'active'
+       LEFT JOIN server_progress p ON p.steam_id = sp.steam_id
       WHERE sp.server_id = $1 ORDER BY ${BOARD_SORT[by]}, sp.name LIMIT 200`,
     [server.id],
   );
@@ -446,7 +450,8 @@ servers.get('/server-leaderboard', member, async (req, res) => {
     by,
     updated: st?.updated_at || null,
     rows: rows.map((r) => ({
-      name: r.name,
+      // Some in-game names are blank or only invisible characters.
+      name: String(r.name || '').replace(/[\s​-‏⁠﻿]+/g, ' ').trim() || `Player …${String(r.steam_id).slice(-4)}`,
       kills: r.kills,
       deaths: r.deaths,
       matches: r.matches,
@@ -454,6 +459,8 @@ servers.get('/server-leaderboard', member, async (req, res) => {
       losses: r.losses,
       playtime_s: r.playtime_s,
       last_seen: r.last_seen,
+      // WPG server progression straight from the bot; no data yet = the starting rank.
+      wpg: { xp: Number(r.wpg_xp) || 0, level: Number(r.wpg_rank_level) || 1, name: r.wpg_rank_name || 'RECRUIT I' },
       member: r.user_id ? byId.get(r.user_id) || null : null,
     })),
   });

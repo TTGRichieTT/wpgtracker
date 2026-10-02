@@ -286,6 +286,17 @@ export const rotationQueue = pgTable('rotation_queue', {
   created_at: now(),
 });
 
+// WPG server progression (WPG XP + the 200 ranks), copied from the Discord bot, which is the source
+// of truth. The app never works these out itself. Separate from clan ranks / clan XP.
+export const serverProgress = pgTable('server_progress', {
+  steam_id: text().primaryKey(),
+  bot_name: text().notNull().default(''),
+  xp: integer().notNull().default(0),
+  rank_level: integer().notNull().default(1),
+  rank_name: text().notNull().default(''),
+  synced_at: now(),
+});
+
 export const gameServers = pgTable('game_servers', {
   id: serial().primaryKey(),
   join_code: text().notNull().unique('game_servers_join_code_key'),

@@ -34,6 +34,7 @@ api.get('/me', signedIn, async (req, res) => {
   const unread = await one('SELECT COUNT(*)::int AS n FROM dms WHERE recipient_id=$1 AND read_at IS NULL', [req.user.id]);
   const requests = await one("SELECT COUNT(*)::int AS n FROM friends WHERE addressee_id=$1 AND status='pending'", [req.user.id]);
   const tracker = await one('SELECT official IS NOT NULL AS linked FROM wardogs_stats WHERE user_id=$1', [req.user.id]);
+  const prog = await one('SELECT xp, rank_level, rank_name FROM server_progress WHERE steam_id=$1', [req.user.steam_id]);
   // Hand this device a "remember me" key once per sign-in, so it can sign back in if the cookie is lost.
   let rememberToken;
   if (!req.session.rememberSent) {
@@ -45,6 +46,7 @@ api.get('/me', signedIn, async (req, res) => {
     unread_dms: unread.n,
     friend_requests: requests.n,
     tracker_linked: !!tracker?.linked,
+    wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I' },
     real_steam: /^\d{17}$/.test(req.user.steam_id),
     ...(rememberToken ? { remember_token: rememberToken } : {}),
   });
@@ -200,6 +202,9 @@ api.get('/users/:id', member, async (req, res) => {
     `SELECT COUNT(*)::int + 1 AS pos FROM users WHERE status='active' AND xp > $1`,
     [u.xp],
   );
+  // WPG server rank + WPG XP from the Discord bot (separate from clan rank / clan XP).
+  const prog = await one('SELECT xp, rank_level, rank_name FROM server_progress WHERE steam_id=$1', [u.steam_id]);
+  const progPos = prog ? await one('SELECT COUNT(*)::int + 1 AS pos FROM server_progress WHERE xp > $1', [prog.xp]) : null;
   // Every achievement of each tracked game, marked earned or not (only games this member has synced).
   const medals = await q(
     `SELECT sa.app_id, g.name AS game, sa.api_name, sa.name, sa.description, sa.icon, sa.icon_gray,
@@ -225,6 +230,7 @@ api.get('/users/:id', member, async (req, res) => {
     wardogs: wardogs?.official ? { ...wardogs, official: { ...wardogs.official, accountWorth: Number(wardogs.account_worth) } } : wardogs || {},
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
     wpg_position: serverRank.pos,
+    wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', position: progPos?.pos || null },
     friend,
   });
 });
