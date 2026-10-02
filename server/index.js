@@ -17,6 +17,7 @@ import { startWarconSync } from './warcon.js';
 import { startProgressSync } from './progress.js';
 import { discordBot, startDiscordBot } from './discordbot.js';
 import { killFeed, cheat, startCheatWatch } from './cheatwatch.js';
+import { streams, startStreamWatch } from './streams.js';
 import { startKeepAwake } from './keepawake.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
@@ -71,6 +72,8 @@ app.use((_req, res, next) => {
       "font-src 'self' https://fonts.gstatic.com",
       "script-src 'self'",
       "connect-src 'self' ws: wss:",
+      // Stream players and chats on the Streams tab.
+      "frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com https://www.youtube-nocookie.com https://player.kick.com https://www.facebook.com",
       "frame-ancestors 'none'",
     ].join('; '),
   });
@@ -193,6 +196,7 @@ app.use('/api/ingest', ingest);
 app.use('/api/admin', admin);
 app.use('/api', servers);
 app.use('/api', cheat);
+app.use('/api', streams);
 app.use('/api', discord);
 app.use('/api', api);
 app.use('/api', (_req, _res) => {
@@ -234,6 +238,7 @@ startWarconSync(pushMemberStats);
 startProgressSync();
 startDiscordBot();
 startCheatWatch();
+startStreamWatch();
 startKeepAwake();
 setInterval(() => {
   store.prune().catch(() => {});

@@ -5,6 +5,7 @@ import { usersWithRanks, visibleChannels } from './routes.js';
 import { publicUser } from './util.js';
 import { mentionedUserIds } from './mentions.js';
 import { playingNow } from './playing.js';
+import { liveStreamCount } from './streams.js';
 
 export function startRealtime(httpServer, sessionMiddleware) {
   const io = new Server(httpServer, { cors: { origin: false } });
@@ -31,6 +32,7 @@ export function startRealtime(httpServer, sessionMiddleware) {
     online.set(user.id, (online.get(user.id) || 0) + 1);
     broadcastPresence();
     socket.emit('playing', playingNow());
+    socket.emit('streams', liveStreamCount());
     q('UPDATE users SET last_seen=now() WHERE id=$1', [user.id]).catch(() => {});
 
     socket.on('typing', (channelId) => {
@@ -62,6 +64,13 @@ export function startRealtime(httpServer, sessionMiddleware) {
   });
   bus.on('dms:read', (userId) => io.to(`u:${userId}`).emit('counts'));
   bus.on('notify', (userId, n) => io.to(`u:${userId}`).emit('notify', n));
+  bus.on('streams:changed', (n) => io.emit('streams', n));
+  bus.on('stream:chat', async (msg) => {
+    const author = await one('SELECT * FROM users WHERE id=$1', [msg.user_id]);
+    const [user] = author ? await usersWithRanks([author]) : [null];
+    io.emit('stream:chat', { message: msg, user });
+  });
+  bus.on('stream:chat:deleted', (d) => io.emit('stream:chat:deleted', d));
   bus.on('server:board', (serverId) => io.emit('server:board', serverId));
   bus.on('playing', (map) => io.emit('playing', map));
   bus.on('user:changed', (userId) => io.to(`u:${userId}`).emit('me:changed'));

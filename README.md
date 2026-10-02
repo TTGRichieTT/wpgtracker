@@ -88,6 +88,22 @@ Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
 - Every server action is saved in Admin → Audit log.
 - The RCON password is never shown again after saving. Leave the box empty to keep it.
 
+## 4b. Streams tab
+
+Members who stream on Twitch, YouTube, Kick or Facebook link their channel in **Edit profile → My streams**.
+A mod approves it in **Command panel → Streams** (open the link first and check it's really theirs). Approved streamers show
+on the **Streams** tab with the stream's own player and chat, plus a WPG chat everyone in the app can use.
+
+- **Spotting who's live** (optional, Render → Environment). Without a key, streamers on that platform press **I'm live** instead.
+  - Twitch: `TWITCH_CLIENT_ID` + `TWITCH_CLIENT_SECRET` from https://dev.twitch.tv/console/apps
+  - YouTube: `YOUTUBE_API_KEY` (Google Cloud → enable *YouTube Data API v3* → Credentials → API key)
+  - Kick: `KICK_CLIENT_ID` + `KICK_CLIENT_SECRET` from https://kick.com/settings/developer
+  - Facebook can't be checked: Facebook streamers always press **I'm live** and paste their live video link.
+- **Discord "… is live" posts**: Command panel → Settings → Streams → paste the channel ID.
+- **Stream keys** are optional. They're encrypted when saved and never shown again, to anyone. The app doesn't use them yet.
+- **Chat inside the app**: Twitch and YouTube chat show in the app (viewers sign in to Twitch or Google to type).
+  Kick and Facebook don't allow that, so there's an "Open chat" button; the WPG chat works for every platform.
+
 ## 5. How stats and XP work
 
 - **Global Wardogs stats** (level, XP, cash, role levels) come from **WARDOGS Tracker** (wardogstracker.gg).

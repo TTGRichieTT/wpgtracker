@@ -29,3 +29,18 @@ services:
         sync: false
       - key: INGEST_KEY
         generateValue: true
+      # Streams tab: live checks (optional, each platform works on its own).
+      - key: TWITCH_CLIENT_ID
+        sync: false
+      - key: TWITCH_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: KICK_CLIENT_ID
+        sync: false
+      - key: KICK_CLIENT_SECRET
+        sync: false
+      # Optional: encrypts members' stream keys (without it the app makes its own and keeps it in the
+      # database). Only set it before anyone saves a stream key, and never change it after.
+      - key: STREAM_KEY_SECRET
+        sync: false

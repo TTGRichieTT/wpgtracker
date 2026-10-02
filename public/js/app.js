@@ -9,6 +9,7 @@ export const state = {
   playing: {}, // userId -> { game, appId } from Steam
   unread: 0,
   friendReq: 0,
+  liveStreams: 0, // approved streamers live right now
   socket: null,
   users: new Map(),
 };
@@ -275,6 +276,7 @@ const NAV = [
   { href: '#/messages', key: 'messages', label: 'Messages', icon: 'mail', count: () => state.unread },
   { href: '#/friends', key: 'friends', label: 'Friends', icon: 'friends', count: () => state.friendReq },
   { href: '#/servers', key: 'servers', label: 'Servers', icon: 'server' },
+  { href: '#/streams', key: 'streams', label: 'Streams', icon: 'live', count: () => state.liveStreams },
   { href: '#/members', key: 'members', label: 'Members', icon: 'users' },
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
@@ -401,6 +403,17 @@ function connectSocket() {
   socket.on('me:changed', refreshMe);
   socket.on('friends:changed', () => { refreshMe(); emitLive('friends', null); });
   socket.on('server:board', () => emitLive('server-board'));
+  socket.on('streams', (n) => {
+    const changed = state.liveStreams !== n;
+    state.liveStreams = Number(n) || 0;
+    if (changed) updateNav();
+    emitLive('streams', n);
+  });
+  socket.on('stream:chat', (d) => {
+    if (d.user) state.users.set(d.user.id, d.user);
+    emitLive('stream:chat', d);
+  });
+  socket.on('stream:chat:deleted', (d) => emitLive('stream:chat:deleted', d));
   socket.on('config:changed', async (name) => {
     if (name === 'settings') state.settings = await api('settings/public').catch(() => state.settings);
     emitLive('config', name);
@@ -428,6 +441,7 @@ async function route() {
     friends: viewFriends,
     members: viewMembers,
     servers: viewServers,
+    streams: async (m, r, alive) => (await import('./streams.js')).viewStreams(m, r, alive),
     leaderboard: viewLeaderboard,
     progression: viewTools,
     tools: () => { location.hash = '#/progression'; },
@@ -503,6 +517,7 @@ async function viewHome(main) {
         </div>
       </div>
       ${needsTracker() ? trackerCardHtml() : ''}
+      <div class="panel" id="liveNow" hidden></div>
       <div class="grid two">
         <div class="panel">
           <div class="panel-title">${icon('bell')} Orders & news</div>
@@ -530,6 +545,9 @@ async function viewHome(main) {
   };
   onLive('presence', redrawDuty);
   onLive('playing', redrawDuty);
+  const showLive = () => import('./streams.js').then((m) => m.liveStrip(document.getElementById('liveNow'))).catch(() => {});
+  showLive();
+  onLive('streams', showLive);
 }
 
 async function syncMine(e) {
@@ -890,7 +908,14 @@ async function viewEditProfile(main) {
            <div class="row"><button type="button" class="btn ghost" id="dunlink">Unlink Discord</button></div>`
         : `<p style="margin:0">Link once so the Barracks bot in Discord knows who you are. In Discord, type <b>/link</b>. The bot gives you a code — type it here.</p>
            <div class="row"><input type="text" name="code" maxlength="12" placeholder="Code from /link" class="grow" style="min-width:140px;text-transform:uppercase"><button class="btn primary">${icon('discord')} Link</button></div>`}
-    </form>`;
+    </form>
+    <div class="panel stack" id="streams" style="margin-top:16px"><div class="spinner"></div></div>`;
+  import('./streams.js').then(async (m) => {
+    const el = document.getElementById('streams');
+    if (!el) return;
+    await m.myStreamsPanel(el);
+    if (location.hash.endsWith('#streams')) el.scrollIntoView({ behavior: 'smooth' });
+  }).catch((x) => { const el = document.getElementById('streams'); if (el) el.innerHTML = `<p class="muted small">${esc(x.message)}</p>`; });
   document.getElementById('dlink').onsubmit = async (e) => {
     e.preventDefault();
     try {
