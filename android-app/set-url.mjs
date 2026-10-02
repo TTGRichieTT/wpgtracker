@@ -23,8 +23,9 @@ const config = {
     url: url.origin,
     cleartext: false,
     errorPath: 'offline.html',
-    // Steam sign-in must stay inside the app so the login sticks.
-    allowNavigation: [url.hostname, 'steamcommunity.com', '*.steamcommunity.com', '*.steampowered.com', '*.steamstatic.com'],
+    // Steam sign-in, and Twitch / Kick sign-in for stream chat, must stay inside the app so the login sticks.
+    allowNavigation: [url.hostname, 'steamcommunity.com', '*.steamcommunity.com', '*.steampowered.com', '*.steamstatic.com',
+      'id.twitch.tv', 'www.twitch.tv', 'passport.twitch.tv', 'id.kick.com', 'kick.com', 'www.kick.com'],
   },
   android: {
     backgroundColor: '#050a12',

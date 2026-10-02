@@ -1,16 +1,15 @@
-// Streams: members who stream on Twitch, YouTube, Kick or Facebook link their channel, staff approve it,
+// Streams: members who stream on Twitch, YouTube or Kick link their channel, staff approve it,
 // and the Streams tab shows who is live with the stream's own player and chat plus a WPG chat underneath.
 //  - Live checks every 90 seconds, using each platform's API (keys in Render, see README):
 //      Twitch  TWITCH_CLIENT_ID + TWITCH_CLIENT_SECRET
 //      YouTube YOUTUBE_API_KEY
 //      Kick    KICK_CLIENT_ID + KICK_CLIENT_SECRET
-//    Facebook can't be checked, so Facebook streamers press "I'm live" and paste the link. Any streamer can
-//    do the same when the checker for their platform isn't set up.
+//    When the checker for a platform isn't set up, streamers press "I'm live" instead.
 //  - Stream keys are encrypted and write-only: no route ever sends one (or any part of one) back out.
-import crypto from 'node:crypto';
 import express from 'express';
 import { q, one, audit } from './db.js';
 import { bus } from './bus.js';
+import { seal } from './secretbox.js';
 import { usersWithRanks } from './routes.js';
 import { HttpError, member, role, roleAtLeast, str, int } from './util.js';
 
@@ -20,14 +19,12 @@ export const PLATFORMS = {
   twitch: { name: 'Twitch', channel: (h) => `https://www.twitch.tv/${h}` },
   youtube: { name: 'YouTube', channel: (h, cid) => (h.startsWith('@') ? `https://www.youtube.com/${h}` : `https://www.youtube.com/channel/${cid || h}`) },
   kick: { name: 'Kick', channel: (h) => `https://kick.com/${h}` },
-  facebook: { name: 'Facebook', channel: (h) => `https://www.facebook.com/${h}` },
 };
-const env = (k) => String(process.env[k] || '').trim();
+export const env = (k) => String(process.env[k] || '').trim();
 const AUTO = {
   twitch: () => !!(env('TWITCH_CLIENT_ID') && env('TWITCH_CLIENT_SECRET')),
   youtube: () => !!env('YOUTUBE_API_KEY'),
   kick: () => !!(env('KICK_CLIENT_ID') && env('KICK_CLIENT_SECRET')),
-  facebook: () => false,
 };
 
 const POLL_MS = 90 * 1000;
@@ -70,25 +67,12 @@ export function cleanHandle(platform, raw) {
     if (!/^@[\w.-]{3,30}$/.test(v)) bad('Use your YouTube @handle (like @WPGRichie) or your channel link.');
     return v;
   }
-  if (platform === 'facebook') {
-    const u = /[./]/.test(v) ? urlPath(v, ['facebook.com', 'fb.com']) : null;
-    if (u) v = u.pathname.split('/').filter(Boolean)[0] || '';
-    if (!/^[\w.-]{2,80}$/.test(v) || /^(watch|videos|profile\.php|groups|events|gaming)$/i.test(v)) {
-      bad('Use your Facebook page name or the link to your page (like facebook.com/WPGRichie).');
-    }
-    return v;
-  }
   bad('Unknown platform.');
 }
 
 // "I'm live" links. Returns what to store, or throws.
 function cleanLiveLink(platform, raw) {
   const v = str(raw, 500);
-  if (platform === 'facebook') {
-    const u = urlPath(v, ['facebook.com', 'fb.watch']);
-    if (!u || u.protocol !== 'https:') throw new HttpError(400, 'Paste the link to your Facebook live video (facebook.com/… or fb.watch/…).');
-    return { live_url: `https://${u.hostname === 'fb.watch' ? 'fb.watch' : 'www.facebook.com'}${u.pathname}${u.search}`, video_id: '' };
-  }
   if (platform === 'youtube') {
     if (!v) return { live_url: '', video_id: '' }; // the player can still find the live stream from the channel
     const u = urlPath(v, ['youtube.com', 'youtu.be']);
@@ -101,26 +85,8 @@ function cleanLiveLink(platform, raw) {
   return { live_url: '', video_id: '' };
 }
 
-// ---------- Stream keys (encrypted, write-only) ----------
-// AES-256-GCM. The secret is STREAM_KEY_SECRET from the host, or one made once and kept in the database.
-let keySecret = null;
-async function cipherKey() {
-  if (!keySecret) {
-    let secret = env('STREAM_KEY_SECRET');
-    if (!secret) {
-      await q("INSERT INTO settings (key, value) VALUES ('_stream_key_secret', $1) ON CONFLICT DO NOTHING", [crypto.randomBytes(32).toString('hex')]);
-      secret = (await one("SELECT value FROM settings WHERE key='_stream_key_secret'")).value;
-    }
-    keySecret = crypto.createHash('sha256').update(`wpg-stream-keys:${secret}`).digest();
-  }
-  return keySecret;
-}
-async function encryptKey(plain) {
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', await cipherKey(), iv);
-  const data = Buffer.concat([c.update(plain, 'utf8'), c.final()]);
-  return ['v1', iv.toString('base64'), c.getAuthTag().toString('base64'), data.toString('base64')].join(':');
-}
+// ---------- Stream keys ----------
+// Encrypted with seal() (secretbox.js) and write-only: nothing ever opens them or sends them back out.
 
 // ---------- What the browser gets ----------
 // Never includes stream_key_enc.
@@ -168,7 +134,7 @@ async function changed() {
 }
 
 // ---------- Live checks ----------
-async function getJson(url, opts = {}) {
+export async function getJson(url, opts = {}) {
   const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(15000) });
   if (!res.ok) {
     const err = new Error(`${new URL(url).hostname} answered ${res.status}`);
@@ -181,7 +147,7 @@ const chunks = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (
 
 // App sign-in for Twitch and Kick (client credentials), kept until shortly before it runs out.
 const tokens = {};
-async function appToken(name, url, id, secret) {
+export async function appToken(name, url, id, secret) {
   const t = tokens[name];
   if (t && t.exp > Date.now()) return t.value;
   const d = await getJson(url, {
@@ -222,6 +188,16 @@ const CHECK = {
             thumbnail: String(s.thumbnail_url || '').replace('{width}', '640').replace('{height}', '360'),
           });
         }
+      }
+    }
+    // Twitch account ids (sending chat needs them), looked up once per channel.
+    const missing = rows.filter((r) => !r.channel_id);
+    for (const part of chunks(missing, 100)) {
+      const d = await call(`https://api.twitch.tv/helix/users?${part.map((r) => `login=${encodeURIComponent(r.handle)}`).join('&')}`);
+      const byLogin = new Map((d.data || []).map((u) => [String(u.login).toLowerCase(), String(u.id)]));
+      for (const r of part) {
+        const uid = byLogin.get(r.handle);
+        if (uid) { r.channel_id = uid; await q('UPDATE stream_accounts SET channel_id=$2 WHERE id=$1', [r.id, uid]); }
       }
     }
     return live;
@@ -274,6 +250,9 @@ const CHECK = {
       const bySlug = new Map((d.data || []).map((c) => [String(c.slug).toLowerCase(), c]));
       for (const r of part) {
         const c = bySlug.get(r.handle);
+        // Kick account id: sending and reading chat need it.
+        const uid = c?.broadcaster_user_id ? String(c.broadcaster_user_id) : '';
+        if (uid && uid !== r.channel_id) { r.channel_id = uid; await q('UPDATE stream_accounts SET channel_id=$2 WHERE id=$1', [r.id, uid]); }
         const s = c?.stream;
         if (s?.is_live) {
           live.set(r.id, {
@@ -284,6 +263,7 @@ const CHECK = {
         }
       }
     }
+    bus.emit('kick:channels', rows.filter((r) => r.channel_id).map((r) => r.channel_id));
     return live;
   },
 };
@@ -358,7 +338,8 @@ async function tick() {
   try { await checkStreams(); } catch (e) { console.warn('[streams] check failed:', e.message); } finally { running = false; }
 }
 export function startStreamWatch() {
-  changed().catch(() => {});
+  // Facebook was dropped (it can't be checked and its chat can't be used from other apps).
+  q("DELETE FROM stream_accounts WHERE platform NOT IN ('twitch','youtube','kick')").then(changed).catch(() => {});
   setTimeout(tick, 20 * 1000);
   setInterval(tick, POLL_MS);
   const on = Object.keys(AUTO).filter((k) => AUTO[k]());
@@ -436,7 +417,7 @@ streams.put('/me/streams/:platform/key', member, async (req, res) => {
   const key = String(req.body?.key ?? '').trim();
   if (!/^[\x21-\x7e]{8,300}$/.test(key)) throw new HttpError(400, 'That doesn\'t look like a stream key (no spaces, 8 characters or more).');
   if (!(await myAccount(req.user.id, platform))) throw new HttpError(400, `Link your ${PLATFORMS[platform].name} channel first.`);
-  await q('UPDATE stream_accounts SET stream_key_enc=$3, key_set_at=now() WHERE user_id=$1 AND platform=$2', [req.user.id, platform, await encryptKey(key)]);
+  await q('UPDATE stream_accounts SET stream_key_enc=$3, key_set_at=now() WHERE user_id=$1 AND platform=$2', [req.user.id, platform, await seal(key)]);
   await audit(req.user.id, 'stream.key_saved', platform); // never the key itself
   res.json({ ok: true, key_saved: true });
 });
@@ -448,7 +429,7 @@ streams.delete('/me/streams/:platform/key', member, async (req, res) => {
   res.json({ ok: true });
 });
 
-// "I'm live" (Facebook always; other platforms when their checker isn't set up or hasn't spotted it yet).
+// "I'm live" (when the platform's checker isn't set up or hasn't spotted the stream yet).
 streams.post('/me/streams/:platform/live', member, async (req, res) => {
   const platform = platformParam(req);
   const acc = await myAccount(req.user.id, platform);

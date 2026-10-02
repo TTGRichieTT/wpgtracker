@@ -841,7 +841,7 @@ bus.on('staff:alert', (payload) => {
 
 const mentionFor = (u) => (u?.discord_id ? ` (<@${u.discord_id}>)` : '');
 
-const STREAM_COLORS = { twitch: 0x9146ff, youtube: 0xff0000, kick: 0x53fc18, facebook: 0x1877f2 };
+const STREAM_COLORS = { twitch: 0x9146ff, youtube: 0xff0000, kick: 0x53fc18 };
 // "🔴 X is live on Twitch" with a link to the stream and to watch it in the app.
 function streamEmbed(s, u) {
   const watch = s.live_url || (s.platform === 'youtube' && s.video_id ? `https://www.youtube.com/watch?v=${s.video_id}` : s.channel_url);

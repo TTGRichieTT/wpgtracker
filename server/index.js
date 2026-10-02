@@ -18,6 +18,7 @@ import { startProgressSync } from './progress.js';
 import { discordBot, startDiscordBot } from './discordbot.js';
 import { killFeed, cheat, startCheatWatch } from './cheatwatch.js';
 import { streams, startStreamWatch } from './streams.js';
+import { chatAuth, streamChat, kickHook } from './streamchat.js';
 import { startKeepAwake } from './keepawake.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
@@ -73,7 +74,7 @@ app.use((_req, res, next) => {
       "script-src 'self'",
       "connect-src 'self' ws: wss:",
       // Stream players and chats on the Streams tab.
-      "frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com https://www.youtube-nocookie.com https://player.kick.com https://www.facebook.com",
+      "frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com https://www.youtube-nocookie.com https://player.kick.com",
       "frame-ancestors 'none'",
     ].join('; '),
   });
@@ -82,6 +83,7 @@ app.use((_req, res, next) => {
 // Discord bot commands: before the JSON parser, because the signature check needs the raw body.
 app.use(discordBot);
 app.use(killFeed); // game server kill feed: also reads the raw body (any format)
+app.use(kickHook); // Kick chat webhooks: signature check needs the raw body
 app.use(express.json({ limit: '200kb' }));
 app.use(sessionMiddleware);
 
@@ -191,12 +193,16 @@ app.post('/auth/logout', async (req, res) => {
   });
 });
 
+// Twitch / Kick sign-in so members can chat in streams as themselves.
+app.use(chatAuth);
+
 // ---------- API ----------
 app.use('/api/ingest', ingest);
 app.use('/api/admin', admin);
 app.use('/api', servers);
 app.use('/api', cheat);
 app.use('/api', streams);
+app.use('/api', streamChat);
 app.use('/api', discord);
 app.use('/api', api);
 app.use('/api', (_req, _res) => {

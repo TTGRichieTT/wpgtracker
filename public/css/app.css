@@ -624,12 +624,10 @@ body::after { display: none; }
 .pill.plat.twitch { color: #c9b0ff; border-color: #6441a5; }
 .pill.plat.youtube { color: #ffb0b0; border-color: #a12a2a; }
 .pill.plat.kick { color: #a8ff8a; border-color: #2f7a1d; }
-.pill.plat.facebook { color: #a9c8ff; border-color: #2a5ab0; }
 .pill.live-pill { color: #fff; border-color: #e5484d; background: #e5484d; }
 .plat-bg.twitch { background: linear-gradient(135deg, #2b1a4f, #6441a5); }
 .plat-bg.youtube { background: linear-gradient(135deg, #3a0d0d, #a12a2a); }
 .plat-bg.kick { background: linear-gradient(135deg, #0d2a0a, #2f7a1d); }
-.plat-bg.facebook { background: linear-gradient(135deg, #0d1d3a, #2a5ab0); }
 .stream-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .stream-card { display: block; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); color: var(--text); text-decoration: none; }
 .stream-card:hover { border-color: var(--accent); }
@@ -655,3 +653,10 @@ body::after { display: none; }
   .list > .item:has(.stream-admin-side) { flex-direction: column; align-items: stretch; }
   .stream-admin-side { align-items: flex-start; }
 }
+/* Twitch / Kick chat shown by the app */
+.pchat { gap: 0; font-size: 14px; }
+.pmsg { padding: 3px 2px; overflow-wrap: anywhere; line-height: 1.45; }
+.pmsg .emote { height: 22px; vertical-align: middle; margin: -3px 1px 0; }
+.pchat-note { padding: 10px 12px; border-top: 1px solid var(--line); }
+.btn.plat-btn.twitch { background: #6441a5; border-color: #9146ff; color: #fff; }
+.btn.plat-btn.kick { background: #2f7a1d; border-color: #53fc18; color: #fff; }

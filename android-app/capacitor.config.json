@@ -11,7 +11,13 @@
       "steamcommunity.com",
       "*.steamcommunity.com",
       "*.steampowered.com",
-      "*.steamstatic.com"
+      "*.steamstatic.com",
+      "id.twitch.tv",
+      "www.twitch.tv",
+      "passport.twitch.tv",
+      "id.kick.com",
+      "kick.com",
+      "www.kick.com"
     ]
   },
   "android": {

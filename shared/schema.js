@@ -412,13 +412,13 @@ export const watchAlerts = pgTable('watch_alerts', {
 }, (t) => [primaryKey({ name: 'watch_alerts_pkey', columns: [t.steam_id, t.kind] })]);
 
 // ---------- Streams ----------
-// A member's channel on Twitch, YouTube, Kick or Facebook (one per platform). Staff approve it before it shows.
+// A member's channel on Twitch, YouTube or Kick (one per platform). Staff approve it before it shows.
 export const streamAccounts = pgTable('stream_accounts', {
   id: serial().primaryKey(),
   user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
-  platform: text().notNull(), // twitch | youtube | kick | facebook
-  handle: text().notNull().default(''), // channel name / @handle / UC… id / Facebook page name
-  channel_id: text().notNull().default(''), // YouTube channel id (UC…), found from the handle
+  platform: text().notNull(), // twitch | youtube | kick
+  handle: text().notNull().default(''), // channel name / @handle / UC… id
+  channel_id: text().notNull().default(''), // the platform's id for the channel (Twitch/Kick user id, YouTube UC…), found by the checker
   status: text().notNull().default('pending'), // pending | approved | rejected
   reviewed_by: integer(),
   reviewed_at: timestamp({ withTimezone: true }),
@@ -432,7 +432,7 @@ export const streamAccounts = pgTable('stream_accounts', {
   viewers: integer(),
   thumbnail: text().notNull().default(''),
   video_id: text().notNull().default(''), // YouTube video of the current stream (its chat needs it)
-  live_url: text().notNull().default(''), // Facebook: link to the live video
+  live_url: text().notNull().default(''), // unused since Facebook was dropped
   live_since: timestamp({ withTimezone: true }),
   announced_at: timestamp({ withTimezone: true }),
   last_checked: timestamp({ withTimezone: true }),
@@ -448,3 +448,17 @@ export const streamMessages = pgTable('stream_messages', {
   deleted: boolean().notNull().default(false),
   created_at: now(),
 }, (t) => [index('stream_messages_streamer_idx').on(t.streamer_id, t.id.desc())]);
+
+// Members' own Twitch / Kick sign-ins, so they can chat in streams as themselves from the app.
+// Tokens are encrypted (secretbox.js) and only ever used by the server.
+export const chatLogins = pgTable('chat_logins', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  platform: text().notNull(), // twitch | kick
+  platform_user_id: text().notNull().default(''),
+  login: text().notNull().default(''),
+  display_name: text().notNull().default(''),
+  access_enc: text().notNull().default(''),
+  refresh_enc: text().notNull().default(''),
+  expires_at: timestamp({ withTimezone: true }),
+  created_at: now(),
+}, (t) => [primaryKey({ name: 'chat_logins_pkey', columns: [t.user_id, t.platform] })]);

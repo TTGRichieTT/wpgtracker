@@ -90,19 +90,24 @@ Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
 
 ## 4b. Streams tab
 
-Members who stream on Twitch, YouTube, Kick or Facebook link their channel in **Edit profile → My streams**.
+Members who stream on Twitch, YouTube or Kick link their channel in **Edit profile → My streams**.
 A mod approves it in **Command panel → Streams** (open the link first and check it's really theirs). Approved streamers show
-on the **Streams** tab with the stream's own player and chat, plus a WPG chat everyone in the app can use.
+on the **Streams** tab with the stream's player, its chat, and a WPG chat everyone in the app can use.
 
 - **Spotting who's live** (optional, Render → Environment). Without a key, streamers on that platform press **I'm live** instead.
   - Twitch: `TWITCH_CLIENT_ID` + `TWITCH_CLIENT_SECRET` from https://dev.twitch.tv/console/apps
   - YouTube: `YOUTUBE_API_KEY` (Google Cloud → enable *YouTube Data API v3* → Credentials → API key)
   - Kick: `KICK_CLIENT_ID` + `KICK_CLIENT_SECRET` from https://kick.com/settings/developer
-  - Facebook can't be checked: Facebook streamers always press **I'm live** and paste their live video link.
+- **Chatting in streams (no bot).** To type in a Twitch or Kick stream's chat, members sign in with their *own* Twitch / Kick
+  account (Edit profile → Chat in streams, or the button under the chat). Messages go out under their own name. Same keys as above, plus:
+  - Twitch developer console → the app → add the **OAuth Redirect URL** shown in Command panel → Streams.
+  - Kick developer settings → the app → add the **Redirect URL**, turn **Webhooks** on with the webhook URL (both shown in
+    Command panel → Streams), and allow the `user:read`, `chat:write` and `events:subscribe` scopes. The app then asks Kick to
+    send each approved streamer's chat by itself.
+  - YouTube streams keep YouTube's own chat box: viewers sign in to Google inside it.
 - **Discord "… is live" posts**: Command panel → Settings → Streams → paste the channel ID.
-- **Stream keys** are optional. They're encrypted when saved and never shown again, to anyone. The app doesn't use them yet.
-- **Chat inside the app**: Twitch and YouTube chat show in the app (viewers sign in to Twitch or Google to type).
-  Kick and Facebook don't allow that, so there's an "Open chat" button; the WPG chat works for every platform.
+- **Stream keys** are optional. They're encrypted when saved and never shown again, to anyone. The app doesn't use them.
+- Rebuild the Android app after this update, so Twitch / Kick sign-in stays inside the app.
 
 ## 5. How stats and XP work
 
