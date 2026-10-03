@@ -67,8 +67,24 @@ async function findPlayer(user) {
   return same.length === 1 ? same[0] : null;
 }
 
+// How the source is reading this player's account: wardogs.tools re-reads linked accounts every
+// 15 minutes, but stops when the player's link to WARDOGS expires ("paused"), and the figures then go
+// stale. state: syncing | delayed | stalled | paused | resuming | unavailable. Null if it can't be read.
+const SITE = 'https://wardogs.tools';
+async function linkStatus(socialId) {
+  const res = await fetch(`${SITE}/player/${encodeURIComponent(socialId)}`, { headers: UA, signal: AbortSignal.timeout(20000) });
+  if (!res.ok) return null;
+  const html = await res.text();
+  const m = /lastPolledAt\\?":\\?"([0-9T:.\-Z]+)\\?",\\?"state\\?":\\?"([a-z]+)/.exec(html);
+  return m ? { polled_at: m[1], state: m[2] } : null;
+}
+// Link problems members need to fix themselves (by linking again on the source site).
+export const STALE_STATES = ['paused', 'stalled', 'unavailable'];
+const STATUS_EVERY_MS = 3 * 3600 * 1000;
+
 // Fetches the member's global stats and world ranks and saves them. { ok, official, reason? }
-export async function syncRanks(user) {
+// force: also re-check the link status now (when the member presses Sync stats / Find my stats).
+export async function syncRanks(user, { force = false } = {}) {
   const row = await one('SELECT ranks FROM wardogs_stats WHERE user_id=$1', [user.id]);
   const typed = parseName(user.custom_fields?.wardogs_name);
   let known = row?.ranks?.id ? row.ranks : null;
@@ -78,6 +94,16 @@ export async function syncRanks(user) {
   if (!player) return { ok: false, reason: typed ? 'In-game name not found in the rankings' : 'Not found by Steam name — add your in-game name (Name#1234) in Edit profile' };
 
   const ranks = { id: player.socialId, name: player.displayName, tag: String(player.discriminator), total: await totalPlayers().catch(() => null) };
+  // Link status: re-checked every 3 hours (or now if asked); otherwise the last result is kept.
+  const sameAccount = known && known.id === player.socialId;
+  const checkedAt = sameAccount ? Date.parse(known.status_checked || '') || 0 : 0;
+  if (force || Date.now() - checkedAt > STATUS_EVERY_MS) {
+    const st = await linkStatus(player.socialId).catch(() => null);
+    if (st) Object.assign(ranks, st, { status_checked: new Date().toISOString() });
+    else if (sameAccount) Object.assign(ranks, { polled_at: known.polled_at, state: known.state, status_checked: known.status_checked });
+  } else if (sameAccount) {
+    Object.assign(ranks, { polled_at: known.polled_at, state: known.state, status_checked: known.status_checked });
+  }
   let offset = null;
   for (const by of BOARDS) {
     await pause(300);

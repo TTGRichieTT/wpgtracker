@@ -169,12 +169,30 @@ export async function careerCard(user) {
 
 // ---------- Commands ----------
 // /stats: the WPG career card picture (falls back to a text card if the picture can't be made).
+// Gets the member's latest numbers from wardogs.tools before a stats card is made (at most once every
+// 2 minutes per member). Returns a warning line if their stats have stopped updating there.
+async function freshWardogs(user) {
+  const ws = await one('SELECT ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
+  let ranks = ws?.ranks || null;
+  if (!ws?.ranks_synced || Date.now() - new Date(ws.ranks_synced).getTime() > 2 * 60 * 1000) {
+    const { syncWardogs } = await import('./wardogs.js');
+    const r = await syncWardogs(user, { force: true }).catch((e) => { problem('Refreshing Wardogs stats', e.message); return null; });
+    if (r?.ok) ranks = r;
+  }
+  const STALE = { paused: 'their link to WARDOGS has expired', stalled: 'nothing has come through for several hours', unavailable: 'WARDOGS no longer recognises the account' };
+  if (!STALE[ranks?.state]) return '';
+  const since = ranks.polled_at ? ` on ${new Date(ranks.polled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '';
+  return `⚠️ **${user.persona_name}**'s Wardogs stats stopped updating${since} — ${STALE[ranks.state]}. Re-link on wardogs.tools to fix it.`;
+}
+
 async function cmdStats(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
+  const warning = await freshWardogs(f.user);
   try {
     const card = await careerCard(f.user);
     return {
+      ...(warning ? { content: warning } : {}),
       files: [{ name: 'wpg-career.jpg', data: card, type: 'image/jpeg' }],
       components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open in WPG Barracks', url: `${SITE()}/#/u/${f.user.id}` }] }],
     };
@@ -515,6 +533,7 @@ async function cmdLive() {
 async function cmdProgress(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
+  const warning = await freshWardogs(f.user);
   const ws = await one('SELECT official FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
   const o = ws?.official;
   if (!o) return { content: `**${f.user.persona_name}** has no Wardogs stats yet. They add their in-game name (Name#1234) on HQ in the app.` };
@@ -547,7 +566,7 @@ async function cmdProgress(data, caller) {
       footer: { text: 'Tick what you have bought on the Progression page · WPG Barracks' },
     }],
   });
-  return asPicture('progress', async (cards) => cards.renderProgressCard({
+  const out = await asPicture('progress', async (cards) => cards.renderProgressCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
     rows,
@@ -555,6 +574,8 @@ async function cmdProgress(data, caller) {
     readyCost,
     spent,
   }), text, { label: 'Open Progression', url: `${SITE()}/#/progression` });
+  if (warning && !out.content) out.content = warning;
+  return out;
 }
 
 async function cmdLink(_data, caller, callerName) {

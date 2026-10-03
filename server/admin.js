@@ -482,7 +482,7 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
   const users = await q("SELECT id, persona_name FROM users WHERE status='active' AND steam_id ~ '^[0-9]{17}$'");
   res.json({ ok: true, queued: users.length });
   syncAllRunning = true;
-  const tally = { done: 0, tracker: 0, notOnTracker: [], failed: 0 };
+  const tally = { done: 0, tracker: 0, notOnTracker: [], expired: [], failed: 0 };
   try {
     for (const u of users) {
       const r = await syncUser(u.id).catch(() => null);
@@ -491,6 +491,7 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
         tally.done++;
         if (r.wardogs?.official) tally.tracker++;
         else tally.notOnTracker.push(u.persona_name);
+        if (['paused', 'stalled', 'unavailable'].includes(r.wardogs?.state)) tally.expired.push(u.persona_name);
       }
       await new Promise((ok) => setTimeout(ok, 1500));
     }
@@ -500,9 +501,12 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
   const missing = tally.notOnTracker.length
     ? ` No Wardogs stats yet (they need to add their in-game name on HQ): ${tally.notOnTracker.slice(0, 12).join(', ')}${tally.notOnTracker.length > 12 ? ` and ${tally.notOnTracker.length - 12} more` : ''}.`
     : '';
+  const expired = tally.expired.length
+    ? ` Stats frozen — they need to re-link on wardogs.tools (HQ tells them how): ${tally.expired.slice(0, 12).join(', ')}${tally.expired.length > 12 ? ` and ${tally.expired.length - 12} more` : ''}.`
+    : '';
   bus.emit('notify', req.user.id, {
     title: 'Full sync finished',
-    body: `${tally.done} members synced · ${tally.tracker} with Wardogs stats${tally.failed ? ` · ${tally.failed} failed` : ''}.${missing}`,
+    body: `${tally.done} members synced · ${tally.tracker} with Wardogs stats${tally.failed ? ` · ${tally.failed} failed` : ''}.${missing}${expired}`,
   });
   await audit(req.user.id, 'sync.all', '', { synced: tally.done, tracker: tally.tracker, notOnTracker: tally.notOnTracker.length, failed: tally.failed });
 });

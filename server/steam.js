@@ -76,7 +76,7 @@ export async function fetchSummary(steamId) {
   };
 }
 
-export async function syncUser(userId) {
+export async function syncUser(userId, opts = {}) {
   const user = await one('SELECT * FROM users WHERE id = $1', [userId]);
   if (!user) return { ok: false, reason: 'User not found' };
   if (!/^\d{17}$/.test(user.steam_id)) return { ok: false, reason: 'Test account (not a real Steam ID)' };
@@ -95,7 +95,7 @@ export async function syncUser(userId) {
     result.steam = { ok: false, reason: 'Steam API key not set up yet' };
   }
   // Global stats and world ranks come from the same lookup.
-  result.wardogs = await syncWardogs(user).catch((e) => ({ ok: false, reason: e.message }));
+  result.wardogs = await syncWardogs(user, opts).catch((e) => ({ ok: false, reason: e.message }));
   result.ranks = result.wardogs;
   // Steam achievements as medals (works with or without the API key).
   result.medals = [];

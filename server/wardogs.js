@@ -3,7 +3,7 @@
 import { flag } from './db.js';
 import { syncRanks } from './ranking.js';
 
-export async function syncWardogs(user) {
+export async function syncWardogs(user, opts = {}) {
   if (!(await flag('tracker_enabled'))) return { ok: false, reason: 'Global Wardogs stats are switched off in settings' };
-  return syncRanks(user);
+  return syncRanks(user, opts);
 }

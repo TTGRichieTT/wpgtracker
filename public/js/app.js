@@ -209,6 +209,8 @@ function applyMe(me) {
   state.unread = me.unread_dms;
   state.friendReq = me.friend_requests;
   state.trackerLinked = !!me.tracker_linked;
+  state.trackerState = me.tracker_state || null;
+  state.trackerPolledAt = me.tracker_polled_at || null;
   state.wpgServer = me.wpg_server || null;
   state.discordLinked = !!me.discord_linked;
   state.realSteam = !!me.real_steam;
@@ -534,7 +536,7 @@ async function viewHome(main) {
           </div>
         </div>
       </div>
-      ${needsTracker() ? trackerCardHtml() : ''}
+      ${needsTracker() ? trackerCardHtml() : staleLink() ? staleCardHtml() : ''}
       <div class="panel" id="liveNow" hidden></div>
       <div class="grid two">
         <div class="panel">
@@ -578,6 +580,8 @@ async function syncMine(e) {
     if (r.steam?.private) notes.push('Steam: your game details are private, so playtime cannot be read.');
     if (r.wardogs && !r.wardogs.ok) notes.push(`Wardogs: ${r.wardogs.reason}`);
     else if (r.wardogs && !r.wardogs.official) notes.push('Wardogs: no global stats found. Add your in-game name (Name#1234) in Edit profile.');
+    else if (r.wardogs?.state === 'resuming') notes.push('Wardogs: re-linked — your stats catch up within about 15 minutes.');
+    else if (STALE_STATES[r.wardogs?.state]) notes.push(`Wardogs: not updating — ${STALE_STATES[r.wardogs.state]}. Re-link on wardogs.tools (see HQ).`);
     toast('Stats synced', notes.join(' ') || 'All up to date.');
     await refreshMe();
     route();
@@ -591,6 +595,19 @@ async function syncMine(e) {
 // ---------- Wardogs stats linking ----------
 // Global stats are found by the member's in-game name (Name#1234). Once found they update by themselves.
 const needsTracker = () => state.realSteam && !state.trackerLinked;
+// Linked, but the source stopped reading my account (my link to WARDOGS expired), so my stats are frozen.
+const STALE_STATES = { paused: 'your link to WARDOGS has expired', stalled: 'nothing has come through for several hours', unavailable: 'WARDOGS no longer recognises your account' };
+const staleLink = () => state.trackerLinked && !!STALE_STATES[state.trackerState];
+function staleCardHtml() {
+  const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
+  return `<div class="panel glow tracker-card" style="border-color:#f5a524">
+    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Your Wardogs stats stopped updating${since}</div>
+    <p style="margin:0 0 6px">wardogs.tools says ${STALE_STATES[state.trackerState]}, so your level, cash and class levels here are the last ones it read.</p>
+    <p style="margin:0 0 10px"><b>Fix (one minute):</b> open wardogs.tools, sign in and link your Wardogs account again. Then come back and press <b>Sync stats</b> — it can take up to 15 minutes to catch up.</p>
+    <div class="row"><a class="btn primary" href="${WARDOGS_LINK}" target="_blank" rel="noopener">${icon('target')} Re-link on wardogs.tools</a><button class="btn" type="button" data-stale-sync>${icon('refresh')} Sync stats</button></div>
+  </div>`;
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-stale-sync]'); if (b) syncMine({ currentTarget: b }); });
 const WARDOGS_LINK = 'https://wardogs.tools/account';
 
 function trackerCardHtml() {
@@ -811,6 +828,7 @@ async function viewProfile(main, [id]) {
       <div class="grid two">
         <div class="panel">
           <div class="panel-title">${icon('target')} Official Wardogs <span class="sub">(global server)</span></div>
+          ${off && p.wardogs.ranks?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${STALE_STATES[p.wardogs.ranks.state] ? '#f5a524' : 'var(--muted)'}">Stats as of ${esc(fmtDate(p.wardogs.ranks.polled_at))} ${esc(new Date(p.wardogs.ranks.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${STALE_STATES[p.wardogs.ranks.state] ? ' — not updating (the link to WARDOGS needs renewing on wardogs.tools)' : ''}</p>` : ''}
           ${officialHtml}
         </div>
         <div class="panel">

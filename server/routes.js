@@ -34,7 +34,7 @@ api.get('/settings/public', async (_req, res) => {
 api.get('/me', signedIn, async (req, res) => {
   const unread = await one('SELECT COUNT(*)::int AS n FROM dms WHERE recipient_id=$1 AND read_at IS NULL', [req.user.id]);
   const requests = await one("SELECT COUNT(*)::int AS n FROM friends WHERE addressee_id=$1 AND status='pending'", [req.user.id]);
-  const tracker = await one('SELECT official IS NOT NULL AS linked FROM wardogs_stats WHERE user_id=$1', [req.user.id]);
+  const tracker = await one("SELECT official IS NOT NULL AS linked, ranks->>'state' AS state, ranks->>'polled_at' AS polled_at FROM wardogs_stats WHERE user_id=$1", [req.user.id]);
   const prog = await one('SELECT xp, rank_level, rank_name FROM server_progress WHERE steam_id=$1', [req.user.steam_id]);
   // Hand this device a "remember me" key once per sign-in, so it can sign back in if the cookie is lost.
   let rememberToken;
@@ -47,6 +47,9 @@ api.get('/me', signedIn, async (req, res) => {
     unread_dms: unread.n,
     friend_requests: requests.n,
     tracker_linked: !!tracker?.linked,
+    // How the source is reading my account (paused = my link expired and my stats stopped updating).
+    tracker_state: tracker?.state || null,
+    tracker_polled_at: tracker?.polled_at || null,
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I' },
     real_steam: /^\d{17}$/.test(req.user.steam_id),
     discord_linked: !!req.user.discord_id,
@@ -93,7 +96,7 @@ api.post('/me/tracker-check', member, async (req, res) => {
     );
     bus.emit('user:changed', user.id);
   }
-  const r = await syncWardogs(user).catch((e) => ({ ok: false, reason: e.message }));
+  const r = await syncWardogs(user, { force: true }).catch((e) => ({ ok: false, reason: e.message }));
   if (r.official) await recalcXp(req.user.id);
   res.json({
     linked: !!r.official,
@@ -121,7 +124,7 @@ api.put('/me/profile', member, async (req, res) => {
 api.post('/me/sync', member, async (req, res) => {
   const last = req.user.last_sync ? new Date(req.user.last_sync).getTime() : 0;
   if (Date.now() - last < 60 * 1000) throw new HttpError(429, 'Please wait a minute before syncing again.');
-  res.json(await syncUser(req.user.id));
+  res.json(await syncUser(req.user.id, { force: true }));
 });
 
 api.get('/profile-fields', member, async (_req, res) => {
