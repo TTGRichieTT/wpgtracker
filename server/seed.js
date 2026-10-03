@@ -227,7 +227,7 @@ export async function seed({ q, one }) {
       ['HAMMER', 'support', 'Weapons', 'Destroy armor and aircraft threatening WPG forces, so Alpha and Bravo never leave the HZ to chase vehicles.', '#f5a524',
         [role('lead', 'Weapons Leader', 1, true), role('hat', 'Heavy Anti-Tank'), role('at', 'Anti-Tank'), role('aa', 'Anti-Air / Helicopter')]],
       ['FOUNDRY', 'support', 'Engineering', 'Build FOBs, spawn points, defenses and tower fortifications, and prepare positions for CZ control.', '#8d6e63',
-        [role('lead', 'Chief Engineer', 1, true), role('fob', 'FOB Builder'), role('eng', 'Engineer / Repair')]],
+        [role('lead', 'Chief Engineer', 1, true), role('fob', 'FOB Builder'), role('eng', 'Logistics Driver / Builder')]],
       ['ANGEL', 'support', 'Air Wing', 'Transport troops and deliver reinforcements, ammunition, medical supplies and building materials. The front line doesn\'t leave for supplies — we bring supplies to them.', '#29b6f6',
         [role('lead', 'Senior / Lead Pilot', 1, true), role('transport', 'Transport Pilot'), role('logistics', 'Logistics Pilot'), role('reserve', 'Reserve Pilot')]],
       ['VIPER', 'support', 'QRF', 'Quick Reaction Force for HZ emergencies, attacked FOBs and towers, enemy breakthroughs and emergency reinforcement.', '#b84dff',
@@ -283,6 +283,17 @@ Every member will have a **primary role** (main specialty), a **secondary role**
 **One faction. One force. One objective. Control the HZ.**`;
     await q("INSERT INTO settings (key, value) VALUES ('_combat_doctrine', $1) ON CONFLICT DO NOTHING", [doctrine]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_combat', 'true') ON CONFLICT DO NOTHING");
+  }
+
+  // FOUNDRY's third role became "Logistics Driver / Builder" (2026-10-03). Renamed once, and only if it
+  // still has its old name, so a later change in Admin → Units is never undone. People in it stay in it.
+  if (!(await one("SELECT value FROM settings WHERE key = '_renamed_foundry_eng'"))) {
+    const unit = await one("SELECT id, roles FROM combat_units WHERE name = 'FOUNDRY'");
+    if (unit && Array.isArray(unit.roles)) {
+      const roles = unit.roles.map((r) => (r.id === 'eng' && r.name === 'Engineer / Repair' ? { ...r, name: 'Logistics Driver / Builder' } : r));
+      await q('UPDATE combat_units SET roles=$2 WHERE id=$1', [unit.id, JSON.stringify(roles)]);
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_renamed_foundry_eng', 'true') ON CONFLICT DO NOTHING");
   }
 
   // Streams now use each platform's own chat box, so the app no longer keeps members' Twitch / YouTube /
