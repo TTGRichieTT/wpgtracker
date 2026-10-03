@@ -1747,8 +1747,12 @@ async function viewLeaderboard(main) {
     const app = d.rules?.source === 'app';
     // Your last matches and what each gave or took (once the app works WPG XP out).
     const history = app ? await api('wpg-xp/history').catch(() => []) : [];
-    const mine = d.rows.findIndex((r) => r.member?.id === state.me.id);
-    const me = mine >= 0 ? d.rows[mine] : null;
+    // Your own place comes from the server, so it shows even outside the top 100.
+    const me = d.me;
+    // Equal XP = equal place (same rule as your own place, profiles and Discord).
+    const places = [];
+    d.rows.forEach((r, i) => { places[i] = i && r.xp === d.rows[i - 1].xp ? places[i - 1] : i + 1; });
+    const pct = me && d.total ? Math.max(1, Math.ceil((me.position / d.total) * 100)) : null;
     const ru = d.rules || {};
     const rules = app
       ? `Earned only on the ${esc(tag)} server: +${ru.kill} XP per kill, +${ru.per5min} XP every 5 minutes played, +${ru.finish} XP for finishing a match, +${ru.win} XP for a win.${ru.penalties
@@ -1764,11 +1768,14 @@ async function viewLeaderboard(main) {
           <div class="panel-title" style="margin:0">${icon('trophy')} ${esc(tag)} rank <span class="sub">Recruit I → Wardog X</span></div>
           <span class="muted small">${d.updated ? `${app ? 'Last match counted' : `From the ${esc(tag)} Discord bot · updated`} ${timeAgo(d.updated)}` : app ? 'Waiting for the first match' : 'Waiting for the Discord bot'}</span>
         </div>
-        ${me ? `<div class="row" style="margin:0 0 12px;gap:12px;flex-wrap:nowrap">${wpgBadge(me.level, 56, me.rank)}<div class="grow" style="max-width:560px"><p class="small" style="margin:0 0 6px">You're <b>#${mine + 1}</b>: ${esc(wpgRankName(me.rank))} · ${fmtNum(me.xp)} ${esc(tag)} XP${me.next ? ` · <b>${esc(wpgToNext(me))}</b>` : ''}</p>${wpgBar(me)}</div></div>` : ''}
+        ${me ? `<div class="wpg-me">
+          <div class="row grow" style="gap:12px;flex-wrap:nowrap;min-width:0">${wpgBadge(me.level, 56, me.rank)}<div class="grow" style="min-width:0"><p class="small" style="margin:0 0 6px">${esc(wpgRankName(me.rank))} · ${fmtNum(me.xp)} ${esc(tag)} XP${me.next ? ` · <b>${esc(wpgToNext(me))}</b>` : ''}</p>${wpgBar(me)}</div></div>
+          <div class="wpg-place"><div class="lbl">Your ranking</div><div class="num">#${fmtNum(me.position)}</div><div class="muted small">of ${fmtNum(d.total)}${pct && pct <= 50 ? ` · top ${pct}%` : ''}${me.position > d.rows.length ? ` · not in the top ${fmtNum(d.top || 100)} yet` : ''}</div></div>
+        </div>` : `<p class="muted small" style="margin:0 0 12px">You're not on the ${esc(tag)} rank list yet: play a match on the ${esc(tag)} server to get ranked.</p>`}
         <div class="table-wrap"><table class="sb-table">
           <thead><tr><th>#</th><th>Player</th><th>${esc(tag)} rank</th><th>${esc(tag)} XP</th><th class="sb-x">Next rank</th><th class="sb-x">Role</th></tr></thead>
           <tbody>${d.rows.map((r, i) => `<tr${r.member?.id === state.me.id ? ' style="background:rgba(41,182,246,.08)"' : ''}>
-            <td><b style="color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">${i + 1}</b></td>
+            <td><b style="color:${places[i] === 1 ? 'var(--gold)' : places[i] <= 3 ? 'var(--accent2)' : 'var(--muted)'}">${places[i]}</b></td>
             <td class="sb-name">${r.member ? `<a href="#/u/${r.member.id}">${esc(r.name)}</a>` : esc(r.name)}</td>
             <td><span class="wpg-rank">${wpgBadge(r.level, 26, r.rank)}<span class="accent">${esc(wpgRankName(r.rank))}</span></span></td>
             <td><b>${fmtNum(r.xp)}</b></td>
@@ -1776,7 +1783,7 @@ async function viewLeaderboard(main) {
             <td class="sb-x">${r.member ? esc(roleName(r.member)) : '<span class="muted small">Not in app</span>'}</td>
           </tr>`).join('') || `<tr><td colspan="6" class="muted">${app ? 'Nobody yet: XP appears after the first match.' : 'No data from the Discord bot yet.'}</td></tr>`}</tbody>
         </table></div>
-        <p class="muted small" style="margin:10px 0 0">${rules} ${fmtNum(d.total)} players ranked.</p>
+        <p class="muted small" style="margin:10px 0 0">${rules} ${d.total > d.rows.length ? `Showing the top ${fmtNum(d.rows.length)} of ${fmtNum(d.total)} players ranked.` : `${fmtNum(d.total)} players ranked.`}</p>
       </div>
       ${ladderHtml(d.ladder || [], me)}
       ${history.length ? `<div class="panel">

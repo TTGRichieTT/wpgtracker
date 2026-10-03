@@ -259,6 +259,11 @@ a.item:hover { background: rgba(41,182,246,.05); }
 .wpg-rank .accent { font: 700 13px var(--head); text-transform: uppercase; }
 .wpg-rank .insignia, .tile .ic .insignia { flex: none; }
 .tile-progress { margin-top: 6px; }
+.wpg-me { display: flex; gap: 16px; align-items: center; margin: 0 0 12px; }
+.wpg-place { flex: none; min-width: 170px; text-align: center; padding: 8px 16px; border: 1px solid var(--line); border-radius: 10px; background: rgba(41,182,246,.06); }
+.wpg-place .lbl { font: 700 12px var(--head); color: var(--accent2); text-transform: uppercase; letter-spacing: .8px; }
+.wpg-place .num { font: 700 30px/1.1 var(--head); color: var(--text); }
+@media (max-width: 640px) { .wpg-me { flex-direction: column; align-items: stretch; } }
 .tiles > .tile { align-self: start; } /* a tile with a progress bar is taller: keep its row lined up at the top */
 .tile-progress .xpbar { height: 7px; margin-bottom: 3px; }
 .admin-section select { font: 700 15px var(--head); text-transform: uppercase; cursor: pointer; }

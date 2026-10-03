@@ -454,22 +454,39 @@ const BOARD_SORT = {
 };
 // WPG rank leaderboard: everyone's WPG XP + rank (from the Discord bot, or the app once switched over),
 // with the XP each needs for the next rank once the rank list is set up (Admin → WPG XP).
-servers.get('/wpg-ranking', member, async (_req, res) => {
-  const rows = await q(
-    `SELECT p.steam_id, p.bot_name, p.xp, p.rank_level, p.rank_name, p.synced_at, u.id AS user_id
-       FROM server_progress p LEFT JOIN users u ON u.steam_id = p.steam_id AND u.status = 'active'
-      ORDER BY p.xp DESC, p.rank_level DESC, p.bot_name LIMIT 250`,
-  );
+// Top 100 only, plus your own place (worked out separately, so it shows even outside the top 100).
+const WPG_TOP = 100;
+servers.get('/wpg-ranking', member, async (req, res) => {
+  const [rows, mine] = await Promise.all([
+    q(
+      `SELECT p.steam_id, p.bot_name, p.xp, p.rank_level, p.rank_name, p.synced_at, u.id AS user_id
+         FROM server_progress p LEFT JOIN users u ON u.steam_id = p.steam_id AND u.status = 'active'
+        ORDER BY p.xp DESC, p.rank_level DESC, p.bot_name LIMIT ${WPG_TOP}`,
+    ),
+    // Same position rule as profiles and Discord: 1 + everyone with more XP (equal XP = equal place).
+    one(
+      `SELECT p.xp, p.rank_level, p.rank_name, (SELECT COUNT(*)::int + 1 FROM server_progress o WHERE o.xp > p.xp) AS position
+         FROM server_progress p WHERE p.steam_id = $1`,
+      [req.user.steam_id],
+    ),
+  ]);
   const memberIds = rows.map((r) => r.user_id).filter(Boolean);
   const members = memberIds.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [memberIds])) : [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const last = await one("SELECT (SELECT value FROM settings WHERE key='_progress_synced') AS synced, MAX(synced_at) AS at, COUNT(*)::int AS n FROM server_progress");
   const ranks = await wpgRanks();
+  const myAt = mine ? rankAt(mine.xp, ranks) : null;
   res.json({
     updated: last?.synced || last?.at || null,
     total: last?.n || 0,
+    top: WPG_TOP,
     rules: await rulesOut(),
     ladder: ranks,
+    // null = not on the WPG rank list yet (never played on the WPG server)
+    me: mine ? {
+      position: mine.position, xp: mine.xp, level: mine.rank_level, rank: mine.rank_name || 'RECRUIT I',
+      from: myAt?.from ?? null, next: myAt?.next || null,
+    } : null,
     rows: rows.map((r) => {
       const at = rankAt(r.xp, ranks);
       return {
