@@ -258,6 +258,9 @@ a.item:hover { background: rgba(41,182,246,.05); }
 .wpg-rank { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .wpg-rank .accent { font: 700 13px var(--head); text-transform: uppercase; }
 .wpg-rank .insignia, .tile .ic .insignia { flex: none; }
+.tile-progress { margin-top: 6px; }
+.tiles > .tile { align-self: start; } /* a tile with a progress bar is taller: keep its row lined up at the top */
+.tile-progress .xpbar { height: 7px; margin-bottom: 3px; }
 .admin-section select { font: 700 15px var(--head); text-transform: uppercase; cursor: pointer; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }

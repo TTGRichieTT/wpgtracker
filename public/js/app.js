@@ -723,9 +723,9 @@ const ROLE_STYLE = {
   pilot: ['#29b6f6', 'pilot', 'pilot'],
 };
 const ROLE_ORDER = ['recon', 'assault', 'medic', 'support', 'engineer', 'driver', 'pilot'];
-function tile(ic, label, value, cls = '') {
-  // ic: an icon name, or a ready-made badge (SVG)
-  return `<div class="tile"><div class="ic">${String(ic).startsWith('<') ? ic : icon(ic)}</div><div class="grow"><div class="lbl">${esc(label)}</div><div class="val ${cls}">${esc(value)}</div></div></div>`;
+function tile(ic, label, value, cls = '', extra = '') {
+  // ic: an icon name, or a ready-made badge (SVG). extra: HTML under the value (e.g. a progress bar).
+  return `<div class="tile"><div class="ic">${String(ic).startsWith('<') ? ic : icon(ic)}</div><div class="grow"><div class="lbl">${esc(label)}</div><div class="val ${cls}">${esc(value)}</div>${extra}</div></div>`;
 }
 function statBox(ic, label, value) {
   return `<div class="stat-box"><div class="ic">${icon(ic)}</div><div class="lbl" style="font:700 13px var(--head);color:var(--accent2);text-transform:uppercase">${esc(label)}</div><div class="tile"><div class="val grow">${esc(value)}</div></div></div>`;
@@ -866,7 +866,9 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
           <div class="tiles">
-            ${tile(wpgBadge(p.wpg_server?.level, 34, p.wpg_server?.name), `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name))}
+            ${tile(wpgBadge(p.wpg_server?.level, 34, p.wpg_server?.name), `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name), '', p.wpg_server?.next
+              ? `<div class="tile-progress">${wpgBar(p.wpg_server)}<div class="small muted" title="${esc(wpgToNext(p.wpg_server))}">${fmtNum(p.wpg_server.xp || 0)} / ${fmtNum(p.wpg_server.next.xp)} XP</div></div>`
+              : '')}
             ${tile('star', `${state.settings.clan_tag || 'WPG'} XP`, fmtNum(p.wpg_server?.xp || 0))}
             ${tile('trophy', 'Server position', p.wpg_server?.position ? `#${fmtNum(p.wpg_server.position)}` : '—')}
             ${p.wpg_server?.next ? tile('chevrons', `Next rank in ${fmtNum(Math.max(0, p.wpg_server.next.xp - (p.wpg_server.xp || 0)))} XP`, wpgRankName(p.wpg_server.next.name)) : ''}
