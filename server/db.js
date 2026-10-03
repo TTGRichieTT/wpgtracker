@@ -5,6 +5,7 @@ import { seed } from './seed.js';
 import { syncSchema } from './migrate.js';
 
 let impl;
+let poolRef = null;
 
 // Drizzle ORM instance (typed queries against shared/schema.js). Most of the app uses q()/one() below.
 export let db;
@@ -24,6 +25,7 @@ export async function initDb() {
     const pg = (await import('pg')).default;
     const { drizzle } = await import('drizzle-orm/node-postgres');
     const pool = new pg.Pool(pgConfig(process.env.DATABASE_URL));
+    poolRef = pool;
     impl = {
       query: (text, params) => pool.query(text, params),
       exec: (text) => pool.query(text),
@@ -48,6 +50,13 @@ export async function initDb() {
   }
   await syncSchema(impl.exec);
   await seed({ q, one });
+}
+
+// For the status check: how long one database trip takes, and whether queries are queueing.
+export async function dbHealth() {
+  const t = Date.now();
+  await impl.query('SELECT 1');
+  return { ms: Date.now() - t, ...(poolRef ? { open: poolRef.totalCount, idle: poolRef.idleCount, waiting: poolRef.waitingCount } : {}) };
 }
 
 export async function closeDb() {

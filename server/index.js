@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import session from 'express-session';
-import { initDb, closeDb, q, one, flag } from './db.js';
+import { initDb, closeDb, q, one, flag, dbHealth } from './db.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { bus } from './bus.js';
 import { steamLoginUrl, verifySteamLogin, fetchSummary, syncUser, startSyncLoop } from './steam.js';
@@ -210,7 +210,12 @@ app.use('/api', (_req, _res) => {
 });
 
 // up = seconds since the app started (a small number outside an update means it restarted on its own).
-app.get('/healthz', (_req, res) => res.json({ ok: true, version: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), up: Math.round(process.uptime()) }));
+app.get('/healthz', async (req, res) => {
+  const out = { ok: true, version: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), up: Math.round(process.uptime()) };
+  // ?db=1: also time one database trip (to spot a slow or busy database).
+  if (req.query.db === '1') out.db = await dbHealth().catch((e) => ({ error: e.message }));
+  res.json(out);
+});
 
 // Map pictures, unlock pictures and artwork never change, so browsers keep them for 30 days
 // (saves bandwidth on free hosting). Everything else is re-checked every time so updates show straight away.
