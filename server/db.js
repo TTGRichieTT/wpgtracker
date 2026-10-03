@@ -17,7 +17,12 @@ export function pgConfig(url) {
   const u = new URL(url);
   const local = ['localhost', '127.0.0.1', '::1'].includes(u.hostname) || u.searchParams.get('sslmode') === 'disable';
   u.searchParams.delete('sslmode');
-  return { connectionString: u.toString(), max: 10, ssl: local ? false : { rejectUnauthorized: false } };
+  // Connections are kept open for 5 minutes when quiet (not 10 seconds): opening a new one to a hosted
+  // database takes most of a second, which made the first click after a quiet spell feel slow.
+  return {
+    connectionString: u.toString(), max: 10, idleTimeoutMillis: 5 * 60 * 1000, keepAlive: true,
+    ssl: local ? false : { rejectUnauthorized: false },
+  };
 }
 
 export async function initDb() {
@@ -26,6 +31,8 @@ export async function initDb() {
     const { drizzle } = await import('drizzle-orm/node-postgres');
     const pool = new pg.Pool(pgConfig(process.env.DATABASE_URL));
     poolRef = pool;
+    // The database may close a quiet connection itself; the pool just opens a new one when needed.
+    pool.on('error', (e) => console.warn('[db] a quiet connection was closed:', e.message));
     impl = {
       query: (text, params) => pool.query(text, params),
       exec: (text) => pool.query(text),
