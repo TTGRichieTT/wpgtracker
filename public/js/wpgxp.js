@@ -50,7 +50,7 @@ export async function wpgXpAdminTab(body) {
            <div class="row"><button class="btn" id="wxBot">Go back to the Discord bot</button></div>
            <p class="muted small" style="margin:8px 0 0">Going back shows the bot's numbers again. Anything earned here after the switch is not sent to the bot.</p>`
         : `<p>The leaderboard, profiles and Discord show the <b>Discord bot's</b> WPG XP. Since <b>${when(d.since)}</b> the app has also been counting every match by itself (below), without changing anyone's XP, so you can check the two agree.</p>
-           <p class="small">When you're happy: paste the rank list, then switch over. Everyone starts from their bot XP on that day and the app takes it from there (with penalties, if they're on).</p>
+           <p class="small">When you're happy with the comparison, switch over. Everyone starts from their bot XP on that day and the app takes it from there (with penalties, if they're on).</p>
            <div class="row"><button class="btn primary" id="wxApp" ${d.ranks.length < 2 ? 'disabled title="Paste the rank list first"' : ''}>Switch WPG XP over to this app</button></div>`}
       <p class="small" style="margin:12px 0 0"><b>Servers that earn WPG XP:</b> ${earning.length ? earning.map((x) => `${esc(x.name)}${x.rcon ? '' : ' <span class="pill banned">no RCON — not counted</span>'}`).join(', ') : '<span style="color:var(--red)">none</span>'}
         <span class="muted">· change in <a href="#/admin/game-servers">Game servers</a> (“Matches here earn WPG XP”)</span></p>
@@ -67,7 +67,7 @@ export async function wpgXpAdminTab(body) {
 
     <div class="panel">
       <div class="panel-title">WPG ranks <span class="sub">${d.ranks.length ? `${d.ranks.length} ranks · ${esc(d.ranks[0].name)} → ${esc(d.ranks[d.ranks.length - 1].name)}` : 'not set up yet'}</span></div>
-      <p class="small" style="margin-top:0">One rank per line, lowest first, with the XP it starts at: <code>Recruit I = 0</code>. Commas, tabs (pasted from a spreadsheet) or spaces work too. Used for everyone's rank after the switch, and for "XP to next rank" straight away.</p>
+      <p class="small" style="margin-top:0">One rank per line, lowest first, with the XP it starts at: <code>Recruit I = 0</code>. Commas, tabs (pasted from a spreadsheet) or spaces work too. Everyone's rank and "XP to next rank" use this list, even before the switch. It starts as the standard 200 ranks (each needs 2,000–4,550 XP more than the last, so one match can't climb two ranks).</p>
       <textarea id="wxRanks" style="min-height:240px;font-family:ui-monospace,Consolas,monospace;font-size:14px" placeholder="Recruit I = 0&#10;Recruit II = 1500&#10;…">${esc(ranksText(d.ranks))}</textarea>
       <div class="row" style="margin-top:10px">
         <button class="btn primary" id="wxSaveRanks">Save rank list</button>

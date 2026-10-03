@@ -187,8 +187,10 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   in Admin → Game servers (the WPG server is ticked; it needs RCON). Separate from Clan rank / Clan XP.
 - **Two ways to run it.** At first the **Discord bot** is in charge and the app copies its numbers every 5 minutes.
   Meanwhile the app counts every match by itself without changing anyone's XP. Admin → WPG XP compares the two.
-- **Switching over:** paste the rank list (one per line, e.g. `Recruit II = 1500`), check the comparison, then press
-  **Switch WPG XP over to this app**. Everyone starts from their bot XP that day and the bot is no longer read.
+- **Ranks:** the 200 standard ranks are built in (Recruit I at 0 → Wardog X at 650,000 XP; each needs 2,000–4,550 XP
+  more than the last, so one match can't climb two ranks). Everyone's shown rank uses this list, even while the bot is
+  in charge. Change it in Admin → WPG XP (one per line, e.g. `Recruit II = 2000`).
+- **Switching over:** check the comparison, then press **Switch WPG XP over to this app**. Everyone starts from their bot XP that day and the bot is no longer read.
   **Go back to the Discord bot** undoes it (XP earned in the app after the switch isn't kept).
 - **How XP is counted** (amounts in Admin → WPG XP), when each match ends: XP for kills, time played, finishing and
   winning; minus XP for a loss, a bad K/D (more deaths than kills) and leaving early. Leaving early isn't counted

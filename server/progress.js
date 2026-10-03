@@ -5,6 +5,7 @@
 // Uses the same key as WarCon (WARCON_API_KEY); WPG_PROGRESS_URL can change the address.
 import { q, setting } from './db.js';
 import { bus } from './bus.js';
+import { wpgRanks, rankAt } from './wpgxp.js';
 
 const BASE = (process.env.WPG_PROGRESS_URL || 'https://warcon.taild5e8b5.ts.net:10000').replace(/\/+$/, '');
 const KEY = () => process.env.WPG_PROGRESS_KEY || process.env.WARCON_API_KEY || '';
@@ -27,6 +28,8 @@ export async function syncProgress() {
   // What we had before this sync: to spot rank-ups (new players are never announced, so a first sync is
   // quiet) and to write only the players whose numbers changed — in one database trip, not one per player.
   const before = new Map((await q('SELECT steam_id, bot_name, xp, rank_level, rank_name FROM server_progress')).map((r) => [r.steam_id, r]));
+  // The bot's XP, but the rank from the app's rank list (Admin → WPG XP) once there is one.
+  const ranks = await wpgRanks();
   const changed = [];
   let n = 0;
   for (const p of players) {
@@ -40,6 +43,8 @@ export async function syncProgress() {
       rank_level: Math.min(200, Math.max(1, Math.round(Number(p.rank_level) || 1))),
       rank_name: String(p.rank_name || '').slice(0, 40),
     };
+    const own = rankAt(row.xp, ranks);
+    if (own) Object.assign(row, { rank_level: own.level, rank_name: own.name });
     const old = before.get(sid);
     if (old && row.rank_level > old.rank_level) {
       bus.emit('announce', { type: 'wpgrank', steamId: sid, name: row.bot_name, rank: row.rank_name, xp: row.xp });

@@ -57,6 +57,30 @@ export async function rankProgress(xp) {
   return r ? { from: r.from, next: r.next } : null;
 }
 
+// The standard 200 WPG ranks (20 tiers × I–X, Recruit I at 0 → Wardog X at 650,000 XP). Each rank needs
+// 2,000 XP more than the last at the start, rising steadily to 4,550 near the top (always in 50s). One match
+// can't climb two ranks: that would take over 2,000 XP (around 100 kills in an hour-long win).
+const TIERS = ['Recruit', 'Private', 'Private First Class', 'Lance Corporal', 'Corporal', 'Sergeant', 'Staff Sergeant',
+  'Sergeant Major', 'Warrant Officer', 'Second Lieutenant', 'Lieutenant', 'Captain', 'Major', 'Lieutenant Colonel', 'Colonel',
+  'Brigadier', 'General', 'Field Marshal', 'WPG Commander', 'Wardog'];
+const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+export function defaultRanks() {
+  const count = TIERS.length * NUMERALS.length;
+  const top = 650000;
+  const minGap = 2000;
+  const step = 50;
+  // The XP above 2,000 per rank, in 50s, shared out so each gap is a little bigger than the one before.
+  const extra = (top - minGap * (count - 1)) / step;
+  const weight = ((count - 1) * (count - 2)) / 2;
+  const units = Array.from({ length: count - 1 }, (_, k) => Math.floor((extra * k) / weight));
+  for (let k = count - 2, left = extra - units.reduce((a, b) => a + b, 0); left > 0; k--, left--) units[k]++;
+  let xp = 0;
+  return Array.from({ length: count }, (_, i) => {
+    if (i) xp += minGap + units[i - 1] * step;
+    return { level: i + 1, name: `${TIERS[Math.floor(i / 10)]} ${NUMERALS[i % 10]}`, min_xp: xp };
+  });
+}
+
 // One rank per line: "Recruit I = 0", "Recruit II, 1500", "Recruit III 3,000" or tab-separated (pasted
 // from a spreadsheet). A leading "1." or "1)" is ignored. XP must start at 0 and go up.
 export function parseRanks(text) {
@@ -92,6 +116,36 @@ async function writeShown(ranks) {
     [json],
   );
   await upsertShown(json);
+}
+
+// While the bot is in charge: everyone's shown rank follows the app's rank list (XP stays the bot's).
+// No rank-up posts: this is the list changing, not anyone ranking up.
+export async function rerankBotRows(ranks) {
+  if (!ranks.length) return;
+  const rows = (await q('SELECT steam_id, xp FROM server_progress')).map((r) => {
+    const rank = rankAt(r.xp, ranks);
+    return { steam_id: r.steam_id, level: rank.level, rank: rank.name };
+  });
+  if (!rows.length) return;
+  await q(
+    `UPDATE server_progress p SET rank_level = x.level, rank_name = x.rank
+       FROM jsonb_to_recordset($1::jsonb) AS x(steam_id text, level int, rank text) WHERE p.steam_id = x.steam_id`,
+    [JSON.stringify(rows)],
+  );
+}
+
+async function saveRanks(ranks) {
+  await q('DELETE FROM wpg_ranks');
+  if (ranks.length) {
+    await q(
+      `INSERT INTO wpg_ranks (level, name, min_xp) SELECT level, name, min_xp FROM jsonb_to_recordset($1::jsonb) AS x(level int, name text, min_xp int)`,
+      [JSON.stringify(ranks)],
+    );
+  }
+  rankCache = null;
+  // Everyone's shown rank follows the new list straight away (no rank-up posts).
+  if (await appIsSource()) await writeShown(ranks);
+  else await rerankBotRows(ranks);
 }
 
 function upsertShown(json) {
@@ -190,7 +244,7 @@ export async function switchSource(to, actor) {
   let note = '';
   if (to === 'app') {
     const ranks = await wpgRanks();
-    if (ranks.length < 2) throw new HttpError(400, 'Paste the WPG rank list first (below).');
+    if (ranks.length < 2) throw new HttpError(400, 'Set up the WPG rank list first (below).');
     // Get the bot's very latest numbers; if it can't be reached, the last ones copied are used.
     const synced = await syncProgress().catch((e) => ({ ok: false, reason: e.message }));
     if (!synced.ok) {
@@ -257,16 +311,7 @@ wpgxp.get('/admin/wpg-xp', role('admin'), async (_req, res) => {
 
 wpgxp.put('/admin/wpg-xp/ranks', role('admin'), async (req, res) => {
   const ranks = parseRanks(str(req.body?.text, 40000));
-  await q('DELETE FROM wpg_ranks');
-  if (ranks.length) {
-    await q(
-      `INSERT INTO wpg_ranks (level, name, min_xp) SELECT level, name, min_xp FROM jsonb_to_recordset($1::jsonb) AS x(level int, name text, min_xp int)`,
-      [JSON.stringify(ranks)],
-    );
-  }
-  rankCache = null;
-  // Already switched over: everyone's shown rank follows the new list straight away (no rank-up posts).
-  if (await appIsSource()) await writeShown(ranks);
+  await saveRanks(ranks);
   await audit(req.user.id, 'wpgxp.ranks', `${ranks.length} ranks`);
   bus.emit('server:board', null);
   res.json({ ok: true, ranks: ranks.length });
@@ -301,5 +346,14 @@ export async function rulesOut() {
 }
 
 export async function startWpgXp() {
-  if (!(await setting('_wpgxp_since'))) await resetComparison().catch((e) => console.warn('[wpgxp]', e.message));
+  try {
+    if (!(await setting('_wpgxp_since'))) await resetComparison();
+    // The standard 200 ranks, put in once if there's no rank list yet (an admin can change them in Admin → WPG XP).
+    if (!(await setting('_wpg_ranks_default'))) {
+      if (!(await wpgRanks()).length) await saveRanks(defaultRanks());
+      await saveSetting('_wpg_ranks_default', 'true');
+    }
+  } catch (e) {
+    console.warn('[wpgxp]', e.message);
+  }
 }
