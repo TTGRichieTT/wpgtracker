@@ -779,6 +779,7 @@ async function viewProfile(main, [id]) {
             ${u.callsign ? `<div class="accent">“${esc(u.callsign)}”</div>` : ''}
             <div class="row" style="margin-top:6px">${rolePill(u)} ${playingTag(u)} <span class="muted small">${state.online.has(u.id) ? '<span style="color:var(--green)">● Online</span>' : `Last seen ${timeAgo(u.last_seen)}`} · Joined ${fmtDate(u.joined_at)}</span></div>
             ${customFields ? `<div class="row" style="margin-top:8px">${customFields}</div>` : ''}
+            ${p.combat?.unit ? `<div class="row" style="margin-top:8px;gap:8px"><a href="#/command" class="pill" style="color:${esc(p.combat.unit.color)};border-color:${esc(p.combat.unit.color)}">${icon('shield', 'width="12" height="12" style="vertical-align:-1px"')} ${esc(p.combat.unit.name)}</a><b style="font:700 15px var(--head);text-transform:uppercase">${esc(p.combat.role)}</b><span class="muted small">${esc(p.combat.unit.label)}</span></div>` : ''}
           </div>
           <div style="text-align:center">${badgeFor(u, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${esc(isPmc(u) ? 'PMC' : u.rank ? u.rank.name : 'Unranked')}</div></div>
         </div>
@@ -801,6 +802,7 @@ async function viewProfile(main, [id]) {
             ${u.membership === 'pmc'
             ? tile('swords', `${state.settings.clan_tag || 'WPG'} member`, 'PMC', 'pmc')
             : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
+            ${p.combat?.unit ? tile('shield', 'Unit', p.combat.unit.name) + tile('chevrons', 'Role', p.combat.role, 'fit') : ''}
           </div>
         </div>
       </div>
