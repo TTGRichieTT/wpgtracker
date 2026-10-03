@@ -683,8 +683,10 @@ body::after { display: none; }
 .cc-slot.open { background: rgba(245,165,36,.06); }
 .cc-role { font: 700 13px var(--head); text-transform: uppercase; letter-spacing: .4px; color: var(--accent2); width: 190px; flex: 0 0 auto; }
 .cc-open { font: 700 13px var(--head); color: #f5a524; flex: 1; }
-.cc-who { display: flex; align-items: center; gap: 6px; color: inherit; flex: 1; min-width: 0; }
+.cc-who { display: flex; align-items: center; gap: 6px; color: var(--text); flex: 1; min-width: 0; text-decoration: none; }
 .cc-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-who:hover b { color: var(--accent2); text-decoration: underline; }
+.cc-slot > .btn { flex: none; }
 .cc-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .cc-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cc-link { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
