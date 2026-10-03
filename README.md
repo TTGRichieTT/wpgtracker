@@ -161,6 +161,10 @@ Global Wardogs stats are provided by [WARDOGS Tracker](https://wardogstracker.gg
 - **WPG member:** a full clan member with a rank.
 - **PMC (guest):** a friend of the clan using the app. PMCs have **no rank** and show an orange **PMC** badge.
   Approve new sign-ups with **Approve as member** or **Approve as PMC**, or change it later in Admin → Members → Edit → *Member type*.
+  If *New sign-ups need approval* is **off** (Admin → Settings), new sign-ups join straight away as **PMCs**, and staff get a
+  notice. Make them a WPG member later in Admin → Members → Edit → *Member type*.
+- **What PMCs can see:** no Combat Command, and only the chat channels ticked *PMCs (guests) can see it* in
+  Admin → Chat channels (#wardogs and #looking-for-group to start with). Staff see every channel.
 
 ### Artwork
 

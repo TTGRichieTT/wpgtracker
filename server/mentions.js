@@ -3,7 +3,7 @@
 //   <@r:5>         everyone with a rank (by rank id)
 //   <@g:admin>     a group: admin, mod, member (WPG members), pmc (guests), everyone
 import { q } from './db.js';
-import { roleAtLeast } from './util.js';
+import { canSeeChannel } from './util.js';
 
 export const GROUPS = ['admin', 'mod', 'member', 'pmc', 'everyone'];
 const TOKEN = /<@(u|r|g):([a-z0-9]{1,20})>/g;
@@ -30,7 +30,7 @@ export async function mentionRecipients(mentions, channel, authorId) {
   const { users, ranks, groups } = mentions;
   if (!users.size && !ranks.size && !groups.size) return [];
   const rows = await q(
-    `SELECT id, role FROM users
+    `SELECT id, role, membership FROM users
       WHERE status = 'active' AND id <> $1 AND (
             id = ANY($2)
          OR (rank_id = ANY($3) AND membership <> 'pmc')
@@ -45,7 +45,7 @@ export async function mentionRecipients(mentions, channel, authorId) {
       groups.has('admin'), groups.has('mod'), groups.has('member'), groups.has('pmc'), groups.has('everyone'),
     ],
   );
-  return rows.filter((u) => roleAtLeast(u.role, channel.min_role)).map((u) => u.id);
+  return rows.filter((u) => canSeeChannel(u, channel)).map((u) => u.id);
 }
 
 const GROUP_NAMES = { admin: 'Admins', mod: 'Mods', member: 'Members', pmc: 'PMC', everyone: 'everyone' };

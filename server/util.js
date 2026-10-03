@@ -17,6 +17,9 @@ export const START_ADMIN_IDS = new Set(
   (process.env.ADMIN_STEAM_IDS || '76561198099451925').split(',').map((s) => s.trim()).filter((s) => /^\d{17}$/.test(s)),
 );
 export const roleAtLeast = (role, min) => (ROLE_LEVEL[role] || 0) >= (ROLE_LEVEL[min] || 99);
+// Chat channels: role first; PMC guests only see channels opened to PMCs (staff see everything their role allows).
+export const canSeeChannel = (user, ch) =>
+  roleAtLeast(user.role, ch.min_role) && (user.membership !== 'pmc' || roleAtLeast(user.role, 'mod') || !!ch.pmc_access);
 
 // Sign-ins are kept in the database (so they survive restarts) with a short in-memory copy, so most
 // requests don't need a database trip just to know who you are. The "keep me signed in" time is

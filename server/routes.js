@@ -6,7 +6,7 @@ import { syncWardogs } from './wardogs.js';
 import { combatFor, isWpg } from './combat.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
-  HttpError, signedIn, member, roleAtLeast, publicUser, str, int, color, safeUrl,
+  HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, color, safeUrl,
   issueRememberToken,
 } from './util.js';
 
@@ -381,7 +381,7 @@ api.delete('/friends/:id', member, async (req, res) => {
 // ---------- Chat ----------
 async function visibleChannels(user) {
   const all = await q('SELECT * FROM channels ORDER BY sort_order, id');
-  return all.filter((c) => roleAtLeast(user.role, c.min_role));
+  return all.filter((c) => canSeeChannel(user, c));
 }
 export { visibleChannels };
 

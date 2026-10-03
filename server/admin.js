@@ -231,6 +231,7 @@ const RESOURCES = {
       description: (v) => str(v, 200),
       min_role: (v) => (ROLE_LEVEL[v] ? v : 'member'),
       read_only: bool,
+      pmc_access: bool,
       sort_order: (v) => int(v),
     },
   },

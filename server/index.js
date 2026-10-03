@@ -127,10 +127,12 @@ async function loginSteamId(req, steamId, fallbackName) {
     const count = await one('SELECT COUNT(*)::int AS n FROM users');
     const first = count.n === 0 || owner || START_ADMIN_IDS.has(steamId);
     const needsApproval = !first && (await flag('require_approval'));
-    const lowest = await one('SELECT id FROM ranks ORDER BY sort_order LIMIT 1');
+    // With approval off, newcomers join as PMC guests (no rank, no WPG-only areas) until staff make them members.
+    const pmc = !first && !needsApproval;
+    const lowest = pmc ? null : await one('SELECT id FROM ranks ORDER BY sort_order LIMIT 1');
     user = await one(
-      `INSERT INTO users (steam_id, persona_name, avatar, profile_url, role, status, rank_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO users (steam_id, persona_name, avatar, profile_url, role, status, rank_id, membership)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
         steamId,
         summary?.persona_name || fallbackName || `Soldier-${steamId.slice(-4)}`,
@@ -139,10 +141,13 @@ async function loginSteamId(req, steamId, fallbackName) {
         first ? 'admin' : 'member',
         needsApproval ? 'pending' : 'active',
         lowest?.id || null,
+        pmc ? 'pmc' : 'member',
       ],
     );
     if (needsApproval) {
       bus.emit('staff:notify', { title: 'New recruit waiting', body: `${user.persona_name} is waiting for approval.`, link: '#/admin/users' });
+    } else if (pmc) {
+      bus.emit('staff:notify', { title: 'New PMC joined', body: `${user.persona_name} joined as a PMC (guest). Make them a member in Admin → Members → Edit.`, link: '#/admin/users' });
     }
   } else if (summary) {
     user = await one('UPDATE users SET persona_name=$2, avatar=$3, profile_url=$4, last_seen=now() WHERE id=$1 RETURNING *', [

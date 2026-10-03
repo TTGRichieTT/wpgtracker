@@ -77,6 +77,7 @@ export const channels = pgTable('channels', {
   description: text().notNull().default(''),
   min_role: text().notNull().default('member'),
   read_only: boolean().notNull().default(false),
+  pmc_access: boolean().notNull().default(false), // PMC guests can see it (otherwise WPG members and staff only)
   sort_order: integer().notNull().default(0),
 });
 

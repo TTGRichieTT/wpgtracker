@@ -137,16 +137,17 @@ const RESOURCES = {
   channels: {
     one: 'channel',
     title: 'Chat channels',
-    help: 'Who can see: Members = everyone, Mods = mods and admins, Admins = admins only.',
+    help: 'Who can see: Members = WPG members (plus PMC guests if “PMCs can see it” is ticked), Mods = mods and admins, Admins = admins only.',
     fields: [
       { k: 'name', label: 'Channel name' },
       { k: 'description', label: 'Description' },
       { k: 'min_role', label: 'Who can see it', type: 'select', options: [['member', 'Members'], ['mod', 'Mods'], ['admin', 'Admins']] },
+      { k: 'pmc_access', label: 'PMCs (guests) can see it', type: 'check' },
       { k: 'read_only', label: 'Only staff can post', type: 'check' },
       { k: 'sort_order', label: 'Order', type: 'number' },
     ],
     defaults: { min_role: 'member', sort_order: 100 },
-    row: (r) => `<div class="grow"><b># ${esc(r.name)}</b> ${r.min_role !== 'member' ? `<span class="pill mod">${esc(r.min_role)}s</span>` : ''} ${r.read_only ? '<span class="pill">read only</span>' : ''}<div class="muted small">${esc(r.description)}</div></div>`,
+    row: (r) => `<div class="grow"><b># ${esc(r.name)}</b> ${r.min_role !== 'member' ? `<span class="pill mod">${esc(r.min_role)}s</span>` : ''} ${r.pmc_access && r.min_role === 'member' ? '<span class="pill pmc">PMCs too</span>' : ''} ${r.read_only ? '<span class="pill">read only</span>' : ''}<div class="muted small">${esc(r.description)}</div></div>`,
   },
   games: {
     one: 'game',
@@ -580,7 +581,7 @@ const SETTINGS = [
     ['discord_server_id', 'Discord server ID (optional — found from the invite link if left empty)'],
   ]],
   ['Members', [
-    ['require_approval', 'New sign-ups need approval (members only)', 'check'],
+    ['require_approval', 'New sign-ups need approval (when off, they join as PMC guests)', 'check'],
     ['dm_friends_only', 'Private messages only between friends', 'check'],
   ]],
   ['Ranks & XP', [

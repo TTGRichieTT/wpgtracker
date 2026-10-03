@@ -303,6 +303,13 @@ Every member will have a **primary role** (main specialty), a **secondary role**
     await q("INSERT INTO settings (key, value) VALUES ('_cleared_chat_logins', 'true') ON CONFLICT DO NOTHING");
   }
 
+  // PMC guests only see channels opened to them (2026-10-03). Open #wardogs and #looking-for-group once;
+  // after that it's the "PMCs can see it" tick in Admin → Chat channels.
+  if (!(await one("SELECT value FROM settings WHERE key = '_pmc_channels'"))) {
+    await q("UPDATE channels SET pmc_access = true WHERE name IN ('wardogs', 'looking-for-group')");
+    await q("INSERT INTO settings (key, value) VALUES ('_pmc_channels', 'true') ON CONFLICT DO NOTHING");
+  }
+
   if (!(await one("SELECT value FROM settings WHERE key = '_seeded_discord'"))) {
     await q("UPDATE settings SET value = $1 WHERE key = 'discord_invite' AND COALESCE(value, '') = ''", [DEFAULT_SETTINGS.discord_invite]);
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_discord', 'true') ON CONFLICT DO NOTHING");
@@ -319,15 +326,15 @@ Every member will have a **primary role** (main specialty), a **secondary role**
     );
   }
   const channels = [
-    ['general', 'Main comms for the whole clan', 'member'],
-    ['wardogs', 'Wardogs chat, tactics and clips', 'member'],
-    ['looking-for-group', 'Find a squad and get in game', 'member'],
-    ['staff-room', 'Mods and admins only', 'mod'],
+    ['general', 'Main comms for the whole clan', 'member', false],
+    ['wardogs', 'Wardogs chat, tactics and clips', 'member', true],
+    ['looking-for-group', 'Find a squad and get in game', 'member', true],
+    ['staff-room', 'Mods and admins only', 'mod', false],
   ];
   order = 0;
-  for (const [name, description, minRole] of channels) {
-    await q('INSERT INTO channels (name, description, min_role, sort_order) VALUES ($1,$2,$3,$4)', [
-      name, description, minRole, (order += 10),
+  for (const [name, description, minRole, pmc] of channels) {
+    await q('INSERT INTO channels (name, description, min_role, pmc_access, sort_order) VALUES ($1,$2,$3,$4,$5)', [
+      name, description, minRole, pmc, (order += 10),
     ]);
   }
   await q(
