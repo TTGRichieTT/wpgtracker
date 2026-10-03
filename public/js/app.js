@@ -119,7 +119,7 @@ export function rolePill(u) {
   return dev.trim();
 }
 const isPmc = (u) => u?.membership === 'pmc';
-// WPG server rank as shown in the app: "WPG COMMANDER IX" -> "WPG Commander IX".
+// WPG server rank as shown in the app: "FIELD COMMANDER IX" -> "Field Commander IX".
 export const wpgRankName = (name) => String(name || 'RECRUIT I').split(/\s+/)
   .map((w) => (/^(WPG|[IVX]+)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(' ');
 // Progress to the next WPG rank, for { xp, from, next: { name, xp } } (no next = top rank or no rank list yet).

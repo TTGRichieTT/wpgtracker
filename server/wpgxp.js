@@ -62,7 +62,7 @@ export async function rankProgress(xp) {
 // can't climb two ranks: that would take over 2,000 XP (around 100 kills in an hour-long win).
 const TIERS = ['Recruit', 'Private', 'Private First Class', 'Lance Corporal', 'Corporal', 'Sergeant', 'Staff Sergeant',
   'Sergeant Major', 'Warrant Officer', 'Second Lieutenant', 'Lieutenant', 'Captain', 'Major', 'Lieutenant Colonel', 'Colonel',
-  'Brigadier', 'General', 'Field Marshal', 'WPG Commander', 'Wardog'];
+  'Brigadier', 'General', 'Field Marshal', 'Field Commander', 'Wardog'];
 const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 export function defaultRanks() {
   const count = TIERS.length * NUMERALS.length;
@@ -352,6 +352,14 @@ export async function startWpgXp() {
     if (!(await setting('_wpg_ranks_default'))) {
       if (!(await wpgRanks()).length) await saveRanks(defaultRanks());
       await saveSetting('_wpg_ranks_default', 'true');
+    }
+    // "WPG Commander" became "Field Commander" (2026-10-03). Rename it once in the saved rank list and in
+    // everyone's shown rank; an admin's own names for that tier are left alone.
+    if (!(await setting('_wpg_field_commander'))) {
+      await q("UPDATE wpg_ranks SET name = 'Field Commander' || substr(name, 14) WHERE name ~ '^WPG Commander [IVX]+$'");
+      await q("UPDATE server_progress SET rank_name = 'Field Commander' || substr(rank_name, 14) WHERE rank_name ~ '^WPG Commander [IVX]+$'");
+      rankCache = null;
+      await saveSetting('_wpg_field_commander', 'true');
     }
   } catch (e) {
     console.warn('[wpgxp]', e.message);

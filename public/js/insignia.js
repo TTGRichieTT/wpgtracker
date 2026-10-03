@@ -207,7 +207,7 @@ export function rankBadge(rank, size = 40) {
 
 // ---------- WPG server ranks (Recruit I → Wardog X) ----------
 // 20 tiers of 10 (I–X). The tier sets the insignia and colour; the numeral tab shows the step within it.
-// Enlisted in bronze, NCOs in silver, officers in gold, generals in red, WPG Commander and Wardog in WPG blue.
+// Enlisted in bronze, NCOs in silver, officers in gold, generals in red, Field Commander and Wardog in WPG blue.
 export const WPG_TIERS = [
   { name: 'Recruit', abbr: 'RCT', color: '#8a8f7a', insignia: {} },
   { name: 'Private', color: '#cd7f32', insignia: { chevrons: 1 } },
@@ -227,7 +227,7 @@ export const WPG_TIERS = [
   { name: 'Brigadier', color: '#c9a227', insignia: { crown: true, pips: 3 } },
   { name: 'General', color: '#e5484d', insignia: { swords: true, stars: 3 } },
   { name: 'Field Marshal', color: '#e5484d', insignia: { swords: true, crown: true, wreath: true } },
-  { name: 'WPG Commander', color: '#29b6f6', insignia: { stars: 5 } },
+  { name: 'Field Commander', color: '#29b6f6', insignia: { stars: 5 } },
   { name: 'Wardog', color: '#7fdcff', insignia: { crown: true, stars: 3, wreath: true } },
 ];
 const WPG_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
