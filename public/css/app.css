@@ -254,6 +254,8 @@ a.item:hover { background: rgba(41,182,246,.05); }
 .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; }
 .tabs a { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); color: var(--muted); font: 700 14px var(--head); text-transform: uppercase; white-space: nowrap; text-decoration: none; }
 .tabs a.active { border-color: var(--accent); color: var(--accent2); background: rgba(41,182,246,.1); }
+.admin-section { max-width: 340px; margin-bottom: 14px; }
+.admin-section select { font: 700 15px var(--head); text-transform: uppercase; cursor: pointer; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #13263d; vertical-align: middle; }

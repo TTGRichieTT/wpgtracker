@@ -4,25 +4,26 @@ import { insigniaSVG, rankBadge, INSIGNIA_PARTS } from './insignia.js';
 
 const isAdmin = () => state.me.role === 'admin';
 
+// Grouped in the section drop-down; Members stays first (the default section).
 const TABS = [
-  { key: 'users', label: 'Members', mod: true },
-  { key: 'announcements', label: 'News', mod: true },
-  { key: 'ranks', label: 'Ranks' },
-  { key: 'awards', label: 'Medals' },
-  { key: 'stat-defs', label: 'Stats' },
-  { key: 'game-servers', label: 'Game servers' },
-  { key: 'unlocks', label: 'Unlocks' },
-  { key: 'artillery', label: 'Artillery' },
-  { key: 'channels', label: 'Chat channels' },
-  { key: 'games', label: 'Games' },
-  { key: 'profile-fields', label: 'Profile fields' },
-  { key: 'settings', label: 'Settings' },
-  { key: 'recruitment', label: 'Recruitment', mod: true },
-  { key: 'units', label: 'Units' },
-  { key: 'cheatwatch', label: 'Cheat watch', mod: true },
-  { key: 'streams', label: 'Streams', mod: true },
-  { key: 'cleanup', label: 'Clean up' },
-  { key: 'audit', label: 'Audit log', mod: true },
+  { key: 'users', label: 'Members', mod: true, group: 'People' },
+  { key: 'announcements', label: 'News', mod: true, group: 'People' },
+  { key: 'recruitment', label: 'Recruitment', mod: true, group: 'People' },
+  { key: 'units', label: 'Units', group: 'People' },
+  { key: 'cheatwatch', label: 'Cheat watch', mod: true, group: 'People' },
+  { key: 'streams', label: 'Streams', mod: true, group: 'People' },
+  { key: 'ranks', label: 'Ranks', group: 'Game' },
+  { key: 'awards', label: 'Medals', group: 'Game' },
+  { key: 'stat-defs', label: 'Stats', group: 'Game' },
+  { key: 'game-servers', label: 'Game servers', group: 'Game' },
+  { key: 'games', label: 'Games', group: 'Game' },
+  { key: 'unlocks', label: 'Unlocks', group: 'Game' },
+  { key: 'artillery', label: 'Artillery', group: 'Game' },
+  { key: 'settings', label: 'Settings', group: 'App' },
+  { key: 'channels', label: 'Chat channels', group: 'App' },
+  { key: 'profile-fields', label: 'Profile fields', group: 'App' },
+  { key: 'cleanup', label: 'Clean up', group: 'App' },
+  { key: 'audit', label: 'Audit log', mod: true, group: 'App' },
 ];
 
 // Field types: text, number, textarea, check, color, select, insignia, colors
@@ -188,8 +189,10 @@ export async function viewAdmin(main, [tabParam]) {
   const tabs = TABS.filter((t) => t.mod || isAdmin());
   const tab = tabs.find((t) => t.key === (tabParam || '').split('?')[0]) || tabs[0];
   main.innerHTML = `<h1>${icon('shield', 'width="26" height="26" style="vertical-align:-4px;color:var(--accent)"')} Command panel</h1>
-    <div class="tabs">${tabs.map((t) => `<a href="#/admin/${t.key}" class="${t.key === tab.key ? 'active' : ''}">${t.label}</a>`).join('')}</div>
+    <label class="field admin-section"><span>Section</span><select id="adminSection">${[...new Set(tabs.map((t) => t.group))].map((g) => `<optgroup label="${g}">${
+      tabs.filter((t) => t.group === g).map((t) => `<option value="${t.key}" ${t.key === tab.key ? 'selected' : ''}>${t.label}</option>`).join('')}</optgroup>`).join('')}</select></label>
     <div id="adminBody"><div class="spinner"></div></div>`;
+  document.getElementById('adminSection').onchange = (e) => { location.hash = `#/admin/${e.target.value}`; };
   const body = document.getElementById('adminBody');
   if (tab.key === 'users') return usersTab(body);
   if (tab.key === 'settings') return settingsTab(body);
