@@ -850,6 +850,7 @@ function noteCommand(name, how) {
 
 // Runs a command as if it came from Discord (for the Preview button in Admin → Settings).
 export async function previewCommand(name, user) {
+  if (name.startsWith('post:') && POST_PREVIEWS[name.slice(5)]) return POST_PREVIEWS[name.slice(5)](user);
   const cmd = COMMANDS[name];
   if (!cmd || cmd.private) throw new Error('That command has no preview.');
   // Member cards are for the admin themself: by linked Discord, or by their name if not linked.
@@ -1034,18 +1035,64 @@ async function streamPost(s, u) {
     return streamEmbed(s, u);
   }
 }
+// Channel posts (promotion, medal, WPG rank up) as WPG picture cards, with a one-line summary above
+// (that's what shows in phone notifications). Falls back to the plain post if the picture can't be made.
+async function announcePicture(kind, text, render, fallback, link) {
+  const out = await asPicture(kind, render, fallback, link);
+  return out.files ? { content: text, ...out } : out;
+}
+// rank / from: rows from the ranks table (name, abbr, colour, insignia).
+async function promotionPost(u, rank, from) {
+  const text = `⬆️ **${u.persona_name}**${mentionFor(u)} has been promoted to **${rank.name}** (${rank.abbr}). Salute!`;
+  return announcePicture('promotion', text, async (cards) => cards.renderPromotionCard({
+    name: await cardName(u), avatar: avatarOf(u), rank, from, xp: u.xp,
+  }), () => ({ embeds: [{ color: GOLD, title: '⬆️ Promotion', description: text.replace(/^⬆️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
+}
+async function medalPost(u, names) {
+  const text = `🎖️ **${u.persona_name}**${mentionFor(u)} earned ${names.map((n) => `**${n}**`).join(', ')}.`;
+  const rows = await q('SELECT DISTINCT ON (name) name, description, colors FROM awards WHERE name = ANY($1) ORDER BY name, id', [names]);
+  const medals = names.map((n) => rows.find((m) => m.name === n) || { name: n, description: '', colors: '' });
+  return announcePicture('medal', text, async (cards) => cards.renderMedalAwardCard({ name: await cardName(u), avatar: avatarOf(u), medals }),
+    () => ({ embeds: [{ color: GOLD, title: names.length === 1 ? '🎖️ Medal awarded' : '🎖️ Medals awarded', description: text.replace(/^🎖️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
+}
+// u may be null (a player on the WPG server who isn't in the app); name is then the bot's name for them.
+async function wpgRankPost(u, name, rank, xp) {
+  const text = `📈 **${u?.persona_name || name}**${mentionFor(u)} reached **${wpgRank(rank)}** (${num(xp)} WPG XP).`;
+  const pos = await one('SELECT COUNT(*)::int + 1 AS n, (SELECT COUNT(*)::int FROM server_progress) AS total FROM server_progress WHERE xp > $1', [xp]);
+  return announcePicture('wpgrank', text, async (cards) => cards.renderWpgRankUpCard({
+    name: u ? await cardName(u) : cleanName(name), avatar: u ? avatarOf(u) : '', rank, xp, position: pos?.n, total: pos?.total,
+  }), () => ({ embeds: [{ color: COLOR, title: '📈 WPG rank up', description: text.replace(/^📈 /, '') }] }), u ? profileLink(u) : null);
+}
+// Admin → Settings preview of the channel posts, made from the admin's own rank, medals and WPG rank.
+const POST_PREVIEWS = {
+  promotion: async (u) => {
+    const rank = (u.rank_id && (await one('SELECT * FROM ranks WHERE id=$1', [u.rank_id]))) || (await one('SELECT * FROM ranks ORDER BY sort_order LIMIT 1'));
+    if (!rank) throw new Error('No ranks set up yet.');
+    return promotionPost(u, rank, await one('SELECT * FROM ranks WHERE sort_order < $1 ORDER BY sort_order DESC LIMIT 1', [rank.sort_order]));
+  },
+  medal: async (u) => {
+    const got = await q('SELECT a.name FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY ua.given_at DESC LIMIT 1', [u.id]);
+    const names = got.length ? got.map((r) => r.name) : (await q('SELECT name FROM awards ORDER BY sort_order, id LIMIT 1')).map((r) => r.name);
+    if (!names.length) throw new Error('No medals set up yet.');
+    return medalPost(u, names);
+  },
+  wpgrank: async (u) => {
+    const p = await one('SELECT * FROM server_progress WHERE steam_id=$1', [u.steam_id]);
+    return wpgRankPost(u, u.persona_name, p?.rank_name || 'RECRUIT I', p?.xp || 0);
+  },
+};
 // Other parts of the app raise 'announce' events; each type can be switched off in Admin → Settings.
 bus.on('announce', async (a) => {
   try {
     if (a.type === 'promotion' && (await flag('discord_post_promotions'))) {
       const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
-      if (u) await postToChannel({ embeds: [{ color: GOLD, title: '⬆️ Promotion', description: `**${u.persona_name}**${mentionFor(u)} has been promoted to **${a.rank.name}** (${a.rank.abbr}). Salute!`, url: `${SITE()}/#/u/${u.id}` }] });
+      if (u) await postToChannel(await promotionPost(u, a.rank, a.from));
     } else if (a.type === 'medals' && (await flag('discord_post_medals'))) {
       const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
-      if (u && a.names?.length) await postToChannel({ embeds: [{ color: GOLD, title: a.names.length === 1 ? '🎖️ Medal awarded' : '🎖️ Medals awarded', description: `**${u.persona_name}**${mentionFor(u)} earned ${a.names.map((n) => `**${n}**`).join(', ')}.`, url: `${SITE()}/#/u/${u.id}` }] });
+      if (u && a.names?.length) await postToChannel(await medalPost(u, a.names));
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
-      await postToChannel({ embeds: [{ color: COLOR, title: '📈 WPG rank up', description: `**${u?.persona_name || a.name}**${mentionFor(u)} reached **${wpgRank(a.rank)}** (${num(a.xp)} WPG XP).` }] });
+      await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp));
     } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
       const { streamForAnnounce } = await import('./streams.js');
       const d = await streamForAnnounce(a.accountId);

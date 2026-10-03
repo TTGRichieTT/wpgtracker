@@ -250,7 +250,7 @@ export async function announceRankChange(user, from, to) {
     title: promoted ? 'Promotion!' : 'Rank change',
     body: `You are now ${to.name} (${to.abbr}).`,
   });
-  if (promoted && from) bus.emit('announce', { type: 'promotion', userId: user.id, rank: { name: to.name, abbr: to.abbr } });
+  if (promoted && from) bus.emit('announce', { type: 'promotion', userId: user.id, rank: { name: to.name, abbr: to.abbr, color: to.color, insignia: to.insignia }, from: { name: from.name } });
   if (promoted && from && (await flag('announce_promotions'))) {
     const general = await one('SELECT id FROM channels ORDER BY sort_order LIMIT 1');
     if (general) {

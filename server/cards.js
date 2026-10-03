@@ -810,6 +810,104 @@ export function renderUnitCard(u) {
   });
 }
 
+// ---------- Channel posts: promotion, medal awarded, WPG rank up ----------
+// A medal hanging from its ribbon (the ribbon's stripes are the medal's colours), gold star medallion.
+function hangingMedal(g, cx, top, colors, s = 1) {
+  const list = String(colors || '#888888').split(',').map((c) => (/^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : '#888888'));
+  const rw = 74 * s;
+  const rh = 92 * s;
+  g.save();
+  g.beginPath();
+  g.moveTo(cx - rw / 2, top); g.lineTo(cx + rw / 2, top); g.lineTo(cx + rw / 2, top + rh - 18 * s); g.lineTo(cx, top + rh); g.lineTo(cx - rw / 2, top + rh - 18 * s);
+  g.closePath();
+  g.clip();
+  const step = rw / list.length;
+  list.forEach((c, i) => { g.fillStyle = c; g.fillRect(cx - rw / 2 + i * step, top, step + 1, rh); });
+  const shade = g.createLinearGradient(cx - rw / 2, 0, cx + rw / 2, 0);
+  shade.addColorStop(0, 'rgba(0,0,0,0.3)');
+  shade.addColorStop(0.5, 'rgba(255,255,255,0.12)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.3)');
+  g.fillStyle = shade;
+  g.fillRect(cx - rw / 2, top, rw, rh);
+  g.restore();
+  const cy = top + rh + 34 * s;
+  const r = 44 * s;
+  const gold = g.createLinearGradient(0, cy - r, 0, cy + r);
+  gold.addColorStop(0, '#fff2b8');
+  gold.addColorStop(0.45, '#e2b84a');
+  gold.addColorStop(1, '#8a6414');
+  g.save();
+  g.shadowColor = 'rgba(255,200,80,0.45)';
+  g.shadowBlur = 18;
+  g.fillStyle = gold;
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+  g.restore();
+  g.strokeStyle = '#6b4c0c';
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(cx, cy, r - 7 * s, 0, Math.PI * 2); g.stroke();
+  drawStar(g, cx, cy, 24 * s, '#fff6d4');
+}
+
+// d: { name, avatar, rank{name,abbr,color,insignia}, from{name}, xp }
+export function renderPromotionCard(d) {
+  return frame('PROMOTION', 76 + 300 + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar);
+    panel(g, 28, y + 6, 1480, 290);
+    const badge = await loadImage(Buffer.from(rankBadge(d.rank, 240))).catch(() => null);
+    if (badge) g.drawImage(badge, 70, y + 30, 240, 240);
+    const tx = badge ? 350 : 70;
+    label(g, 'PROMOTED TO', tx, y + 60, { size: 26 });
+    bigValue(g, upper(d.rank?.name), tx, y + 128, 1470 - tx, { size: 80, color: CYAN, font: LABEL_FONT, weight: 700 });
+    if (d.rank?.abbr) label(g, upper(d.rank.abbr), tx, y + 184, { size: 30, color: WHITE });
+    label(g, [d.from?.name ? `FROM ${upper(d.from.name)}` : null, `CLAN XP ${fmt(d.xp)}`].filter(Boolean).join('   ·   '), tx, y + 236, { size: 22, color: MUTED });
+    bigValue(g, 'SALUTE!', 1470, y + 236, 300, { size: 44, color: AMBER, font: LABEL_FONT, weight: 700, align: 'right' });
+  });
+}
+
+// d: { name, avatar, medals[{name, description, colors}] }
+export function renderMedalAwardCard(d) {
+  const list = (d.medals || []).slice(0, 3);
+  const more = (d.medals || []).length - list.length;
+  const each = 250;
+  const bodyH = list.length * each + (more > 0 ? 40 : 0);
+  return frame(list.length > 1 ? 'MEDALS AWARDED' : 'MEDAL AWARDED', 76 + bodyH + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar);
+    list.forEach((m, i) => {
+      const py = y + 6 + i * each;
+      panel(g, 28, py, 1480, each - 14);
+      hangingMedal(g, 170, py + 20, m.colors, 1);
+      label(g, 'AWARDED THE', 300, py + 50, { size: 26 });
+      bigValue(g, upper(m.name), 300, py + 112, 1170, { size: 70, color: CYAN, font: LABEL_FONT, weight: 700 });
+      g.font = `600 24px ${VALUE_FONT}`;
+      g.fillStyle = MUTED;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      wrapLines(g, m.description, 1170, 2).forEach((line, k) => g.fillText(line, 300, py + 168 + k * 32));
+    });
+    if (more > 0) label(g, `+${more} MORE — SEE THEIR PROFILE IN WPG BARRACKS`, W / 2, y + 6 + list.length * each + 12, { align: 'center', size: 22, color: CYAN });
+  });
+}
+
+// d: { name, avatar, rank, xp, position, total }
+export function renderWpgRankUpCard(d) {
+  return frame('WPG RANK UP', 76 + 300 + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar);
+    panel(g, 28, y + 6, 1480, 290);
+    chevrons(g, 170, y + 150, 3.2);
+    label(g, 'NOW RANKED', 320, y + 60, { size: 26 });
+    bigValue(g, upper(d.rank || 'RECRUIT I'), 320, y + 128, 1150, { size: 80, color: CYAN, font: LABEL_FONT, weight: 700 });
+    label(g, 'WPG XP', 322, y + 186);
+    bigValue(g, fmt(d.xp), 322, y + 220, 300, { size: 34 });
+    if (d.position) {
+      label(g, 'POSITION', 660, y + 186);
+      bigValue(g, `#${fmt(d.position)}${d.total ? ` of ${fmt(d.total)}` : ''}`, 660, y + 220, 400, { size: 34 });
+    }
+    const pct = Math.min(1, (Number(d.xp) || 0) / 650000);
+    bar(g, 322, y + 250, 1148, 12, pct);
+    label(g, `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}% OF THE WAY TO WARDOG X (650,000 WPG XP)`, 322, y + 276, { size: 17, color: MUTED });
+  });
+}
+
 // ---------- Discord "… is live" post ----------
 const PLATFORM_COLORS = { twitch: '#9146ff', youtube: '#ff0000', kick: '#53fc18' };
 // Card fonts have no emoji, so drop them (and their joiners) rather than show empty boxes.
