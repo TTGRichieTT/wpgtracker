@@ -17,6 +17,8 @@ const TABS = [
   { key: 'games', label: 'Games' },
   { key: 'profile-fields', label: 'Profile fields' },
   { key: 'settings', label: 'Settings' },
+  { key: 'recruitment', label: 'Recruitment', mod: true },
+  { key: 'units', label: 'Units' },
   { key: 'cheatwatch', label: 'Cheat watch', mod: true },
   { key: 'streams', label: 'Streams', mod: true },
   { key: 'audit', label: 'Audit log', mod: true },
@@ -192,6 +194,8 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'settings') return settingsTab(body);
   if (tab.key === 'audit') return auditTab(body);
   if (tab.key === 'cheatwatch') return cheatTab(body);
+  if (tab.key === 'recruitment') return (await import('./combat.js')).recruitmentTab(body);
+  if (tab.key === 'units') return (await import('./combat.js')).unitsTab(body);
   if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
   return resourceTab(body, tab.key);
 }

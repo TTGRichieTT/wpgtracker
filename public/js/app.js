@@ -294,6 +294,8 @@ const NAV = [
   { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
   { href: '#/progression', key: 'progression', label: 'Progression', icon: 'unlock' },
   { href: '#/ranks', key: 'ranks', label: 'Clan ranks', icon: 'chevrons' },
+  { href: '#/command', key: 'command', label: 'Combat Command', icon: 'shield', wpg: true },
+  { href: '#/recruitment', key: 'recruitment', label: 'Recruitment', icon: 'target' },
   { sep: true },
   { href: () => `#/u/${state.me.id}`, key: 'me', label: 'My career', icon: 'user' },
   { href: '#/profile/edit', key: 'edit', label: 'Edit profile', icon: 'edit' },
@@ -344,7 +346,7 @@ function renderShell() {
 function updateNav() {
   const nav = document.getElementById('nav');
   if (!nav) return;
-  nav.innerHTML = NAV.filter((n) => !n.staff || isStaff()).map((n) => (n.sep ? '<div class="sep"></div>' : navLink(n))).join('');
+  nav.innerHTML = NAV.filter((n) => (!n.staff || isStaff()) && (!n.wpg || !isPmc(state.me) || isStaff())).map((n) => (n.sep ? '<div class="sep"></div>' : navLink(n))).join('');
   document.getElementById('bottomnav').innerHTML =
     NAV.filter((n) => BOTTOM.includes(n.key)).map(navLink).join('') +
     `<a href="#" id="moreBtn">${icon('menu')}<span>More</span></a>`;
@@ -390,6 +392,7 @@ function connectSocket() {
     });
     emitLive('playing', map);
   });
+  socket.on('combat', () => emitLive('combat'));
   socket.on('chat:new', (d) => {
     if (d.user) state.users.set(d.user.id, d.user);
     (d.mentioned || []).forEach((u) => state.users.set(u.id, u));
@@ -459,6 +462,9 @@ async function route() {
     tools: () => { location.hash = '#/progression'; },
     map: async (m, r, alive) => (await import('./artymap.js')).viewArtyMap(m, r, alive),
     ranks: viewRanks,
+    command: async (m, r, alive) => (await import('./combat.js')).viewCommand(m, r, alive),
+    doctrine: async (m, r, alive) => (await import('./combat.js')).viewDoctrine(m, r, alive),
+    recruitment: async (m, r, alive) => (await import('./combat.js')).viewRecruitment(m, r, alive),
     u: viewProfile,
     profile: viewEditProfile,
     admin: async (m, r) => (await import('./admin.js')).viewAdmin(m, r),
@@ -798,6 +804,7 @@ async function viewProfile(main, [id]) {
           </div>
         </div>
       </div>
+      <div id="combatBox"></div>
 
       <div class="grid two">
         <div class="panel">
@@ -856,6 +863,13 @@ async function viewProfile(main, [id]) {
     };
   });
   onLive('me', () => { if (mine) route(); });
+  // Combat Command posting and roles (the server only sends them to WPG members and staff).
+  if (p.combat) {
+    import('./combat.js').then((m) => {
+      const box = document.getElementById('combatBox');
+      if (box) box.innerHTML = m.profileCombatHtml(p.combat);
+    }).catch(() => {});
+  }
 }
 
 // Steam achievements shown as medals: earned in colour, the rest greyed out. Rare ones (<10% of players) get gold.

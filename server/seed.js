@@ -35,6 +35,13 @@ const DEFAULT_SETTINGS = {
   // Streams: Discord post when an approved streamer goes live (channel ID empty = no posts).
   discord_stream_channel: '',
   discord_post_streams: 'true',
+  // Recruitment: roles people can apply for (one per line) and where new applications are posted.
+  combat_specialties: [
+    'Command / Deputy Command', 'Unit Leader', 'Assault / CQB', 'Combat Medic', 'Grenadier / Heavy Assault',
+    'Automatic Rifle / Support', 'Sniper', 'Recon / Spotter', 'Heavy AT / Anti-Tank', 'Anti-Air', 'Engineer',
+    'FOB Builder', 'Transport Pilot', 'Logistics Pilot', 'Driver / Ground Logistics', 'QRF',
+  ].join('\n'),
+  discord_recruit_channel: '',
 };
 
 // Insignia combine US and UK army symbols:
@@ -202,6 +209,80 @@ export async function seed({ q, one }) {
       }
     }
     await q("INSERT INTO settings (key, value) VALUES ('_seeded_server_board_v2', 'true') ON CONFLICT DO NOTHING");
+  }
+
+  // Combat Command: the WPG units and their roles, and the doctrine (from the Discord announcement).
+  // Admins change them later on the Combat Command page.
+  if (!(await one("SELECT value FROM settings WHERE key = '_seeded_combat'"))) {
+    const role = (id, name, slots = 1, leader = false) => ({ id, name, slots, leader });
+    const units = [
+      ['COMMAND', 'command', 'Command', 'Overall battlefield strategy and deployment. WPG will not depend on one person being online: whoever assumes command follows the same doctrine.', '#c9a227',
+        [role('co', 'CO — Commanding Officer', 1, true), role('xo', 'XO — Executive Officer'), role('deputy', 'Deputy Commander', 2)]],
+      ['ALPHA', 'combat', 'HZ Assault', 'Enter the HZ, clear enemy positions and maintain WPG presence inside yellow.', '#e53935',
+        [role('lead', 'Alpha Leader', 1, true), role('cqb', 'Assault / CQB', 2), role('medic', 'Combat Medic'), role('gren', 'Grenadier / Heavy Assault'), role('ar', 'Automatic Rifle / Support')]],
+      ['BRAVO', 'combat', 'HZ Assault', 'Reinforce the HZ, hold captured ground and support Alpha.', '#1e88e5',
+        [role('lead', 'Bravo Leader', 1, true), role('cqb', 'Assault / CQB', 2), role('medic', 'Combat Medic'), role('gren', 'Grenadier / Heavy Assault'), role('ar', 'Automatic Rifle / Support')]],
+      ['EYE', 'combat', 'Recon / Sniper', 'Locate and report enemy troops, FOBs, armor, aircraft, towers, reinforcement routes and flanking movements. Information is the mission.', '#2ecc71',
+        [role('lead', 'Lead Sniper', 1, true), role('sniper', 'Recon Sniper', 2), role('spotter', 'Forward Scout / Spotter')]],
+      ['HAMMER', 'support', 'Weapons', 'Destroy armor and aircraft threatening WPG forces, so Alpha and Bravo never leave the HZ to chase vehicles.', '#f5a524',
+        [role('lead', 'Weapons Leader', 1, true), role('hat', 'Heavy Anti-Tank'), role('at', 'Anti-Tank'), role('aa', 'Anti-Air / Helicopter')]],
+      ['FOUNDRY', 'support', 'Engineering', 'Build FOBs, spawn points, defenses and tower fortifications, and prepare positions for CZ control.', '#8d6e63',
+        [role('lead', 'Chief Engineer', 1, true), role('fob', 'FOB Builder'), role('eng', 'Engineer / Repair')]],
+      ['ANGEL', 'support', 'Air Wing', 'Transport troops and deliver reinforcements, ammunition, medical supplies and building materials. The front line doesn\'t leave for supplies — we bring supplies to them.', '#29b6f6',
+        [role('lead', 'Senior / Lead Pilot', 1, true), role('transport', 'Transport Pilot'), role('logistics', 'Logistics Pilot'), role('reserve', 'Reserve Pilot')]],
+      ['VIPER', 'support', 'QRF', 'Quick Reaction Force for HZ emergencies, attacked FOBs and towers, enemy breakthroughs and emergency reinforcement.', '#b84dff',
+        [role('lead', 'QRF Leader', 1, true), role('qrf', 'QRF', 2)]],
+    ];
+    if (!(await one('SELECT id FROM combat_units LIMIT 1'))) {
+      let order = 0;
+      for (const [name, kind, label, mission, color, roles] of units) {
+        order += 10;
+        await q('INSERT INTO combat_units (name, kind, label, mission, color, roles, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+          [name, kind, label, mission, color, JSON.stringify(roles), order]);
+      }
+    }
+    const doctrine = `## Primary objective
+The yellow Hot Zone (**HZ**) is our golden ticket. Kills, towers, FOBs, vehicles and supplies all support our primary mission: **control the HZ**.
+- **Follow yellow. Fight in yellow. Hold yellow.**
+- Do not abandon the HZ just to chase kills.
+- **The mission comes before the kill count.**
+
+## Command and succession
+- **CO — Commanding Officer:** overall battlefield strategy and deployment.
+- **XO — Executive Officer:** second-in-command. Takes command when the CO is unavailable.
+- **Deputy Commanders:** qualified members capable of assuming battlefield command.
+- **Unit Leaders:** lead their assigned units and report to Command.
+Succession: **CO → XO → Deputy → Senior qualified Unit Leader.** WPG will not depend on one person being online. Whoever assumes command follows the same doctrine.
+
+## Who does what
+- **EYE** — scouts enemy movement
+- **ALPHA** — takes ground
+- **BRAVO** — holds ground
+- **HAMMER** — destroys heavy threats
+- **FOUNDRY** — builds and fortifies
+- **ANGEL** — transports and supplies
+- **VIPER** — emergency response
+
+## Tower / HZ doctrine
+Drill towers are strategic objectives. Securing towers can help pull the HZ toward our positions, so WPG can set up FOBs and defenses nearby. Our objective is to turn the **HZ — Hot Zone** into our **CZ — Control Zone**.
+- **We do not empty the HZ just to capture a tower.** Command assigns specific people to tower operations while the main force keeps control of the HZ.
+
+## Logistics rule
+**The front line doesn't leave for supplies. We bring supplies to them.**
+
+## Emergency order: ALL HANDS YELLOW
+If Command calls **ALL HANDS YELLOW**, WPG is at immediate risk of losing HZ control.
+- Non-essential operations **stop**.
+- Available WPG personnel immediately collapse onto the HZ.
+- **Flood yellow. Regain control.**
+Once the HZ is stable, Command releases units back to their assignments.
+
+## Roles
+Every member will have a **primary role** (main specialty), a **secondary role** (backup assignment) and **qualifications** (other jobs they're trained to do). Assignments are based on skill, availability and what WPG needs.
+
+**One faction. One force. One objective. Control the HZ.**`;
+    await q("INSERT INTO settings (key, value) VALUES ('_combat_doctrine', $1) ON CONFLICT DO NOTHING", [doctrine]);
+    await q("INSERT INTO settings (key, value) VALUES ('_seeded_combat', 'true') ON CONFLICT DO NOTHING");
   }
 
   // Streams now use each platform's own chat box, so the app no longer keeps members' Twitch / YouTube /

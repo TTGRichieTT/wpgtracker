@@ -3,6 +3,7 @@ import { q, one, getSettings, flag } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp } from './steam.js';
 import { syncWardogs } from './wardogs.js';
+import { combatFor, isWpg } from './combat.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
   HttpError, signedIn, member, roleAtLeast, publicUser, str, int, color, safeUrl,
@@ -257,6 +258,8 @@ api.get('/users/:id', member, async (req, res) => {
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
     wpg_position: serverRank.pos,
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', position: progPos?.pos || null },
+    // Combat Command posting and roles: WPG members and staff only (not PMC guests).
+    combat: isWpg(req.user) ? await combatFor(u.id) : null,
     friend,
   });
 });

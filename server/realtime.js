@@ -73,6 +73,7 @@ export function startRealtime(httpServer, sessionMiddleware) {
   bus.on('stream:chat:deleted', (d) => io.emit('stream:chat:deleted', d));
   bus.on('server:board', (serverId) => io.emit('server:board', serverId));
   bus.on('playing', (map) => io.emit('playing', map));
+  bus.on('combat:changed', () => io.emit('combat'));
   bus.on('user:changed', (userId) => io.to(`u:${userId}`).emit('me:changed'));
   bus.on('friends:changed', (ids) => ids.forEach((id) => io.to(`u:${id}`).emit('friends:changed')));
   bus.on('user:kick', (userId) => io.in(`u:${userId}`).disconnectSockets(true));

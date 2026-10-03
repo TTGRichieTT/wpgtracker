@@ -462,3 +462,72 @@ export const chatLogins = pgTable('chat_logins', {
   expires_at: timestamp({ withTimezone: true }),
   created_at: now(),
 }, (t) => [primaryKey({ name: 'chat_logins_pkey', columns: [t.user_id, t.platform] })]);
+
+// ---------- Combat Command (recruitment, units, postings) ----------
+// Units of the WPG force (COMMAND, ALPHA, BRAVO, EYE…). roles: [{ id, name, slots, leader }] in order;
+// for the command unit the order is the line of succession (CO → XO → Deputies).
+export const combatUnits = pgTable('combat_units', {
+  id: serial().primaryKey(),
+  name: text().notNull(),
+  kind: text().notNull().default('combat'), // command | combat | support
+  label: text().notNull().default(''), // e.g. "HZ Assault"
+  mission: text().notNull().default(''),
+  color: text().notNull().default('#29b6f6'),
+  roles: jsonb().notNull().default([]),
+  sort_order: integer().notNull().default(0),
+});
+
+// Where each member is posted: one unit + role (role_id from the unit's roles list).
+export const combatPostings = pgTable('combat_postings', {
+  user_id: integer().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  unit_id: integer().notNull(),
+  role_id: text().notNull().default(''),
+  assigned_by: integer(),
+  assigned_at: now(),
+});
+
+// Each member's specialties: primary role, secondary (backup) role and other qualifications.
+export const combatProfiles = pgTable('combat_profiles', {
+  user_id: integer().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  primary_role: text().notNull().default(''),
+  secondary_role: text().notNull().default(''),
+  qualifications: jsonb().notNull().default([]),
+  leadership: boolean().notNull().default(false),
+  pilot: boolean().notNull().default(false),
+  availability: text().notNull().default(''),
+  region: text().notNull().default(''),
+  updated_at: now(),
+});
+
+// Applications to join a unit / take a role. status: new | accepted | declined | withdrawn
+export const recruitApplications = pgTable('recruit_applications', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text().notNull().default('new'),
+  primary_role: text().notNull().default(''),
+  secondary_role: text().notNull().default(''),
+  skills: jsonb().notNull().default([]),
+  leadership: boolean().notNull().default(false),
+  pilot: boolean().notNull().default(false),
+  availability: text().notNull().default(''),
+  region: text().notNull().default(''),
+  notes: text().notNull().default(''),
+  created_at: now(),
+  reviewed_by: integer(),
+  reviewed_at: timestamp({ withTimezone: true }),
+  decision_note: text().notNull().default(''),
+  unit_id: integer(),
+  role_id: text().notNull().default(''),
+}, (t) => [index('recruit_applications_user_idx').on(t.user_id)]);
+
+// PMCs (guests) ask before they can apply. status: pending | allowed | declined | used
+export const applyRequests = pgTable('apply_requests', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  message: text().notNull().default(''),
+  status: text().notNull().default('pending'),
+  created_at: now(),
+  reviewed_by: integer(),
+  reviewed_at: timestamp({ withTimezone: true }),
+  note: text().notNull().default(''),
+}, (t) => [index('apply_requests_user_idx').on(t.user_id)]);

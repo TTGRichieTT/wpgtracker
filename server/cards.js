@@ -664,3 +664,236 @@ export function renderLiveCard(d) {
     });
   });
 }
+
+// ---------- Combat Command: /roster and /unit ----------
+// Wraps text into lines that fit maxW (at the current font).
+function wrapLines(g, text, maxW, maxLines = 4) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const t = cur ? `${cur} ${w}` : w;
+    if (g.measureText(t).width <= maxW || !cur) cur = t;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines - 1] = `${lines[maxLines - 1].replace(/\W*\w*$/, '')}…`; }
+  return lines;
+}
+
+// A small filled star (fonts here have no ★).
+function drawStar(g, cx, cy, r, colour) {
+  g.fillStyle = colour;
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? r * 0.45 : r;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  g.closePath();
+  g.fill();
+}
+
+// Green = on the WPG server now, blue = in a game (Steam), nothing = offline.
+function presenceDot(g, x, y, m) {
+  if (!m || (!m.on_server && !m.in_game)) return;
+  g.fillStyle = m.on_server ? GREEN : CYAN;
+  g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill();
+}
+
+// Slot rows for a unit: every role's places, filled with members or shown as OPEN.
+function slotRows(unit) {
+  const rows = [];
+  for (const r of unit.roles) {
+    const n = Math.max(r.slots, r.members.length);
+    for (let i = 0; i < n; i++) rows.push({ role: r.name, leader: r.leader, member: r.members[i] || null });
+  }
+  for (const m of unit.unplaced || []) rows.push({ role: 'No role', member: m });
+  return rows;
+}
+
+function unitPanel(g, u, x, y, w, h, { big = false } = {}) {
+  panel(g, x, y, w, h);
+  g.fillStyle = u.color || CYAN;
+  g.fillRect(x + 14, y + 18, 6, 34);
+  title(g, x + 32, y + 36, u.name, u.label ? `(${upper(u.label)})` : '');
+  label(g, `${u.filled}/${u.size}`, x + w - 24, y + 37, { align: 'right', size: 22, color: u.open ? AMBER : GREEN });
+  let ry = y + 70;
+  if (big && u.mission) {
+    g.font = `600 18px ${VALUE_FONT}`;
+    const lines = wrapLines(g, u.mission, w - 60, 3); // missionLines() below must match
+    g.fillStyle = MUTED; g.textAlign = 'left'; g.textBaseline = 'middle';
+    lines.forEach((l, i) => g.fillText(l, x + 30, ry + i * 26));
+    ry += lines.length * 26 + 14;
+  }
+  const rowH = big ? 46 : 32;
+  slotRows(u).forEach((r, i) => {
+    const cy = ry + i * rowH + rowH / 2;
+    g.fillStyle = i % 2 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.05)';
+    roundRect(g, x + 18, cy - rowH / 2 + 2, w - 36, rowH - 4, 6);
+    g.fill();
+    if (r.leader) drawStar(g, x + 40, cy, big ? 9 : 7, '#ffd54f');
+    label(g, upper(r.role), x + (r.leader ? 56 : 32), cy + 1, { size: big ? 20 : 17, color: r.leader ? '#ffd54f' : LABEL });
+    const nameX = x + (big ? 380 : Math.round(w * 0.52));
+    if (r.member) {
+      presenceDot(g, nameX - 14, cy, r.member);
+      bigValue(g, r.member.name, nameX, cy + 1, x + w - 30 - nameX - (big ? 190 : 0), { size: big ? 20 : 16, weight: 700 });
+      if (big) {
+        const what = r.member.on_server ? 'ON WPG SERVER' : r.member.in_game ? upper(r.member.in_game) : (r.member.combat?.primary_role ? upper(r.member.combat.primary_role) : '');
+        if (what) label(g, what, x + w - 30, cy + 1, { align: 'right', size: 16, color: r.member.on_server ? GREEN : r.member.in_game ? CYAN : MUTED });
+      }
+    } else {
+      label(g, 'OPEN', nameX, cy + 1, { size: big ? 20 : 17, color: AMBER });
+    }
+  });
+}
+// How many lines the mission takes in the big (one unit) layout.
+function missionLines(u, w) {
+  if (!u.mission) return 0;
+  const g = createCanvas(10, 10).getContext('2d');
+  g.font = `600 18px ${VALUE_FONT}`;
+  return wrapLines(g, u.mission, w - 60, 3).length;
+}
+const unitHeight = (u, big = false, w = 1480) => 70 + slotRows(u).length * (big ? 46 : 32) + 20 + (big && u.mission ? missionLines(u, w) * 26 + 14 : 0);
+
+// d: boardData() — command chain on top, then every unit in two columns.
+export function renderRosterCard(d) {
+  const chain = d.chain || [];
+  const units = (d.units || []).filter((u) => u.kind !== 'command');
+  const perRow = 4;
+  const chainRows = Math.max(1, Math.ceil(chain.length / perRow));
+  const chainH = 70 + chainRows * 74 + 16;
+  const pairs = [];
+  for (let i = 0; i < units.length; i += 2) pairs.push(units.slice(i, i + 2));
+  const pairH = pairs.map((p) => Math.max(...p.map((u) => unitHeight(u))));
+  const bodyH = chainH + 12 + pairH.reduce((n, h) => n + h + 12, 0);
+  return frame('COMBAT COMMAND', bodyH + 20, async (g, top) => {
+    let y = top + 4;
+    // Command and the line of succession.
+    panel(g, 28, y, 1480, chainH);
+    chevrons(g, 64, y + 36, 0.8);
+    title(g, 100, y + 36, 'COMMAND', '(LINE OF SUCCESSION)');
+    const cw = (1480 - 56 - (perRow - 1) * 14) / perRow;
+    chain.forEach((c, i) => {
+      const cx = 56 + (i % perRow) * (cw + 14);
+      const cy = y + 70 + Math.floor(i / perRow) * 74;
+      g.fillStyle = BOX_FILL;
+      roundRect(g, cx, cy, cw, 62, 8);
+      g.fill();
+      g.fillStyle = i === 0 ? '#ffd54f' : CYAN;
+      g.beginPath(); g.arc(cx + 24, cy + 31, 15, 0, Math.PI * 2); g.fill();
+      bigValue(g, String(i + 1), cx + 24, cy + 32, 24, { size: 17, color: '#0a1622', align: 'center' });
+      label(g, upper(c.title), cx + 50, cy + 19, { size: 15, color: LABEL });
+      if (c.user) {
+        presenceDot(g, cx + cw - 16, cy + 19, c.user);
+        bigValue(g, c.user.name, cx + 50, cy + 43, cw - 62, { size: 18, weight: 700 });
+      } else {
+        label(g, 'OPEN', cx + 50, cy + 43, { size: 18, color: AMBER });
+      }
+    });
+    y += chainH + 12;
+    // Units, two per row.
+    pairs.forEach((p, k) => {
+      p.forEach((u, j) => unitPanel(g, u, 28 + j * 746, y, 734, pairH[k]));
+      y += pairH[k] + 12;
+    });
+    label(g, 'GREEN DOT = ON THE WPG SERVER   ·   BLUE DOT = IN GAME   ·   GOLD STAR = UNIT LEADER', W / 2, y + 2, { align: 'center', size: 16, color: MUTED });
+  });
+}
+
+// One unit, bigger, with its mission and what each member is doing right now.
+export function renderUnitCard(u) {
+  const h = unitHeight(u, true);
+  return frame(`${upper(u.name)} UNIT`, h + 30, async (g, top) => {
+    unitPanel(g, u, 28, top + 4, 1480, h, { big: true });
+    label(g, 'GREEN DOT = ON THE WPG SERVER   ·   BLUE DOT = IN GAME   ·   GOLD STAR = UNIT LEADER', W / 2, top + h + 18, { align: 'center', size: 16, color: MUTED });
+  });
+}
+
+// ---------- Discord "… is live" post ----------
+const PLATFORM_COLORS = { twitch: '#9146ff', youtube: '#ff0000', kick: '#53fc18' };
+// Card fonts have no emoji, so drop them (and their joiners) rather than show empty boxes.
+const noEmoji = (t) => String(t || '').replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\u{1F3FB}-\u{1F3FF}]/gu, '').replace(/\s{2,}/g, ' ').trim();
+// d: { name, avatar, platform, platformName, title, game, viewers, thumbnail }
+export function renderStreamCard(d) {
+  d = { ...d, name: noEmoji(d.name) || 'WPG streamer', title: noEmoji(d.title), game: noEmoji(d.game) };
+  const bodyH = 470;
+  return frame('LIVE NOW', bodyH + 20, async (g, top) => {
+    const y = top + 4;
+    panel(g, 28, y, 1480, bodyH);
+    const pc = PLATFORM_COLORS[d.platform] || CYAN;
+    // Stream preview (16:9) on the left.
+    const tw = 760;
+    const th = 428;
+    const tx = 50;
+    const ty = y + 21;
+    const thumb = await icon(d.thumbnail);
+    g.save();
+    roundRect(g, tx, ty, tw, th, 10);
+    g.clip();
+    if (thumb) {
+      const scale = Math.max(tw / thumb.width, th / thumb.height);
+      const w = thumb.width * scale;
+      const h = thumb.height * scale;
+      g.drawImage(thumb, tx + (tw - w) / 2, ty + (th - h) / 2, w, h);
+    } else {
+      const grad = g.createLinearGradient(tx, ty, tx + tw, ty + th);
+      grad.addColorStop(0, '#0b1a2b');
+      grad.addColorStop(1, pc);
+      g.fillStyle = grad;
+      g.fillRect(tx, ty, tw, th);
+      label(g, upper(d.platformName || 'LIVE'), tx + tw / 2, ty + th / 2, { align: 'center', size: 64, color: WHITE });
+    }
+    g.restore();
+    g.save();
+    g.shadowColor = pc;
+    g.shadowBlur = 14;
+    g.strokeStyle = pc;
+    g.lineWidth = 3;
+    roundRect(g, tx, ty, tw, th, 10);
+    g.stroke();
+    g.restore();
+    // LIVE badge on the preview.
+    g.fillStyle = '#e53935';
+    roundRect(g, tx + 16, ty + 16, 104, 38, 6);
+    g.fill();
+    g.fillStyle = WHITE;
+    g.beginPath(); g.arc(tx + 38, ty + 35, 7, 0, Math.PI * 2); g.fill();
+    label(g, 'LIVE', tx + 54, ty + 36, { size: 24, color: WHITE });
+    if (d.viewers !== null && d.viewers !== undefined) {
+      g.fillStyle = 'rgba(0,0,0,0.7)';
+      roundRect(g, tx + tw - 196, ty + th - 52, 180, 36, 6);
+      g.fill();
+      label(g, `${fmt(d.viewers)} WATCHING`, tx + tw - 106, ty + th - 33, { align: 'center', size: 20, color: WHITE });
+    }
+    // Right side: who, what, where.
+    const rx = tx + tw + 40;
+    const rw = 28 + 1480 - rx - 30;
+    const av = await icon(d.avatar);
+    if (av) {
+      g.save();
+      g.beginPath(); g.arc(rx + 44, y + 76, 44, 0, Math.PI * 2); g.clip();
+      g.drawImage(av, rx, y + 32, 88, 88);
+      g.restore();
+      g.strokeStyle = pc;
+      g.lineWidth = 3;
+      g.beginPath(); g.arc(rx + 44, y + 76, 44, 0, Math.PI * 2); g.stroke();
+    }
+    const nx = av ? rx + 108 : rx;
+    bigValue(g, d.name, nx, y + 62, rw - (nx - rx), { size: 36 });
+    g.fillStyle = pc;
+    roundRect(g, nx, y + 92, 130, 30, 6);
+    g.fill();
+    label(g, upper(d.platformName), nx + 65, y + 108, { align: 'center', size: 19, color: d.platform === 'kick' ? '#06120a' : WHITE });
+    // Title, wrapped to 4 lines.
+    g.font = `700 26px ${VALUE_FONT}`;
+    const lines = wrapLines(g, d.title || `${d.name} is live`, rw, 4);
+    g.fillStyle = WHITE;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    lines.forEach((l, i) => g.fillText(l, rx, y + 172 + i * 36));
+    let iy = y + 172 + lines.length * 36 + 18;
+    if (d.game) { label(g, 'PLAYING', rx, iy, { size: 18 }); bigValue(g, upper(d.game), rx + 92, iy + 1, rw - 92, { size: 22, font: LABEL_FONT, weight: 700, color: CYAN }); iy += 40; }
+    label(g, 'WATCH AND CHAT IN THE WPG BARRACKS APP', rx, y + bodyH - 34, { size: 18, color: MUTED });
+  });
+}

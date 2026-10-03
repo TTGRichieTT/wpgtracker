@@ -590,6 +590,80 @@ async function cmdReport(data, caller, callerName) {
   }
 }
 
+// ---------- Combat Command ----------
+// The caller, if they've linked their Discord and are a WPG member (or staff). Board replies are private.
+async function wpgCaller(caller) {
+  const u = caller ? await one("SELECT * FROM users WHERE discord_id=$1 AND status='active'", [caller]) : null;
+  if (!u) return { error: "Link your Discord to the Barracks app first: type **/link**." };
+  const { isWpg } = await import('./combat.js');
+  if (!isWpg(u)) return { error: 'The Combat Command board is for WPG members only.' };
+  return { user: u };
+}
+
+// /apply: where to apply, and how the application is going.
+async function cmdApply(_data, caller) {
+  const link = `${SITE()}/#/recruitment`;
+  const u = caller ? await one("SELECT * FROM users WHERE discord_id=$1 AND status='active'", [caller]) : null;
+  if (!u) return { content: `Apply in the WPG Barracks app: ${link}\n(Not in the app yet? Sign in there with Steam first. Already in? Type **/link** so the bot knows you.)` };
+  const app = await one('SELECT status, primary_role FROM recruit_applications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1', [u.id]);
+  if (app?.status === 'new') return { content: `Your application (**${app.primary_role}**) is with staff. You'll get a message when it's reviewed.\n${link}` };
+  if (u.membership === 'pmc') {
+    const r = await one('SELECT status FROM apply_requests WHERE user_id=$1 ORDER BY created_at DESC LIMIT 1', [u.id]);
+    if (r?.status === 'allowed') return { content: `Staff have allowed you to apply — fill in the form here: ${link}` };
+    if (r?.status === 'pending') return { content: `Your request to apply is with staff. You'll get a message when they answer.\n${link}` };
+    return { content: `As a PMC you ask staff first: open Recruitment and press **Ask to apply**.\n${link}` };
+  }
+  return { content: `Fill in the WPG application here (primary role, backup role, skills, leadership, pilot): ${link}` };
+}
+
+// /roster: the whole force as a picture (WPG members only, only you see it).
+async function cmdRoster(_data, caller) {
+  const w = await wpgCaller(caller);
+  if (w.error) return { content: w.error };
+  const { boardData } = await import('./combat.js');
+  const b = await boardData();
+  const text = () => ({
+    content: b.units.map((u) => `**${u.name}** (${u.filled}/${u.size})\n${u.roles.map((r) => `· ${r.name}: ${r.members.map((m) => m.name).join(', ') || '_open_'}`).join('\n')}`).join('\n\n').slice(0, 1900),
+  });
+  return asPicture('roster', (cards) => cards.renderRosterCard(b), text, { label: 'Open Combat Command', url: `${SITE()}/#/command` });
+}
+
+// /unit [name]: one unit as a picture — yours if you don't name one.
+async function cmdUnit(data, caller) {
+  const w = await wpgCaller(caller);
+  if (w.error) return { content: w.error };
+  const { boardData } = await import('./combat.js');
+  const b = await boardData();
+  const asked = String(option(data, 'name') || '').trim().toLowerCase();
+  let unit = asked ? b.units.find((u) => u.name.toLowerCase() === asked) || b.units.find((u) => u.name.toLowerCase().startsWith(asked) || u.label.toLowerCase().includes(asked)) : null;
+  if (!asked) {
+    const mine = await one('SELECT unit_id FROM combat_postings WHERE user_id=$1', [w.user.id]);
+    unit = b.units.find((u) => u.id === mine?.unit_id);
+    if (!unit) return { content: `You're not posted to a unit yet. Name one: ${b.units.map((u) => `**${u.name}**`).join(', ')}` };
+  }
+  if (!unit) return { content: `No unit called **${asked}**. Units: ${b.units.map((u) => `**${u.name}**`).join(', ')}` };
+  const text = () => ({ content: `**${unit.name}** — ${unit.label}\n${unit.mission}\n${unit.roles.map((r) => `· ${r.name}: ${r.members.map((m) => m.name).join(', ') || '_open_'}`).join('\n')}`.slice(0, 1900) });
+  return asPicture('unit', (cards) => cards.renderUnitCard(unit), text, { label: 'Open Combat Command', url: `${SITE()}/#/command` });
+}
+
+// Recruitment news: new applications / requests go to the recruitment channel (or the staff channel);
+// decisions go to the member as a Discord direct message (if they've linked their Discord).
+bus.on('recruit', async (a) => {
+  try {
+    if (a.type === 'staff') {
+      const key = String((await setting('discord_recruit_channel')) || '').trim() ? 'discord_recruit_channel' : 'discord_staff_channel';
+      await postToChannel({ embeds: [{ color: GOLD, title: `📋 ${a.title}`, description: `${a.body}\n[Review in the app](${SITE()}/#/admin/recruitment)` }] }, key);
+    } else if (a.type === 'member') {
+      const u = await one('SELECT discord_id FROM users WHERE id=$1', [a.userId]);
+      if (!u?.discord_id || !TOKEN()) return;
+      const dm = await discordFetch('/users/@me/channels', 'POST', { recipient_id: u.discord_id });
+      await discordFetch(`/channels/${dm.id}/messages`, 'POST', { embeds: [{ color: GOLD, title: a.title, description: `${a.body}\n[Open Recruitment](${SITE()}/#/recruitment)` }] });
+    }
+  } catch (e) {
+    problem('Recruitment message', e.message);
+  }
+});
+
 const COMMANDS = {
   stats: { run: cmdStats, description: 'Wardogs stats: level, cash, worth, classes, world ranks' },
   rank: { run: cmdRank, description: 'WPG rank + WPG XP, and clan rank' },
@@ -602,6 +676,9 @@ const COMMANDS = {
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
   unlink: { run: cmdUnlink, description: 'Unlink your Discord from the Barracks app', private: true },
   report: { run: cmdReport, description: 'Report a suspected cheater on the WPG server to staff', private: true },
+  apply: { run: cmdApply, description: 'Apply to join a WPG combat unit', private: true },
+  roster: { run: cmdRoster, description: 'The WPG Combat Command board (WPG members only)', private: true },
+  unit: { run: cmdUnit, description: 'One WPG unit and who is in it (WPG members only)', private: true },
 };
 const WHO = [
   { type: 6, name: 'member', description: 'Which member (leave empty for yourself)', required: false },
@@ -622,6 +699,9 @@ function commandDefinitions() {
         type: 3, name: 'sort', description: 'Order by (WPG XP if left empty)', required: false,
         choices: Object.entries(SERVER_SORTS).map(([v, [n]]) => ({ name: n, value: v })),
       }];
+    }
+    if (name === 'unit') {
+      def.options = [{ type: 3, name: 'name', description: 'Unit name, e.g. ALPHA (leave empty for your own unit)', required: false, max_length: 30 }];
     }
     if (name === 'report') {
       def.options = [
@@ -818,11 +898,21 @@ async function drain() {
   posting = true;
   while (postQueue.length) {
     const { channel, payload } = postQueue.shift();
-    await discordFetch(`/channels/${channel}/messages`, 'POST', { allowed_mentions: { parse: [] }, ...payload })
-      .catch((e) => console.warn('[discord bot] post failed', e.message));
+    await sendToChannel(channel, payload).catch((e) => problem('Posting to a channel', e.message));
     await new Promise((r) => setTimeout(r, 1500));
   }
   posting = false;
+}
+// Sends one message; pictures (files) go as attachments.
+async function sendToChannel(channel, { files, ...rest }) {
+  const payload = { allowed_mentions: { parse: [] }, ...rest };
+  if (!files?.length) return discordFetch(`/channels/${channel}/messages`, 'POST', payload);
+  const form = new FormData();
+  form.append('payload_json', JSON.stringify({ ...payload, attachments: files.map((x, i) => ({ id: i, filename: x.name })) }));
+  files.forEach((x, i) => form.append(`files[${i}]`, new Blob([x.data], { type: x.type || 'image/jpeg' }), x.name));
+  const res = await fetch(`${API}/channels/${channel}/messages`, { method: 'POST', headers: { Authorization: `Bot ${TOKEN()}` }, body: form, signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`Discord said ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+  return res.json().catch(() => null);
 }
 // Posts to the channel in a setting: the public post channel, or the staff channel for cheat watch.
 export async function postToChannel(payload, settingKey = 'discord_post_channel') {
@@ -860,6 +950,29 @@ function streamEmbed(s, u) {
     }],
   };
 }
+// The live post as a WPG-style picture, with buttons to watch; the plain post if the picture can't be made.
+async function streamPost(s, u) {
+  const watch = s.live_url || (s.platform === 'youtube' && s.video_id ? `https://www.youtube.com/watch?v=${s.video_id}` : s.channel_url);
+  try {
+    const { renderStreamCard } = await import('./cards.js');
+    const jpg = await renderStreamCard({
+      name: u.persona_name, avatar: String(u.custom_avatar || u.avatar || '').startsWith('https://') ? (u.custom_avatar || u.avatar) : '',
+      platform: s.platform, platformName: s.platform_name, title: s.title, game: s.game, viewers: s.viewers,
+      thumbnail: s.thumbnail ? `${s.thumbnail}${s.thumbnail.includes('?') ? '&' : '?'}t=${Date.now()}` : '',
+    });
+    return {
+      content: `🔴 **${u.persona_name}** is live on ${s.platform_name}!${u.discord_id ? ` <@${u.discord_id}>` : ''}`,
+      files: [{ name: 'wpg-live.jpg', data: jpg, type: 'image/jpeg' }],
+      components: [{ type: 1, components: [
+        { type: 2, style: 5, label: `Watch on ${s.platform_name}`, url: watch },
+        { type: 2, style: 5, label: 'Watch in WPG Barracks', url: `${SITE()}/#/streams/${s.id}` },
+      ] }],
+    };
+  } catch (e) {
+    problem('Live post picture (sent text instead)', e.message);
+    return streamEmbed(s, u);
+  }
+}
 // Other parts of the app raise 'announce' events; each type can be switched off in Admin → Settings.
 bus.on('announce', async (a) => {
   try {
@@ -875,7 +988,7 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
       const { streamForAnnounce } = await import('./streams.js');
       const d = await streamForAnnounce(a.accountId);
-      if (d?.user) await postToChannel(streamEmbed(d.stream, d.user), 'discord_stream_channel');
+      if (d?.user) await postToChannel(await streamPost(d.stream, d.user), 'discord_stream_channel');
     }
   } catch (e) {
     console.warn('[discord bot] announce failed', e.message);

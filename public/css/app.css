@@ -661,3 +661,27 @@ body::after { display: none; }
 .btn.plat-btn.twitch { background: #6441a5; border-color: #9146ff; color: #fff; }
 .btn.plat-btn.kick { background: #2f7a1d; border-color: #53fc18; color: #fff; }
 .btn.plat-btn.youtube { background: #c4302b; border-color: #ff4e45; color: #fff; }
+
+/* Combat Command */
+.cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.cc-unit .cc-bar { display: inline-block; width: 5px; height: 20px; background: var(--uc); margin-right: 8px; vertical-align: -3px; border-radius: 2px; }
+.cc-slots { display: flex; flex-direction: column; gap: 4px; }
+.cc-slot { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,.04); flex-wrap: wrap; }
+.cc-slot.open { background: rgba(245,165,36,.06); }
+.cc-role { font: 700 13px var(--head); text-transform: uppercase; letter-spacing: .4px; color: var(--accent2); width: 190px; flex: 0 0 auto; }
+.cc-open { font: 700 13px var(--head); color: #f5a524; flex: 1; }
+.cc-who { display: flex; align-items: center; gap: 6px; color: inherit; flex: 1; min-width: 0; }
+.cc-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cc-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cc-link { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+.cc-link.open { border-color: rgba(245,165,36,.5); }
+.cc-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #041018; font: 700 14px var(--head); flex: 0 0 auto; }
+.cc-link:first-child .cc-num { background: #ffd54f; }
+.cc-arrow { color: var(--muted); }
+.cc-skills { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
+.doctrine h3.dz-h { color: var(--accent2); margin: 18px 0 6px; }
+.doctrine h3.dz-h:first-child { margin-top: 0; }
+.doctrine ul { margin: 4px 0 8px; padding-left: 20px; }
+.doctrine p { margin: 4px 0; }
+@media (max-width: 600px) { .cc-role { min-width: 0; width: 100%; } .cc-arrow { display: none; } }
