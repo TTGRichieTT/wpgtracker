@@ -3,7 +3,7 @@ import { q, one, getSettings, flag } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp } from './steam.js';
 import { syncWardogs } from './wardogs.js';
-import { combatFor, isWpg } from './combat.js';
+import { combatFor, isWpg, specialties } from './combat.js';
 import { rankProgress } from './wpgxp.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
@@ -113,10 +113,16 @@ api.put('/me/profile', member, async (req, res) => {
   for (const f of fields) {
     if (b.custom_fields && f.key in b.custom_fields) custom[f.key] = str(b.custom_fields[f.key], 200);
   }
+  // Skills: only ones from the recruitment roles list (or ones they already had, if staff renamed the list since).
+  let skills = Array.isArray(req.user.skills) ? req.user.skills : [];
+  if (Array.isArray(b.skills)) {
+    const allowed = new Set([...(await specialties()), ...skills]);
+    skills = [...new Set(b.skills.map((s) => str(s, 60)))].filter((s) => allowed.has(s)).slice(0, 30);
+  }
   const u = await one(
-    `UPDATE users SET callsign=$2, bio=$3, country=$4, custom_avatar=$5, banner_color=$6, custom_fields=$7
+    `UPDATE users SET callsign=$2, bio=$3, country=$4, custom_avatar=$5, banner_color=$6, custom_fields=$7, skills=$8
      WHERE id=$1 RETURNING *`,
-    [req.user.id, str(b.callsign, 40), str(b.bio, 1000), str(b.country, 4), safeUrl(b.custom_avatar), color(b.banner_color, '#0d2238'), JSON.stringify(custom)],
+    [req.user.id, str(b.callsign, 40), str(b.bio, 1000), str(b.country, 4), safeUrl(b.custom_avatar), color(b.banner_color, '#0d2238'), JSON.stringify(custom), JSON.stringify(skills)],
   );
   bus.emit('user:changed', u.id);
   res.json({ user: await userOut(u) });
@@ -130,6 +136,12 @@ api.post('/me/sync', member, async (req, res) => {
 
 api.get('/profile-fields', member, async (_req, res) => {
   res.json(await q('SELECT * FROM profile_fields ORDER BY sort_order, id'));
+});
+// For Edit profile: the skills to pick from (the recruitment roles), and the ones ticked on their last application
+// (offered until they pick their own).
+api.get('/me/skills', member, async (req, res) => {
+  const app = await one("SELECT skills FROM recruit_applications WHERE user_id=$1 AND jsonb_array_length(skills) > 0 ORDER BY created_at DESC LIMIT 1", [req.user.id]);
+  res.json({ list: await specialties(), suggested: Array.isArray(app?.skills) ? app.skills : [] });
 });
 api.get('/ranks', member, async (_req, res) => {
   res.json(await q('SELECT * FROM ranks ORDER BY sort_order'));

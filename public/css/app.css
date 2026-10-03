@@ -687,6 +687,9 @@ body::after { display: none; }
 .cc-who b { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; } /* the whole name, wrapping if it must */
 .cc-badges { display: inline-flex; gap: 2px; flex: none; }
 .cc-unit { container-type: inline-size; }
+.profile-skills { margin-top: 14px; }
+.profile-skills .lbl { display: flex; align-items: center; gap: 6px; font: 700 13px var(--head); color: var(--accent2); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
+.profile-skills .lbl svg { width: 18px; height: 18px; color: var(--accent); }
 /* Narrow unit cards: a filled slot puts the role on its own line, so the badges and full name get the width */
 @container (max-width: 480px) { .cc-slot:not(.open) .cc-role { width: 100%; } }
 @container (max-width: 360px) { .cc-who b { font-size: 13px; } .cc-badges .insignia { width: 21px; height: 21px; } }

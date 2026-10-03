@@ -49,6 +49,7 @@ export const users = pgTable('users', {
   xp_ledger: boolean().notNull().default(false),
   muted_until: timestamp({ withTimezone: true }),
   custom_fields: jsonb().notNull().default({}),
+  skills: jsonb().notNull().default([]), // skills the member shows on their profile (from the recruitment roles list)
   steam_private: boolean().notNull().default(false),
   discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),

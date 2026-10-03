@@ -853,6 +853,7 @@ async function viewProfile(main, [id]) {
             : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
             ${p.combat?.unit ? tile('shield', 'Unit', p.combat.unit.name) + tile('chevrons', 'Role', p.combat.role, 'fit') : ''}
           </div>
+          ${u.skills?.length ? `<div class="profile-skills"><div class="lbl">${icon('target')} Skills</div><div class="row" style="gap:6px">${u.skills.map((s) => `<span class="pill">${esc(s)}</span>`).join('')}</div></div>` : ''}
         </div>
       </div>
       <div id="combatBox"></div>
@@ -961,8 +962,12 @@ export function ribbon(colors) {
 
 // ---------- Edit profile ----------
 async function viewEditProfile(main) {
-  const fields = await api('profile-fields');
+  const [fields, sk] = await Promise.all([api('profile-fields'), api('me/skills').catch(() => ({ list: [], suggested: [] }))]);
   const u = state.me;
+  // Skills: theirs, or (until they pick their own) the ones from their last recruitment application.
+  const fromApp = !u.skills?.length && sk.suggested.length > 0;
+  const ticked = new Set(fromApp ? sk.suggested : u.skills || []);
+  const skillList = [...sk.list, ...[...ticked].filter((s) => !sk.list.includes(s))];
   main.innerHTML = `
     <h1>Edit profile</h1>
     <form class="panel stack" id="pf">
@@ -976,6 +981,9 @@ async function viewEditProfile(main) {
           ? `<small class="muted">First time? <a href="${WARDOGS_LINK}" target="_blank" rel="noopener">Link your account on wardogs.tools</a> — once you're signed in there it shows your in-game name with its 4 numbers.</small>` : ''}</label>`).join('')}
       </div>
       <label class="field"><span>About me</span><textarea name="bio" maxlength="1000">${esc(u.bio)}</textarea></label>
+      ${skillList.length ? `<div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">My skills <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— shown on your profile (tick any)</span></span>
+        ${fromApp ? '<p class="small muted" style="margin:0 0 6px">Ticked from your recruitment application. Change them if you like, then save.</p>' : ''}
+        <div class="cc-skills">${skillList.map((s) => `<label class="check small"><input type="checkbox" name="skills" value="${esc(s)}"${ticked.has(s) ? ' checked' : ''}> ${esc(s)}</label>`).join('')}</div></div>` : ''}
       <div class="form-grid">
         <label class="field"><span>Custom picture link (optional, https)</span><input type="url" name="custom_avatar" value="${esc(u.avatar && !u.avatar.includes('steamstatic') ? u.avatar : '')}" placeholder="Leave empty to use your Steam picture"></label>
         <label class="field"><span>Banner colour</span><input type="color" name="banner_color" value="${esc(u.banner_color || '#0d2238')}"></label>
@@ -1016,7 +1024,8 @@ async function viewEditProfile(main) {
     const custom = {};
     for (const fd of fields) custom[fd.key] = f[`cf_${fd.key}`]?.value || '';
     try {
-      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom } });
+      const skills = [...f.querySelectorAll('[name=skills]:checked')].map((x) => x.value);
+      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills } });
       toast('Saved', 'Profile updated.');
       await refreshMe();
       location.hash = `#/u/${u.id}`;

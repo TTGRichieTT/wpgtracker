@@ -165,6 +165,7 @@ export function publicUser(u, rank) {
     rank_id: u.rank_id,
     rank: rank || null,
     custom_fields: u.custom_fields || {},
+    skills: Array.isArray(u.skills) ? u.skills : [],
     joined_at: u.joined_at,
     last_seen: u.last_seen,
     last_sync: u.last_sync,
