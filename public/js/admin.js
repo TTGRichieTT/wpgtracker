@@ -19,6 +19,7 @@ const TABS = [
   { key: 'games', label: 'Games', group: 'Game' },
   { key: 'unlocks', label: 'Unlocks', group: 'Game' },
   { key: 'artillery', label: 'Artillery', group: 'Game' },
+  { key: 'wpgxp', label: 'WPG XP', group: 'Game' },
   { key: 'settings', label: 'Settings', group: 'App' },
   { key: 'channels', label: 'Chat channels', group: 'App' },
   { key: 'profile-fields', label: 'Profile fields', group: 'App' },
@@ -129,10 +130,11 @@ const RESOURCES = {
       { k: 'rcon_url', label: 'RCON address — http:// (not https) + IP + port, e.g. http://209.102.251.74:9006' },
       { k: 'rcon_password', label: 'RCON password', type: 'secret' },
       { k: 'enabled', label: 'Show on Servers page', type: 'check' },
+      { k: 'wpg_xp', label: 'Matches here earn WPG XP (needs RCON)', type: 'check' },
       { k: 'sort_order', label: 'Order', type: 'number' },
     ],
     defaults: { enabled: true, sort_order: 10 },
-    row: (r) => `<div class="grow"><b>${esc(r.name || r.join_code)}</b> ${r.enabled ? '' : '<span class="pill banned">hidden</span>'} ${r.rcon_url && r.has_rcon_password ? '<span class="pill mod">RCON ready</span>' : '<span class="pill">no RCON</span>'}<div class="muted small" style="overflow-wrap:anywhere">${esc(r.join_code)}</div></div>`,
+    row: (r) => `<div class="grow"><b>${esc(r.name || r.join_code)}</b> ${r.enabled ? '' : '<span class="pill banned">hidden</span>'} ${r.rcon_url && r.has_rcon_password ? '<span class="pill mod">RCON ready</span>' : '<span class="pill">no RCON</span>'} ${r.wpg_xp ? '<span class="pill">WPG XP</span>' : ''}<div class="muted small" style="overflow-wrap:anywhere">${esc(r.join_code)}</div></div>`,
   },
   channels: {
     one: 'channel',
@@ -203,6 +205,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'recruitment') return (await import('./combat.js')).recruitmentTab(body);
   if (tab.key === 'units') return (await import('./combat.js')).unitsTab(body);
   if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
+  if (tab.key === 'wpgxp') return (await import('./wpgxp.js')).wpgXpAdminTab(body);
   return resourceTab(body, tab.key);
 }
 
@@ -598,7 +601,7 @@ const SETTINGS = [
     ['discord_post_channel', 'Channel ID for posts (in Discord: right-click the channel → Copy Channel ID). Empty = no posts'],
     ['discord_post_promotions', 'Post clan promotions', 'check'],
     ['discord_post_medals', 'Post new medals', 'check'],
-    ['discord_post_wpg_ranks', 'Post WPG rank-ups (from the WPG bot)', 'check'],
+    ['discord_post_wpg_ranks', 'Post WPG rank-ups', 'check'],
   ]],
   ['Streams', [
     ['discord_stream_channel', 'Discord channel ID for "… is live" posts (right-click the channel → Copy Channel ID). Empty = no posts'],
@@ -692,7 +695,7 @@ async function discordBotPanel(el) {
 async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
-  const extra = Object.keys(s).filter((k) => !known.has(k));
+  const extra = Object.keys(s).filter((k) => !known.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';
     if (type === 'check') return `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="${k}" ${v === 'true' ? 'checked' : ''}> ${esc(label)}</label>`;

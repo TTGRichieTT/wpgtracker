@@ -42,6 +42,20 @@ const DEFAULT_SETTINGS = {
     'FOB Builder', 'Transport Pilot', 'Logistics Pilot', 'Driver / Ground Logistics', 'QRF',
   ].join('\n'),
   discord_recruit_channel: '',
+  // WPG XP amounts (Admin → WPG XP). Whether the app or the Discord bot is in charge is _wpg_xp_source.
+  wpgxp_kill: '15',
+  wpgxp_per5min: '5',
+  wpgxp_finish: '100',
+  wpgxp_win: '250',
+  wpgxp_penalties: 'true',
+  wpgxp_loss: '50',
+  wpgxp_kd_each: '5',
+  wpgxp_kd_cap: '50',
+  wpgxp_kd_minutes: '10',
+  wpgxp_leave: '150',
+  wpgxp_leave_minutes: '5',
+  wpgxp_min_players: '0',
+  wpgxp_rank_floor: 'true',
 };
 
 // Insignia combine US and UK army symbols:
@@ -301,6 +315,12 @@ Every member will have a **primary role** (main specialty), a **secondary role**
   if (!(await one("SELECT value FROM settings WHERE key = '_cleared_chat_logins'"))) {
     await q('DELETE FROM chat_logins').catch(() => {});
     await q("INSERT INTO settings (key, value) VALUES ('_cleared_chat_logins', 'true') ON CONFLICT DO NOTHING");
+  }
+
+  // WPG XP is worked out from matches on servers ticked "Earns WPG XP" (2026-10-03). Tick the WPG server once.
+  if (!(await one("SELECT value FROM settings WHERE key = '_wpgxp_server'"))) {
+    await q("UPDATE game_servers SET wpg_xp = true WHERE join_code = 'bf019b3b-7670-4879-9220-b541edc58e1b'");
+    await q("INSERT INTO settings (key, value) VALUES ('_wpgxp_server', 'true') ON CONFLICT DO NOTHING");
   }
 
   // PMC guests only see channels opened to them (2026-10-03). Open #wardogs and #looking-for-group once;

@@ -119,9 +119,13 @@ export function rolePill(u) {
   return dev.trim();
 }
 const isPmc = (u) => u?.membership === 'pmc';
-// WPG server rank (from the Discord bot) as shown in the app: "WPG COMMANDER IX" -> "WPG Commander IX".
+// WPG server rank as shown in the app: "WPG COMMANDER IX" -> "WPG Commander IX".
 export const wpgRankName = (name) => String(name || 'RECRUIT I').split(/\s+/)
   .map((w) => (/^(WPG|[IVX]+)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(' ');
+// Progress to the next WPG rank, for { xp, from, next: { name, xp } } (no next = top rank or no rank list yet).
+const wpgToNext = (w) => (w?.next ? `${fmtNum(Math.max(0, w.next.xp - (w.xp || 0)))} XP to ${wpgRankName(w.next.name)}` : '');
+const wpgPct = (w) => (w?.next ? Math.max(0, Math.min(100, (((w.xp || 0) - (w.from || 0)) / Math.max(1, w.next.xp - (w.from || 0))) * 100)) : 100);
+const wpgBar = (w) => (w?.next ? `<div class="xpbar" title="${esc(wpgToNext(w))}"><div style="width:${wpgPct(w).toFixed(1)}%"></div></div>` : '');
 // Clan role, kept apart from any rank.
 const roleName = (u) => (!u ? 'Not in app' : u.role === 'admin' ? 'Admin' : u.role === 'mod' ? 'Mod' : isPmc(u) ? 'PMC' : 'Member');
 // PMCs (guests) have no rank, so they get a PMC badge instead.
@@ -540,7 +544,8 @@ async function viewHome(main) {
             <div class="accent" style="font:700 19px var(--head);text-transform:uppercase;letter-spacing:1px">${isPmc(me) ? 'PMC · Guest' : cur ? `${esc(cur.name)} · ${esc(cur.abbr)}` : 'Unranked'}</div>
             <div style="margin-top:10px;max-width:520px">${progress}</div>
             <div class="row small" style="margin-top:8px;gap:8px"><span class="pill">${esc(state.settings.clan_tag || 'WPG')} server rank</span>
-              <b>${esc(wpgRankName(state.wpgServer?.name))}</b><span class="muted">· ${fmtNum(state.wpgServer?.xp || 0)} ${esc(state.settings.clan_tag || 'WPG')} XP</span></div>
+              <b>${esc(wpgRankName(state.wpgServer?.name))}</b><span class="muted">· ${fmtNum(state.wpgServer?.xp || 0)} ${esc(state.settings.clan_tag || 'WPG')} XP${state.wpgServer?.next ? ` · ${esc(wpgToNext(state.wpgServer))}` : ''}</span></div>
+            ${state.wpgServer?.next ? `<div style="max-width:520px">${wpgBar(state.wpgServer)}</div>` : ''}
             ${state.settings.welcome_message ? `<p class="muted" style="margin:10px 0 0;max-width:560px">${esc(state.settings.welcome_message)}</p>` : ''}
             <div class="row" style="margin-top:14px"><a class="btn primary" href="#/u/${me.id}">${icon('user')} My career</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button></div>
           </div>
@@ -847,6 +852,7 @@ async function viewProfile(main, [id]) {
             ${tile('chevrons', `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name))}
             ${tile('star', `${state.settings.clan_tag || 'WPG'} XP`, fmtNum(p.wpg_server?.xp || 0))}
             ${tile('trophy', 'Server position', p.wpg_server?.position ? `#${fmtNum(p.wpg_server.position)}` : '—')}
+            ${p.wpg_server?.next ? tile('chevrons', `Next rank in ${fmtNum(Math.max(0, p.wpg_server.next.xp - (p.wpg_server.xp || 0)))} XP`, wpgRankName(p.wpg_server.next.name)) : ''}
             ${tile('shield', 'Clan rank', isPmc(u) ? 'PMC — no rank' : u.rank ? u.rank.name : '—', isPmc(u) ? 'pmc' : '')}
             ${tile('xp', 'Clan XP', fmtNum(u.xp))}
           </div>
@@ -1708,7 +1714,7 @@ async function serverBoardHtml(sort, serverId) {
           <td class="sb-x">${r.member && !isPmc(r.member) && r.member.rank ? esc(r.member.rank.abbr) : '<span class="muted">—</span>'}</td>
         </tr>`).join('') || '<tr><td colspan="14" class="muted">Nobody yet — stats appear after players join the server.</td></tr>'}</tbody>
       </table></div>
-      <p class="muted small" style="margin:10px 0 0">${esc(tag)} rank and ${esc(tag)} XP come from the ${esc(tag)} Discord bot, so they match Discord exactly (everyone starts at Recruit I). Clan rank is the app's own member rank. Wins and losses count when a match ends (your team had the top score).</p>
+      <p class="muted small" style="margin:10px 0 0">${esc(tag)} rank and ${esc(tag)} XP are earned on the ${esc(tag)} server and match Discord (everyone starts at Recruit I). Clan rank is the app's own member rank. Wins and losses count when a match ends (your team had the top score).</p>
     </div>`;
 }
 
@@ -1716,30 +1722,49 @@ async function viewLeaderboard(main) {
   const by = query().get('by') || 'wpg';
   const tag = state.settings.clan_tag || 'WPG';
   const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
-  // WPG rank: the Discord bot's own progression board (same numbers as Discord).
+  // WPG rank: everyone's WPG XP and rank (from the Discord bot, or the app once switched over in Admin → WPG XP).
   if (by === 'wpg') {
     const d = await api('wpg-ranking');
+    const app = d.rules?.source === 'app';
+    // Your last matches and what each gave or took (once the app works WPG XP out).
+    const history = app ? await api('wpg-xp/history').catch(() => []) : [];
     const mine = d.rows.findIndex((r) => r.member?.id === state.me.id);
+    const me = mine >= 0 ? d.rows[mine] : null;
+    const ru = d.rules || {};
+    const rules = app
+      ? `Earned only on the ${esc(tag)} server: +${ru.kill} XP per kill, +${ru.per5min} XP every 5 minutes played, +${ru.finish} XP for finishing a match, +${ru.win} XP for a win.${ru.penalties
+        ? ` Taken away: −${ru.loss} XP for a loss, −${ru.leave} XP for leaving early (after ${ru.leaveMinutes} min), and −${ru.kdEach} XP per death more than kills (at most −${ru.kdCap}, after ${ru.kdMinutes} min).${ru.floor ? " Penalties never take you below the start of your rank." : ''}`
+        : ''} Counted when each match ends.`
+      : `Earned only on the ${esc(tag)} server: +15 XP per kill, +5 XP every 5 minutes played, +100 XP per completed match, +250 XP per win. Updates every 5 minutes.`;
+    const PARTS = { kill_xp: 'kills', time_xp: 'time', finish: 'finished', win: 'win', loss: 'loss', kd: 'K/D', left: 'left early' };
+    const part = (k, v) => `<span style="color:${v < 0 ? 'var(--red)' : 'inherit'}">${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))} ${PARTS[k]}</span>`;
     main.innerHTML = `<h1>Leaderboard</h1>
       <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
       <div class="panel glow">
         <div class="row between" style="margin-bottom:10px">
           <div class="panel-title" style="margin:0">${icon('trophy')} ${esc(tag)} rank <span class="sub">Recruit I → Wardog X</span></div>
-          <span class="muted small">${d.updated ? `From the ${esc(tag)} Discord bot · updated ${timeAgo(d.updated)}` : 'Waiting for the Discord bot'}</span>
+          <span class="muted small">${d.updated ? `${app ? 'Last match counted' : `From the ${esc(tag)} Discord bot · updated`} ${timeAgo(d.updated)}` : app ? 'Waiting for the first match' : 'Waiting for the Discord bot'}</span>
         </div>
-        ${mine >= 0 ? `<p class="small" style="margin:0 0 10px">You're <b>#${mine + 1}</b> — ${esc(wpgRankName(d.rows[mine].rank))} · ${fmtNum(d.rows[mine].xp)} ${esc(tag)} XP</p>` : ''}
+        ${me ? `<div style="margin:0 0 12px;max-width:560px"><p class="small" style="margin:0 0 6px">You're <b>#${mine + 1}</b>: ${esc(wpgRankName(me.rank))} · ${fmtNum(me.xp)} ${esc(tag)} XP${me.next ? ` · <b>${esc(wpgToNext(me))}</b>` : ''}</p>${wpgBar(me)}</div>` : ''}
         <div class="table-wrap"><table class="sb-table">
-          <thead><tr><th>#</th><th>Player</th><th>${esc(tag)} rank</th><th>${esc(tag)} XP</th><th class="sb-x">Role</th></tr></thead>
+          <thead><tr><th>#</th><th>Player</th><th>${esc(tag)} rank</th><th>${esc(tag)} XP</th><th class="sb-x">Next rank</th><th class="sb-x">Role</th></tr></thead>
           <tbody>${d.rows.map((r, i) => `<tr${r.member?.id === state.me.id ? ' style="background:rgba(41,182,246,.08)"' : ''}>
             <td><b style="color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">${i + 1}</b></td>
             <td class="sb-name">${r.member ? `<a href="#/u/${r.member.id}">${esc(r.name)}</a>` : esc(r.name)}</td>
             <td><span class="accent" style="font:700 13px var(--head);text-transform:uppercase;white-space:nowrap">${esc(wpgRankName(r.rank))}</span></td>
             <td><b>${fmtNum(r.xp)}</b></td>
+            <td class="sb-x small">${r.next ? esc(wpgToNext(r)) : r.from !== null ? '<span class="muted">Top rank</span>' : '<span class="muted">—</span>'}</td>
             <td class="sb-x">${r.member ? esc(roleName(r.member)) : '<span class="muted small">Not in app</span>'}</td>
-          </tr>`).join('') || '<tr><td colspan="5" class="muted">No data from the Discord bot yet.</td></tr>'}</tbody>
+          </tr>`).join('') || `<tr><td colspan="6" class="muted">${app ? 'Nobody yet: XP appears after the first match.' : 'No data from the Discord bot yet.'}</td></tr>`}</tbody>
         </table></div>
-        <p class="muted small" style="margin:10px 0 0">Earned only on the ${esc(tag)} server: +15 XP per kill, +5 XP every 5 minutes played, +100 XP per completed match, +250 XP per win. ${fmtNum(d.total)} players ranked. Updates every 5 minutes.</p>
-      </div>`;
+        <p class="muted small" style="margin:10px 0 0">${rules} ${fmtNum(d.total)} players ranked.</p>
+      </div>
+      ${history.length ? `<div class="panel">
+        <div class="panel-title">${icon('star')} Your last matches <span class="sub">${esc(tag)} XP</span></div>
+        <div class="list">${history.map((h) => `<div class="item"><div class="grow small">${Object.keys(PARTS).filter((k) => h.detail?.[k]).map((k) => part(k, h.detail[k])).join(' · ') || '<span class="muted">Nothing earned</span>'}
+          <div class="muted">${timeAgo(h.created_at)} · ${fmtNum(h.detail?.minutes || 0)} min · ${fmtNum(h.detail?.kills || 0)} kills / ${fmtNum(h.detail?.deaths || 0)} deaths${h.detail?.floor ? ' · kept at the start of your rank' : ''}</div></div>
+          <b style="font:700 18px var(--head);color:${h.xp < 0 ? 'var(--red)' : 'var(--accent2)'}">${h.xp > 0 ? '+' : h.xp < 0 ? '−' : ''}${fmtNum(Math.abs(h.xp))}</b></div>`).join('')}</div>
+      </div>` : ''}`;
     onLive('server-board', () => route());
     return;
   }
@@ -1934,7 +1959,7 @@ async function viewRanks(main) {
   onLive('config', (name) => { if (['settings', 'stat-defs', 'games', 'ranks'].includes(name)) route(); });
   onLive('me', () => route());
   main.innerHTML = `<h1>Clan rank structure</h1>
-    <p class="muted small" style="margin:-6px 0 12px">These are the app's clan ranks, earned with Clan XP. The WPG server rank (Recruit I to Wardog X) comes from the WPG Discord bot and shows on the leaderboard and profiles.</p>
+    <p class="muted small" style="margin:-6px 0 12px">These are the app's clan ranks, earned with Clan XP. The WPG server rank (Recruit I to Wardog X) is earned with WPG XP on the WPG server and shows on the leaderboard and profiles.</p>
     <p class="muted">Our insignia combine US and British Army symbols: US chevrons, rockers, bars, oak leaves and stars with the British crown, pips and crossed sword &amp; baton.
     Ranks marked <b>XP</b> are earned automatically. Ranks marked <b>Appointed</b> are given by command.
     You have <b style="color:var(--text)">${fmtNum(state.me.xp)} XP</b>.</p>

@@ -3,6 +3,7 @@
 import express from 'express';
 import { q, one, audit } from './db.js';
 import { usersWithRanks } from './routes.js';
+import { wpgRanks, rankAt, rulesOut } from './wpgxp.js';
 import { HttpError, member, role, roleAtLeast, str, int, cleanName } from './util.js';
 
 export const servers = express.Router();
@@ -451,7 +452,8 @@ const BOARD_SORT = {
   playtime: 'playtime_s DESC',
   wpgxp: 'COALESCE(p.xp, 0) DESC, kills DESC',
 };
-// WPG rank leaderboard: exactly the Discord bot's progression (WPG XP + rank), every player it knows.
+// WPG rank leaderboard: everyone's WPG XP + rank (from the Discord bot, or the app once switched over),
+// with the XP each needs for the next rank once the rank list is set up (Admin → WPG XP).
 servers.get('/wpg-ranking', member, async (_req, res) => {
   const rows = await q(
     `SELECT p.steam_id, p.bot_name, p.xp, p.rank_level, p.rank_name, p.synced_at, u.id AS user_id
@@ -462,16 +464,23 @@ servers.get('/wpg-ranking', member, async (_req, res) => {
   const members = memberIds.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [memberIds])) : [];
   const byId = new Map(members.map((m) => [m.id, m]));
   const last = await one("SELECT (SELECT value FROM settings WHERE key='_progress_synced') AS synced, MAX(synced_at) AS at, COUNT(*)::int AS n FROM server_progress");
+  const ranks = await wpgRanks();
   res.json({
     updated: last?.synced || last?.at || null,
     total: last?.n || 0,
-    rows: rows.map((r) => ({
-      name: String(r.bot_name || '').trim() || `Player …${String(r.steam_id).slice(-4)}`,
-      xp: r.xp,
-      level: r.rank_level,
-      rank: r.rank_name || 'RECRUIT I',
-      member: r.user_id ? byId.get(r.user_id) || null : null,
-    })),
+    rules: await rulesOut(),
+    rows: rows.map((r) => {
+      const at = rankAt(r.xp, ranks);
+      return {
+        name: String(r.bot_name || '').trim() || `Player …${String(r.steam_id).slice(-4)}`,
+        xp: r.xp,
+        level: r.rank_level,
+        rank: r.rank_name || 'RECRUIT I',
+        from: at?.from ?? null,
+        next: at?.next || null,
+        member: r.user_id ? byId.get(r.user_id) || null : null,
+      };
+    }),
   });
 });
 

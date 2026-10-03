@@ -296,8 +296,9 @@ export const rotationQueue = pgTable('rotation_queue', {
   created_at: now(),
 });
 
-// WPG server progression (WPG XP + the 200 ranks), copied from the Discord bot, which is the source
-// of truth. The app never works these out itself. Separate from clan ranks / clan XP.
+// WPG server progression (WPG XP + the 200 ranks) as shown everywhere (leaderboard, profiles, Discord).
+// Filled from the Discord bot, or by the app itself once Admin → WPG XP is switched over (see wpgxp.js).
+// Separate from clan ranks / clan XP.
 export const serverProgress = pgTable('server_progress', {
   steam_id: text().primaryKey(),
   bot_name: text().notNull().default(''),
@@ -315,8 +316,42 @@ export const gameServers = pgTable('game_servers', {
   rcon_url: text().notNull().default(''),
   rcon_password: text().notNull().default(''),
   enabled: boolean().notNull().default(true),
+  wpg_xp: boolean().notNull().default(false), // matches here earn WPG XP
   sort_order: integer().notNull().default(0),
 });
+
+// ---------- WPG XP worked out by the app (wpgxp.js) ----------
+// The WPG ranks in order (Recruit I … Wardog X): level 1 is the first, min_xp is the XP it starts at.
+export const wpgRanks = pgTable('wpg_ranks', {
+  level: integer().primaryKey(),
+  name: text().notNull(),
+  min_xp: integer().notNull().default(0),
+});
+
+// Each player's WPG XP as the app counts it. Before the switch-over it runs alongside the bot:
+// gain / penalty / matches are what the app counted since the comparison started, bot_start the bot's XP then.
+export const wpgXp = pgTable('wpg_xp', {
+  steam_id: text().primaryKey(),
+  name: text().notNull().default(''),
+  xp: integer().notNull().default(0),
+  best_level: integer().notNull().default(1), // highest rank reached (rank-ups are announced once)
+  gain: integer().notNull().default(0),
+  penalty: integer().notNull().default(0),
+  matches: integer().notNull().default(0),
+  bot_start: integer(),
+  updated_at: now(),
+});
+
+// One row per player per match: how much WPG XP it gave or took, and why (detail).
+export const wpgXpLog = pgTable('wpg_xp_log', {
+  id: serial().primaryKey(),
+  steam_id: text().notNull(),
+  server_id: integer(),
+  xp: integer().notNull().default(0),
+  counted: boolean().notNull().default(false), // false = worked out alongside the bot (not added to anyone's XP)
+  detail: jsonb().notNull().default({}),
+  created_at: now(),
+}, (t) => [index('wpg_xp_log_steam_idx').on(t.steam_id, t.created_at)]);
 
 export const sessions = pgTable('sessions', {
   sid: text().primaryKey(),

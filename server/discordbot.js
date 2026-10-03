@@ -12,6 +12,7 @@ import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly } from './routes.js';
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
+import { rankProgress } from './wpgxp.js';
 
 const API = 'https://discord.com/api/v10';
 const WPG_APP_ID = '1555526462319366165';
@@ -264,10 +265,11 @@ async function cmdRank(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
   const p = await one('SELECT xp, rank_name FROM server_progress WHERE steam_id=$1', [f.user.steam_id]);
-  const [pos, total, ranks] = await Promise.all([
+  const [pos, total, ranks, wpgNext] = await Promise.all([
     p ? one('SELECT COUNT(*)::int + 1 AS n FROM server_progress WHERE xp > $1', [p.xp]) : null,
     one('SELECT COUNT(*)::int AS n FROM server_progress'),
     q('SELECT * FROM ranks ORDER BY sort_order, id'),
+    rankProgress(p?.xp || 0),
   ]);
   const pmc = f.user.membership === 'pmc';
   const cur = ranks.find((r) => r.id === f.user.rank_id) || null;
@@ -284,16 +286,17 @@ async function cmdRank(data, caller) {
         { name: 'WPG rank', value: `**${wpgRank(p?.rank_name)}**`, inline: true },
         { name: 'WPG XP', value: num(p?.xp), inline: true },
         { name: 'Position', value: pos ? `#${num(pos.n)}` : '—', inline: true },
+        ...(wpgNext?.next ? [{ name: 'Next WPG rank', value: `${wpgRank(wpgNext.next.name)} in ${num(Math.max(0, wpgNext.next.xp - (p?.xp || 0)))} XP`, inline: false }] : []),
         { name: 'Clan rank', value: pmc ? 'PMC (guest)' : f.pub.rank ? `**${f.pub.rank.name}**` : '—', inline: true },
         { name: 'Clan XP', value: num(f.user.xp), inline: true },
       ],
-      footer: { text: 'WPG rank and WPG XP come from the WPG Discord bot · WPG Barracks' },
+      footer: { text: 'WPG rank and WPG XP are earned on the WPG server · WPG Barracks' },
     }],
   });
   return asPicture('rank', async (cards) => cards.renderRankCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
-    wpg: { rank: p?.rank_name || 'RECRUIT I', xp: p?.xp || 0, position: pos?.n || null, total: total?.n || 0 },
+    wpg: { rank: p?.rank_name || 'RECRUIT I', xp: p?.xp || 0, position: pos?.n || null, total: total?.n || 0, from: wpgNext?.from || 0, next: wpgNext?.next || null },
     clan: { pmc, rank: cur, xp: Number(f.user.xp) || 0, next, from: cur?.auto ? cur.min_xp : 0 },
   }), text, profileLink(f.user));
 }

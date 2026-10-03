@@ -4,6 +4,7 @@ import { bus } from './bus.js';
 import { syncUser, recalcXp } from './steam.js';
 import { syncWardogs } from './wardogs.js';
 import { combatFor, isWpg } from './combat.js';
+import { rankProgress } from './wpgxp.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
   HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, color, safeUrl,
@@ -50,7 +51,7 @@ api.get('/me', signedIn, async (req, res) => {
     // How the source is reading my account (paused = my link expired and my stats stopped updating).
     tracker_state: tracker?.state || null,
     tracker_polled_at: tracker?.polled_at || null,
-    wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I' },
+    wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', ...(await rankProgress(prog?.xp)) },
     real_steam: /^\d{17}$/.test(req.user.steam_id),
     discord_linked: !!req.user.discord_id,
     ...(rememberToken ? { remember_token: rememberToken } : {}),
@@ -232,7 +233,7 @@ api.get('/users/:id', member, async (req, res) => {
     `SELECT COUNT(*)::int + 1 AS pos FROM users WHERE status='active' AND xp > $1`,
     [u.xp],
   );
-  // WPG server rank + WPG XP from the Discord bot (separate from clan rank / clan XP).
+  // WPG server rank + WPG XP (separate from clan rank / clan XP).
   const prog = await one('SELECT xp, rank_level, rank_name FROM server_progress WHERE steam_id=$1', [u.steam_id]);
   const progPos = prog ? await one('SELECT COUNT(*)::int + 1 AS pos FROM server_progress WHERE xp > $1', [prog.xp]) : null;
   // Every achievement of each tracked game, marked earned or not (only games this member has synced).
@@ -260,7 +261,7 @@ api.get('/users/:id', member, async (req, res) => {
     wardogs: wardogs?.official ? { ...wardogs, official: { ...wardogs.official, accountWorth: Number(wardogs.account_worth) } } : wardogs || {},
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
     wpg_position: serverRank.pos,
-    wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', position: progPos?.pos || null },
+    wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', position: progPos?.pos || null, ...(await rankProgress(prog?.xp)) },
     // Combat Command posting and roles: WPG members and staff only (not PMC guests).
     combat: isWpg(req.user) ? await combatFor(u.id) : null,
     friend,

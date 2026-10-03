@@ -222,11 +222,11 @@ function skull(g, cx, cy) {
 }
 
 // ---------- /rank ----------
-// d: { name, avatar, wpg{rank,xp,position,total}, clan{pmc,rank,xp,next{name,min_xp},from} }
+// d: { name, avatar, wpg{rank,xp,position,total,from,next{name,xp}}, clan{pmc,rank,xp,next{name,min_xp},from} }
 export function renderRankCard(d) {
   return frame('RANK REPORT', 76 + 300 + 20, async (g, top) => {
     const y = await playerStrip(g, top, d.name, d.avatar);
-    // WPG server rank (from the WPG Discord bot).
+    // WPG server rank (WPG XP earned on the WPG server).
     panel(g, 28, y + 6, 794, 290);
     chevrons(g, 64, y + 42, 0.8);
     title(g, 100, y + 42, 'WPG RANK', '(WPG SERVER)');
@@ -235,9 +235,16 @@ export function renderRankCard(d) {
     bigValue(g, fmt(d.wpg.xp), 58, y + 222, 300, { size: 36 });
     label(g, 'POSITION', 400, y + 186);
     bigValue(g, d.wpg.position ? `#${fmt(d.wpg.position)}${d.wpg.total ? ` of ${fmt(d.wpg.total)}` : ''}` : '—', 400, y + 222, 390, { size: 36 });
-    const pct = Math.min(1, (Number(d.wpg.xp) || 0) / 650000);
-    bar(g, 58, y + 252, 736, 12, pct);
-    label(g, `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}% OF THE WAY TO WARDOG X (650,000 WPG XP)`, 58, y + 278, { size: 17, color: MUTED });
+    if (d.wpg.next) {
+      // Rank list set up (Admin → WPG XP): progress through the current rank.
+      const xp = Number(d.wpg.xp) || 0;
+      bar(g, 58, y + 252, 736, 12, (xp - (d.wpg.from || 0)) / Math.max(1, d.wpg.next.xp - (d.wpg.from || 0)));
+      label(g, `NEXT: ${upper(d.wpg.next.name)} IN ${fmt(Math.max(0, d.wpg.next.xp - xp))} WPG XP`, 58, y + 278, { size: 17, color: MUTED });
+    } else {
+      const pct = Math.min(1, (Number(d.wpg.xp) || 0) / 650000);
+      bar(g, 58, y + 252, 736, 12, pct);
+      label(g, `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}% OF THE WAY TO WARDOG X (650,000 WPG XP)`, 58, y + 278, { size: 17, color: MUTED });
+    }
 
     // Clan rank (the app's own ranks).
     panel(g, 834, y + 6, 674, 290);

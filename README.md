@@ -181,6 +181,22 @@ They were cut from the WPG Discord career card. The mountain background is `publ
      then set XP per kill back to **2** and clear the banner.
 - Other XP rates: Admin → Stats (matches, wins, playtime…) and Admin → Games (Steam hours and achievements).
 
+### WPG rank and WPG XP (Admin → WPG XP)
+
+- **WPG rank** (Recruit I → Wardog X) and **WPG XP** are earned only on servers ticked *Matches here earn WPG XP*
+  in Admin → Game servers (the WPG server is ticked; it needs RCON). Separate from Clan rank / Clan XP.
+- **Two ways to run it.** At first the **Discord bot** is in charge and the app copies its numbers every 5 minutes.
+  Meanwhile the app counts every match by itself without changing anyone's XP. Admin → WPG XP compares the two.
+- **Switching over:** paste the rank list (one per line, e.g. `Recruit II = 1500`), check the comparison, then press
+  **Switch WPG XP over to this app**. Everyone starts from their bot XP that day and the bot is no longer read.
+  **Go back to the Discord bot** undoes it (XP earned in the app after the switch isn't kept).
+- **How XP is counted** (amounts in Admin → WPG XP), when each match ends: XP for kills, time played, finishing and
+  winning; minus XP for a loss, a bad K/D (more deaths than kills) and leaving early. Leaving early isn't counted
+  if the app lost sight of the server during the match, or half the players dropped out at once (a crash).
+  With *no rank loss* ticked, penalties never take anyone below the start of their rank.
+- Members see **XP to their next rank** on HQ, their profile, the leaderboard and the Discord /rank card, and their
+  last matches (what each gave or took) under the WPG rank leaderboard.
+
 ### Progression page and artillery data
 
 - **Unlocks** (Admin → Unlocks): the full Wardogs progression — 197 unlocks with levels, costs and pictures.

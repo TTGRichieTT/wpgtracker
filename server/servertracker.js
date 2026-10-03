@@ -4,38 +4,52 @@
 //  - A new match is spotted when the map/mode changes or the team scores drop back towards zero;
 //    players who were in the finished match get a win (their team had the top score) or a loss.
 //  - Members' totals also go to their career page and WPG XP.
+//  - On servers ticked "Earns WPG XP", each finished match also gives (or takes) WPG XP (wpgxp.js).
 import { q, one } from './db.js';
 import { rcon, queuedMap, restoreRotation } from './servers.js';
 import { recalcXp } from './steam.js';
 import { bus } from './bus.js';
 import { watchPoll } from './cheatwatch.js';
+import { awardMatch } from './wpgxp.js';
 
 const POLL_MS = 30 * 1000;
 const RECENT_MS = 3 * 60 * 1000; // must have been seen this recently at match end to get a win/loss
+const HEALTHY_GAP_MS = 2 * 60 * 1000; // a longer gap between checks (app restart, host outage) = can't tell who left
 const MEMBER_PUSH_MS = 5 * 60 * 1000;
 
 const totalScore = (st) => (st?.factionScores || []).reduce((n, f) => n + (Number(f.score) || 0), 0);
 const matchKey = (st) => `${st?.map || ''}|${(st?.experiences || []).join('+')}`;
 
-// Ends the match in `state`: hands out wins and losses (none for an empty or tied match), and keeps
-// one row per player of how their match went (for cheat watch).
-async function finishMatch(serverId, state) {
+// Ends the match in `state`: hands out wins and losses (none for an empty or tied match), keeps
+// one row per player of how their match went (for cheat watch) and works out WPG XP.
+async function finishMatch(server, state) {
+  const serverId = server.id;
   const scores = state.scores || [];
   const best = Math.max(0, ...scores.map((f) => Number(f.score) || 0));
   const winners = scores.filter((f) => (Number(f.score) || 0) === best);
   const winner = best > 0 && winners.length === 1 ? winners[0].name : null;
+  const played = [];
   for (const [sid, p] of Object.entries(state.players || {})) {
     const stayed = p.faction && Date.now() - (p.seen || 0) <= RECENT_MS;
     const won = winner && stayed ? p.faction === winner : null;
+    // Kills and deaths in this match (mk/md add up across reconnects; older saved states only had the counters).
+    const kills = p.mk ?? p.kills ?? 0;
+    const deaths = p.md ?? p.deaths ?? 0;
     if (won !== null) {
       await q(`UPDATE server_players SET ${won ? 'wins = wins + 1' : 'losses = losses + 1'} WHERE server_id=$1 AND steam_id=$2`, [serverId, sid]);
     }
     if ((p.secs || 0) >= 60) {
       await q(
         'INSERT INTO match_players (server_id, steam_id, name, faction, kills, deaths, seconds, won) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [serverId, sid, String(p.name || '').slice(0, 64), p.faction || '', p.kills || 0, p.deaths || 0, p.secs, won],
+        [serverId, sid, String(p.name || '').slice(0, 64), p.faction || '', kills, deaths, p.secs, won],
       ).catch((e) => console.warn('[tracker] match row', e.message));
+      played.push({ steam_id: sid, name: String(p.name || '').slice(0, 64), secs: p.secs, kills, deaths, stayed: !!stayed, won });
     }
+  }
+  if (server.wpg_xp) {
+    const healthy = (state.maxGap || 0) <= HEALTHY_GAP_MS && Date.now() - (state.at || 0) <= HEALTHY_GAP_MS;
+    await awardMatch(serverId, played, { winner: !!winner, scored: best > 0, healthy })
+      .catch((e) => console.warn('[tracker] WPG XP', e.message));
   }
 }
 
@@ -66,10 +80,12 @@ export async function pollServer(server) {
     await restoreRotation(server).catch((e) => console.warn('[tracker] rotation restore failed', e.message));
   }
   if (newMatch) {
-    await finishMatch(server.id, state);
-    state = { key: matchKey(status), total: 0, scores: [], players: {}, at: now };
+    await finishMatch(server, state);
+    state = { key: matchKey(status), total: 0, scores: [], players: {}, at: now, maxGap: 0 };
   }
-  const gap = Math.min(Math.max(0, now - (state.at || now)), 90 * 1000); // cap: don't credit long outages
+  const rawGap = Math.max(0, now - (state.at || now));
+  state.maxGap = Math.max(state.maxGap || 0, rawGap); // longest time this match went unwatched
+  const gap = Math.min(rawGap, 90 * 1000); // cap: don't credit long outages
 
   // Everyone's changes go to the database in one trip (not two per player), so a busy server doesn't
   // keep the database tied up every 30 seconds.
@@ -87,7 +103,10 @@ export async function pollServer(server) {
     rows.push({ steam_id: sid, name, kills: dk, deaths: dd, matches: prev ? 0 : 1, playtime_s: secs });
     // secs: time in this match; hist: kills over the last few minutes (for live spike alerts).
     const hist = [...(prev?.hist || []).filter(([t]) => now - t <= 7 * 60 * 1000), [now, kills]];
-    state.players[sid] = { kills, deaths, faction: p.faction || '', seen: now, name, secs: (prev?.secs || 0) + secs, hist };
+    state.players[sid] = {
+      kills, deaths, mk: (prev?.mk ?? prev?.kills ?? 0) + dk, md: (prev?.md ?? prev?.deaths ?? 0) + dd,
+      faction: p.faction || '', seen: now, name, secs: (prev?.secs || 0) + secs, hist,
+    };
   }
   if (rows.length) {
     // xmax = 0 marks rows that were inserted (first time we've seen this player here).

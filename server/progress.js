@@ -1,14 +1,18 @@
-// WPG server progression from the Discord bot (its read-only progress API). The bot is the source of
-// truth for WPG XP and WPG rank (Recruit I … Wardog X); the app copies them every 5 minutes and shows
-// them exactly as the bot has them, so Discord and the app always agree. Nothing is worked out here.
+// WPG server progression from the Discord bot (its read-only progress API). Until Admin → WPG XP is
+// switched over to the app, the bot is the source of truth for WPG XP and WPG rank (Recruit I … Wardog X):
+// the app copies them every 5 minutes and shows them exactly as the bot has them. After the switch the
+// bot is no longer read (wpgxp.js works WPG XP out instead).
 // Uses the same key as WarCon (WARCON_API_KEY); WPG_PROGRESS_URL can change the address.
-import { q } from './db.js';
+import { q, setting } from './db.js';
 import { bus } from './bus.js';
 
 const BASE = (process.env.WPG_PROGRESS_URL || 'https://warcon.taild5e8b5.ts.net:10000').replace(/\/+$/, '');
 const KEY = () => process.env.WPG_PROGRESS_KEY || process.env.WARCON_API_KEY || '';
 
+const appInCharge = async () => (await setting('_wpg_xp_source')) === 'app';
+
 export async function syncProgress() {
+  if (await appInCharge()) return { ok: false, reason: 'WPG XP is worked out by the app now (Admin → WPG XP)' };
   if (!KEY()) return { ok: false, reason: 'WARCON_API_KEY is not set' };
   const res = await fetch(`${BASE}/v1/progress`, {
     headers: { Authorization: `Bearer ${KEY()}` },
@@ -65,6 +69,7 @@ export function startProgressSync() {
   }
   const run = async () => {
     try {
+      if (await appInCharge()) return setTimeout(run, 5 * 60 * 1000);
       const r = await syncProgress();
       if (!r.ok) console.warn('[progress]', r.reason);
     } catch (e) {

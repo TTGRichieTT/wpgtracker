@@ -311,6 +311,7 @@ const RESOURCES = {
       },
       rcon_password: (v) => str(v, 300),
       enabled: bool,
+      wpg_xp: bool,
       sort_order: (v) => int(v),
     },
   },
