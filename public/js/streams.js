@@ -43,7 +43,7 @@ const watchOutside = (s) => (s.platform === 'youtube' && s.video_id ? `https://w
 const frame = (src, title, cls) => `<iframe class="${cls}" src="${esc(src)}" title="${esc(title)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
 
 // ---------- Streams list ----------
-export async function viewStreams(main, [id], alive) {
+export async function viewStreams(main, [id], alive, again) {
   if (id) return viewWatch(main, Number(id), alive);
   const d = await api('streams');
   if (!alive()) return;
@@ -78,7 +78,9 @@ export async function viewStreams(main, [id], alive) {
         <p class="muted small" style="margin:10px 0 0">Do you stream? Link your channel in <a href="#/profile/edit#streams">Edit profile → My streams</a>. Staff approve it, then it shows here and in Discord when you go live.</p>
       </div>
     </div>`;
-  onLive('streams', async () => { if (alive()) viewStreams(main, [], alive).catch(() => {}); });
+  // Live changes redraw this page in place. Listen once only: a redraw must not add another listener
+  // (that doubled the requests on every change and slowed the whole app down).
+  if (!again) onLive('streams', () => { if (alive()) viewStreams(main, [], alive, true).catch(() => {}); });
 }
 
 // ---------- Watch a stream ----------

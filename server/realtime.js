@@ -7,6 +7,9 @@ import { mentionedUserIds } from './mentions.js';
 import { playingNow } from './playing.js';
 import { liveStreamCount } from './streams.js';
 
+// Which release is running. Open tabs compare it after a reconnect and reload themselves onto a new release.
+const APP_VERSION = (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 12);
+
 export function startRealtime(httpServer, sessionMiddleware) {
   const io = new Server(httpServer, { cors: { origin: false } });
   io.engine.use(sessionMiddleware);
@@ -31,6 +34,7 @@ export function startRealtime(httpServer, sessionMiddleware) {
     await joinChannels(socket, user);
     online.set(user.id, (online.get(user.id) || 0) + 1);
     broadcastPresence();
+    socket.emit('app:version', APP_VERSION);
     socket.emit('playing', playingNow());
     socket.emit('streams', liveStreamCount());
     q('UPDATE users SET last_seen=now() WHERE id=$1', [user.id]).catch(() => {});

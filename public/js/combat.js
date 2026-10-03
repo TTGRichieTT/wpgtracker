@@ -24,7 +24,7 @@ function presence(m) {
 }
 
 // ---------- Board ----------
-export async function viewCommand(main, _r, alive) {
+export async function viewCommand(main, _r, alive, again) {
   if (!isWpg()) { main.innerHTML = `${header('recruitment')}<div class="panel empty"><h3>WPG members only</h3><p>The Combat Command board is for WPG members. Apply on the Recruitment tab.</p></div>`; return; }
   const d = await api('combat/board');
   if (!alive()) return;
@@ -67,8 +67,12 @@ export async function viewCommand(main, _r, alive) {
       <div class="cc-grid">${d.units.filter((u) => u.kind !== 'command').map(unitHtml).join('')}</div>
     </div>`;
   if (d.can_assign) bindAssign(main, d);
-  onLive('combat', () => { if (alive()) viewCommand(main, _r, alive).catch(() => {}); });
-  onLive('playing', () => { if (alive()) viewCommand(main, _r, alive).catch(() => {}); });
+  // Redraws in place when units or who's playing change. Listen once only (a redraw must not add more listeners).
+  if (!again) {
+    const redraw = () => { if (alive()) viewCommand(main, _r, alive, true).catch(() => {}); };
+    onLive('combat', redraw);
+    onLive('playing', redraw);
+  }
 }
 
 // Staff: fill an open slot, or move / remove someone.

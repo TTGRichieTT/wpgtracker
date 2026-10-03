@@ -379,6 +379,11 @@ function connectSocket() {
   if (!window.io) return;
   const socket = window.io({ transports: ['websocket', 'polling'] });
   state.socket = socket;
+  socket.on('app:version', (v) => {
+    if (!state.appVersion) state.appVersion = v;
+    else if (v !== state.appVersion) updateWaiting = true;
+    if (updateWaiting && document.hidden) location.reload();
+  });
   socket.on('presence', (ids) => {
     state.online = new Set(ids);
     document.querySelectorAll('[data-online]').forEach((d) => d.classList.toggle('on', state.online.has(Number(d.dataset.online))));
@@ -441,8 +446,13 @@ function connectSocket() {
 }
 
 // ---------- Router ----------
+// A new release went live while this tab was open: load it on the next page change, or straight away
+// if the tab is in the background (so nobody has to be told to refresh).
+let updateWaiting = false;
+document.addEventListener('visibilitychange', () => { if (document.hidden && updateWaiting) location.reload(); });
 let routeSeq = 0;
 async function route() {
+  if (updateWaiting) { location.reload(); return; }
   const seq = ++routeSeq;
   viewListeners = [];
   markActive();

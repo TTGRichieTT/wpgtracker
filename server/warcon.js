@@ -32,35 +32,43 @@ export async function syncWarcon() {
     if (page.length < PAGE) break;
   }
 
-  let n = 0;
+  // All players go to the database in one trip (not three per player).
+  const num = (v) => Math.max(0, Math.round(Number(v) || 0));
+  const rows = new Map();
   for (const p of players) {
     const sid = String(p.steamId || '');
     if (!/^\d{17}$/.test(sid)) continue;
     const name = String(p.name || '').trim().slice(0, 64) || sid;
-    const num = (v) => Math.max(0, Math.round(Number(v) || 0));
     const seen = p.lastSeen && !Number.isNaN(Date.parse(p.lastSeen)) ? new Date(p.lastSeen).toISOString() : null;
-    await q(
-      `INSERT INTO server_players (server_id, steam_id, name, kills, deaths, matches, playtime_s, last_seen)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (server_id, steam_id) DO UPDATE SET
-         name = CASE WHEN EXCLUDED.last_seen >= COALESCE(server_players.last_seen, EXCLUDED.last_seen) THEN EXCLUDED.name ELSE server_players.name END,
-         kills=GREATEST(server_players.kills, EXCLUDED.kills), deaths=GREATEST(server_players.deaths, EXCLUDED.deaths),
-         matches=GREATEST(server_players.matches, EXCLUDED.matches), playtime_s=GREATEST(server_players.playtime_s, EXCLUDED.playtime_s),
-         last_seen=GREATEST(server_players.last_seen, EXCLUDED.last_seen)`,
-      [server.id, sid, name, num(p.kills), num(p.deaths), num(p.sessions), num(p.playtimeSeconds), seen],
-    );
-    // A row imported earlier by name only (from a screenshot) is the same player: fold it in.
-    const byName = await one('SELECT * FROM server_players WHERE server_id=$1 AND steam_id=$2', [server.id, `name:${name}`]);
-    if (byName) {
-      await q(
-        `UPDATE server_players SET matches=GREATEST(matches,$3), playtime_s=GREATEST(playtime_s,$4), wins=GREATEST(wins,$5), losses=GREATEST(losses,$6)
-          WHERE server_id=$1 AND steam_id=$2`,
-        [server.id, sid, byName.matches, byName.playtime_s, byName.wins, byName.losses],
-      );
-      await q('DELETE FROM server_players WHERE server_id=$1 AND steam_id=$2', [server.id, `name:${name}`]);
-    }
-    n++;
+    rows.set(sid, { steam_id: sid, name, kills: num(p.kills), deaths: num(p.deaths), matches: num(p.sessions), playtime_s: num(p.playtimeSeconds), last_seen: seen });
   }
+  const json = JSON.stringify([...rows.values()]);
+  await q(
+    `INSERT INTO server_players (server_id, steam_id, name, kills, deaths, matches, playtime_s, last_seen)
+     SELECT $1, steam_id, name, kills, deaths, matches, playtime_s, last_seen
+       FROM jsonb_to_recordset($2::jsonb) AS x(steam_id text, name text, kills int, deaths int, matches int, playtime_s int, last_seen timestamptz)
+     ON CONFLICT (server_id, steam_id) DO UPDATE SET
+       name = CASE WHEN EXCLUDED.last_seen >= COALESCE(server_players.last_seen, EXCLUDED.last_seen) THEN EXCLUDED.name ELSE server_players.name END,
+       kills=GREATEST(server_players.kills, EXCLUDED.kills), deaths=GREATEST(server_players.deaths, EXCLUDED.deaths),
+       matches=GREATEST(server_players.matches, EXCLUDED.matches), playtime_s=GREATEST(server_players.playtime_s, EXCLUDED.playtime_s),
+       last_seen=GREATEST(server_players.last_seen, EXCLUDED.last_seen)`,
+    [server.id, json],
+  );
+  // A row imported earlier by name only (from a screenshot) is the same player: fold it in.
+  await q(
+    `WITH m AS (
+       SELECT DISTINCT ON (n.steam_id) n.steam_id AS old_id, x.steam_id AS sid, n.matches, n.playtime_s, n.wins, n.losses
+         FROM jsonb_to_recordset($2::jsonb) AS x(steam_id text, name text)
+         JOIN server_players n ON n.server_id = $1 AND n.steam_id = 'name:' || x.name),
+     u AS (
+       UPDATE server_players sp SET matches=GREATEST(sp.matches, m.matches), playtime_s=GREATEST(sp.playtime_s, m.playtime_s),
+              wins=GREATEST(sp.wins, m.wins), losses=GREATEST(sp.losses, m.losses)
+         FROM m WHERE sp.server_id = $1 AND sp.steam_id = m.sid
+       RETURNING m.old_id)
+     DELETE FROM server_players WHERE server_id = $1 AND steam_id IN (SELECT old_id FROM u)`,
+    [server.id, json],
+  );
+  const n = rows.size;
   bus.emit('server:board', server.id);
   const sessions = await syncSessions().catch((e) => { console.warn('[warcon] sessions', e.message); return 0; });
   return { ok: true, players: n, sessions };
@@ -75,18 +83,25 @@ async function syncSessions() {
   for (let offset = 0; offset < 200000; offset += PAGE) {
     const data = await get(`/v1/sessions?limit=${PAGE}&offset=${offset}${since ? `&since=${encodeURIComponent(since)}` : ''}`);
     const page = Array.isArray(data?.sessions) ? data.sessions : [];
+    // Each page of up to 1000 sessions is saved in one trip.
+    const when = (v) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+    const rows = new Map();
     for (const s of page) {
       const sid = String(s.steamId || '');
       if (!/^\d{17}$/.test(sid) || s.id === undefined || s.id === null) continue;
-      const when = (v) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+      rows.set(String(s.id), { id: String(s.id), steam_id: sid, name: String(s.name || '').slice(0, 64), joined_at: when(s.joinedAt),
+        last_seen: when(s.lastSeen), left_at: when(s.leftAt), kills: Math.max(0, Math.round(Number(s.kills) || 0)), deaths: Math.max(0, Math.round(Number(s.deaths) || 0)) });
+    }
+    if (rows.size) {
       await q(
-        `INSERT INTO server_sessions (id, steam_id, name, joined_at, last_seen, left_at, kills, deaths) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO server_sessions (id, steam_id, name, joined_at, last_seen, left_at, kills, deaths)
+         SELECT id, steam_id, name, joined_at, last_seen, left_at, kills, deaths
+           FROM jsonb_to_recordset($1::jsonb) AS x(id text, steam_id text, name text, joined_at timestamptz, last_seen timestamptz, left_at timestamptz, kills int, deaths int)
          ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, last_seen=EXCLUDED.last_seen, left_at=EXCLUDED.left_at,
            kills=EXCLUDED.kills, deaths=EXCLUDED.deaths`,
-        [String(s.id), sid, String(s.name || '').slice(0, 64), when(s.joinedAt), when(s.lastSeen), when(s.leftAt),
-          Math.max(0, Number(s.kills) || 0), Math.max(0, Number(s.deaths) || 0)],
+        [JSON.stringify([...rows.values()])],
       );
-      n++;
+      n += rows.size;
     }
     if (page.length < PAGE) break;
   }

@@ -95,6 +95,25 @@ app.use('/api', (req, _res, next) => {
   next();
 });
 
+// Safety valve: a browser tab stuck in a loop (old app code, a bug) gets turned away before it reaches
+// the database, so one tab can't slow the app down for everyone. Normal use never gets near this.
+const CALM_WINDOW_MS = 20 * 1000;
+const CALM_MAX = 150;
+const calls = new Map(); // session (or address) -> { n, since }
+app.use('/api', (req, _res, next) => {
+  if (req.path.startsWith('/ingest')) return next();
+  const who = req.sessionID && req.session?.userId ? `s:${req.sessionID}` : `ip:${req.ip}`;
+  const now = Date.now();
+  let c = calls.get(who);
+  if (!c || now - c.since > CALM_WINDOW_MS) {
+    c = { n: 0, since: now };
+    calls.set(who, c);
+    if (calls.size > 5000) for (const [k, v] of calls) if (now - v.since > CALM_WINDOW_MS) calls.delete(k);
+  }
+  if (++c.n > CALM_MAX) throw new HttpError(429, 'Too many requests at once. Please reload the page.');
+  next();
+});
+
 function baseUrl(req) {
   return (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
 }
