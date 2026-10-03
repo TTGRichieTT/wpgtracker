@@ -71,6 +71,9 @@ export async function pollServer(server) {
   }
   const gap = Math.min(Math.max(0, now - (state.at || now)), 90 * 1000); // cap: don't credit long outages
 
+  // Everyone's changes go to the database in one trip (not two per player), so a busy server doesn't
+  // keep the database tied up every 30 seconds.
+  const rows = [];
   for (const p of players) {
     const sid = String(p.steamId || '');
     if (!/^\d{17}$/.test(sid)) continue;
@@ -81,18 +84,24 @@ export async function pollServer(server) {
     const dk = prev ? (kills >= prev.kills ? kills - prev.kills : kills) : kills;
     const dd = prev ? (deaths >= prev.deaths ? deaths - prev.deaths : deaths) : deaths;
     const secs = prev ? Math.round(gap / 1000) : 0;
-    const exists = await one('SELECT 1 FROM server_players WHERE server_id=$1 AND steam_id=$2', [server.id, sid]);
-    await q(
-      `INSERT INTO server_players (server_id, steam_id, name, kills, deaths, matches, playtime_s, last_seen) VALUES ($1,$2,$3,$4,$5,$6,$7,now())
-       ON CONFLICT (server_id, steam_id) DO UPDATE SET name=EXCLUDED.name, kills=server_players.kills+EXCLUDED.kills,
-         deaths=server_players.deaths+EXCLUDED.deaths, matches=server_players.matches+EXCLUDED.matches,
-         playtime_s=server_players.playtime_s+EXCLUDED.playtime_s, last_seen=now()`,
-      [server.id, sid, name, dk, dd, prev ? 0 : 1, secs],
-    );
-    if (!exists) await claimImported(server.id, sid, name);
+    rows.push({ steam_id: sid, name, kills: dk, deaths: dd, matches: prev ? 0 : 1, playtime_s: secs });
     // secs: time in this match; hist: kills over the last few minutes (for live spike alerts).
     const hist = [...(prev?.hist || []).filter(([t]) => now - t <= 7 * 60 * 1000), [now, kills]];
     state.players[sid] = { kills, deaths, faction: p.faction || '', seen: now, name, secs: (prev?.secs || 0) + secs, hist };
+  }
+  if (rows.length) {
+    // xmax = 0 marks rows that were inserted (first time we've seen this player here).
+    const written = await q(
+      `INSERT INTO server_players (server_id, steam_id, name, kills, deaths, matches, playtime_s, last_seen)
+       SELECT $1, steam_id, name, kills, deaths, matches, playtime_s, now()
+         FROM jsonb_to_recordset($2::jsonb) AS x(steam_id text, name text, kills int, deaths int, matches int, playtime_s int)
+       ON CONFLICT (server_id, steam_id) DO UPDATE SET name=EXCLUDED.name, kills=server_players.kills+EXCLUDED.kills,
+         deaths=server_players.deaths+EXCLUDED.deaths, matches=server_players.matches+EXCLUDED.matches,
+         playtime_s=server_players.playtime_s+EXCLUDED.playtime_s, last_seen=now()
+       RETURNING steam_id, name, (xmax = 0) AS inserted`,
+      [server.id, JSON.stringify(rows)],
+    );
+    for (const w of written) if (w.inserted) await claimImported(server.id, w.steam_id, w.name);
   }
   await watchPoll(server, players, { players: before }, state).catch((e) => console.warn('[tracker] cheat watch', e.message));
   state.scores = status.factionScores || [];

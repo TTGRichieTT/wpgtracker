@@ -18,26 +18,51 @@ export const START_ADMIN_IDS = new Set(
 );
 export const roleAtLeast = (role, min) => (ROLE_LEVEL[role] || 0) >= (ROLE_LEVEL[min] || 99);
 
+// Sign-ins are kept in the database (so they survive restarts) with a short in-memory copy, so most
+// requests don't need a database trip just to know who you are. The "keep me signed in" time is
+// pushed forward at most once an hour per person, not on every click.
+const SESSION_CACHE_MS = 5 * 60 * 1000;
+const TOUCH_EVERY_MS = 60 * 60 * 1000;
 export class PgSessionStore extends session.Store {
+  constructor() {
+    super();
+    this.cache = new Map(); // sid -> { sess, at }
+    this.touched = new Map(); // sid -> last time the expiry was saved
+  }
   get(sid, cb) {
+    const hit = this.cache.get(sid);
+    if (hit && Date.now() - hit.at < SESSION_CACHE_MS) return cb(null, JSON.parse(hit.json));
     one('SELECT sess FROM sessions WHERE sid=$1 AND expire > now()', [sid])
-      .then((row) => cb(null, row ? row.sess : null))
+      .then((row) => {
+        if (row) this.cache.set(sid, { json: JSON.stringify(row.sess), at: Date.now() });
+        else this.cache.delete(sid);
+        cb(null, row ? row.sess : null);
+      })
       .catch(cb);
   }
   set(sid, sess, cb) {
     const expire = new Date(sess.cookie?.expires || Date.now() + 30 * 864e5);
+    const json = JSON.stringify(sess);
+    this.cache.set(sid, { json, at: Date.now() });
+    this.touched.set(sid, Date.now());
+    if (this.cache.size > 5000) this.cache.clear();
     q(
       `INSERT INTO sessions (sid, sess, expire) VALUES ($1,$2,$3)
        ON CONFLICT (sid) DO UPDATE SET sess=EXCLUDED.sess, expire=EXCLUDED.expire`,
-      [sid, JSON.stringify(sess), expire],
+      [sid, json, expire],
     )
       .then(() => cb?.(null))
       .catch((e) => cb?.(e));
   }
   destroy(sid, cb) {
+    this.cache.delete(sid);
+    this.touched.delete(sid);
     q('DELETE FROM sessions WHERE sid=$1', [sid]).then(() => cb?.(null)).catch((e) => cb?.(e));
   }
   touch(sid, sess, cb) {
+    if (Date.now() - (this.touched.get(sid) || 0) < TOUCH_EVERY_MS) return cb?.(null);
+    this.touched.set(sid, Date.now());
+    if (this.touched.size > 5000) this.touched.clear();
     const expire = new Date(sess.cookie?.expires || Date.now() + 30 * 864e5);
     q('UPDATE sessions SET expire=$2 WHERE sid=$1', [sid, expire]).then(() => cb?.(null)).catch((e) => cb?.(e));
   }

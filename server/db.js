@@ -53,19 +53,34 @@ export async function initDb() {
 }
 
 // For the status check: how long one database trip takes, and whether queries are queueing.
+// "busiest" lists the queries run most since the app started (no values, just the query wording).
 export async function dbHealth() {
   const t = Date.now();
   await impl.query('SELECT 1');
-  return { ms: Date.now() - t, ...(poolRef ? { open: poolRef.totalCount, idle: poolRef.idleCount, waiting: poolRef.waitingCount } : {}) };
+  const mins = Math.max(1, (Date.now() - statsSince) / 60000);
+  const busiest = [...queryStats.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 12)
+    .map(([sql, s]) => ({ per_min: Math.round(s.n / mins), avg_ms: Math.round(s.ms / s.n), sql }));
+  return { ms: Date.now() - t, ...(poolRef ? { open: poolRef.totalCount, idle: poolRef.idleCount, waiting: poolRef.waitingCount } : {}), busiest };
 }
 
 export async function closeDb() {
   await impl?.close();
 }
 
+// How often each query runs and how long it takes (shown by the status check), to find what keeps the database busy.
+const queryStats = new Map();
+const statsSince = Date.now();
 export async function q(text, params = []) {
-  const res = await impl.query(text, params);
-  return res.rows;
+  const key = String(text).replace(/\s+/g, ' ').trim().slice(0, 100);
+  const st = queryStats.get(key) || { n: 0, ms: 0 };
+  if (!queryStats.has(key) && queryStats.size < 500) queryStats.set(key, st);
+  const t = Date.now();
+  try {
+    return (await impl.query(text, params)).rows;
+  } finally {
+    st.n++;
+    st.ms += Date.now() - t;
+  }
 }
 
 export async function one(text, params = []) {

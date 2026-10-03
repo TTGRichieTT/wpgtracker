@@ -461,9 +461,9 @@ servers.get('/wpg-ranking', member, async (_req, res) => {
   const memberIds = rows.map((r) => r.user_id).filter(Boolean);
   const members = memberIds.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [memberIds])) : [];
   const byId = new Map(members.map((m) => [m.id, m]));
-  const last = await one('SELECT MAX(synced_at) AS at, COUNT(*)::int AS n FROM server_progress');
+  const last = await one("SELECT (SELECT value FROM settings WHERE key='_progress_synced') AS synced, MAX(synced_at) AS at, COUNT(*)::int AS n FROM server_progress");
   res.json({
-    updated: last?.at || null,
+    updated: last?.synced || last?.at || null,
     total: last?.n || 0,
     rows: rows.map((r) => ({
       name: String(r.bot_name || '').trim() || `Player …${String(r.steam_id).slice(-4)}`,
