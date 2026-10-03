@@ -206,7 +206,7 @@ export async function awardMatch(serverId, players, match) {
     if (xp !== was + gain - penalty) d.floor = true;
     const rank = rankAt(xp, ranks);
     const best = old?.best_level || 1;
-    if (live && rank && rank.level > best) rankUps.push({ steamId: p.steam_id, name: p.name, rank: rank.name, xp });
+    if (live && rank && rank.level > best) rankUps.push({ steamId: p.steam_id, name: p.name, rank: rank.name, level: rank.level, xp });
     totals.push({ steam_id: p.steam_id, name: p.name, xp, best_level: Math.max(best, rank?.level || 1), gain, penalty, level: rank?.level || 1, rank: rank?.name || '' });
     log.push({ steam_id: p.steam_id, xp: xp - was, detail: d });
   }

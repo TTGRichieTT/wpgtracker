@@ -469,6 +469,7 @@ servers.get('/wpg-ranking', member, async (_req, res) => {
     updated: last?.synced || last?.at || null,
     total: last?.n || 0,
     rules: await rulesOut(),
+    ladder: ranks,
     rows: rows.map((r) => {
       const at = rankAt(r.xp, ranks);
       return {

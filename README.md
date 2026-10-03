@@ -196,6 +196,9 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   winning; minus XP for a loss, a bad K/D (more deaths than kills) and leaving early. Leaving early isn't counted
   if the app lost sight of the server during the match, or half the players dropped out at once (a crash).
   With *no rank loss* ticked, penalties never take anyone below the start of their rank.
+- **Badges:** each WPG rank has a badge like the clan ranks: the tier sets the insignia and colour (bronze enlisted,
+  silver NCOs, gold officers, red generals, blue WPG Commander / Wardog) and a tab shows I–X. Shown on the leaderboard
+  (with all 200 ranks under *All WPG ranks*), HQ, profiles and the Discord cards.
 - Members see **XP to their next rank** on HQ, their profile, the leaderboard and the Discord /rank card, and their
   last matches (what each gave or took) under the WPG rank leaderboard.
 

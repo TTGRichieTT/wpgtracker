@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { rankBadge, insigniaSVG } from './insignia.js';
+import { rankBadge, insigniaSVG, wpgBadge, wpgTierOf } from './insignia.js';
 
 // ---------- Shared helpers ----------
 export const state = {
@@ -125,6 +125,22 @@ export const wpgRankName = (name) => String(name || 'RECRUIT I').split(/\s+/)
 // Progress to the next WPG rank, for { xp, from, next: { name, xp } } (no next = top rank or no rank list yet).
 const wpgToNext = (w) => (w?.next ? `${fmtNum(Math.max(0, w.next.xp - (w.xp || 0)))} XP to ${wpgRankName(w.next.name)}` : '');
 const wpgPct = (w) => (w?.next ? Math.max(0, Math.min(100, (((w.xp || 0) - (w.from || 0)) / Math.max(1, w.next.xp - (w.from || 0))) * 100)) : 100);
+// Every WPG rank, one row per tier (I–X), with the badge and the XP each step starts at. Yours is marked.
+function ladderHtml(ranks, me) {
+  if (!ranks.length) return '';
+  const tiers = [];
+  for (const r of ranks) (tiers[Math.floor((r.level - 1) / 10)] ||= []).push(r);
+  const mineTier = me ? Math.floor(((me.level || 1) - 1) / 10) : -1;
+  return `<details class="panel wpg-ladder">
+    <summary class="panel-title" style="margin:0;cursor:pointer">${icon('chevrons')} All ${ranks.length} ${esc(state.settings.clan_tag || 'WPG')} ranks <span class="sub">tap to open</span></summary>
+    <div class="list" style="margin-top:12px">${tiers.filter(Boolean).map((t, i) => {
+      const tierName = t[0].name.replace(/\s+[IVX]+$/i, '');
+      return `<div class="item"${i === mineTier ? ' style="background:rgba(41,182,246,.08);border-radius:8px"' : ''}>${wpgBadge(t[0].level, 52, t[0].name)}
+        <div class="grow"><b style="font:700 17px var(--head);text-transform:uppercase">${esc(tierName)}</b>${i === mineTier ? ' <span class="pill mod">You</span>' : ''}
+          <div class="muted small">${t.map((r) => `${esc(wpgTierOf(r.level, r.name).numeral)} ${fmtNum(r.min_xp)}`).join(' · ')}</div></div></div>`;
+    }).join('')}</div>
+  </details>`;
+}
 const wpgBar = (w) => (w?.next ? `<div class="xpbar" title="${esc(wpgToNext(w))}"><div style="width:${wpgPct(w).toFixed(1)}%"></div></div>` : '');
 // Clan role, kept apart from any rank.
 const roleName = (u) => (!u ? 'Not in app' : u.role === 'admin' ? 'Admin' : u.role === 'mod' ? 'Mod' : isPmc(u) ? 'PMC' : 'Member');
@@ -544,7 +560,7 @@ async function viewHome(main) {
             <div class="accent" style="font:700 19px var(--head);text-transform:uppercase;letter-spacing:1px">${isPmc(me) ? 'PMC · Guest' : cur ? `${esc(cur.name)} · ${esc(cur.abbr)}` : 'Unranked'}</div>
             <div style="margin-top:10px;max-width:520px">${progress}</div>
             <div class="row small" style="margin-top:8px;gap:8px"><span class="pill">${esc(state.settings.clan_tag || 'WPG')} server rank</span>
-              <b>${esc(wpgRankName(state.wpgServer?.name))}</b><span class="muted">· ${fmtNum(state.wpgServer?.xp || 0)} ${esc(state.settings.clan_tag || 'WPG')} XP${state.wpgServer?.next ? ` · ${esc(wpgToNext(state.wpgServer))}` : ''}</span></div>
+              ${wpgBadge(state.wpgServer?.level, 30, state.wpgServer?.name)}<b>${esc(wpgRankName(state.wpgServer?.name))}</b><span class="muted">· ${fmtNum(state.wpgServer?.xp || 0)} ${esc(state.settings.clan_tag || 'WPG')} XP${state.wpgServer?.next ? ` · ${esc(wpgToNext(state.wpgServer))}` : ''}</span></div>
             ${state.wpgServer?.next ? `<div style="max-width:520px">${wpgBar(state.wpgServer)}</div>` : ''}
             ${state.settings.welcome_message ? `<p class="muted" style="margin:10px 0 0;max-width:560px">${esc(state.settings.welcome_message)}</p>` : ''}
             <div class="row" style="margin-top:14px"><a class="btn primary" href="#/u/${me.id}">${icon('user')} My career</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button></div>
@@ -708,7 +724,8 @@ const ROLE_STYLE = {
 };
 const ROLE_ORDER = ['recon', 'assault', 'medic', 'support', 'engineer', 'driver', 'pilot'];
 function tile(ic, label, value, cls = '') {
-  return `<div class="tile"><div class="ic">${icon(ic)}</div><div class="grow"><div class="lbl">${esc(label)}</div><div class="val ${cls}">${esc(value)}</div></div></div>`;
+  // ic: an icon name, or a ready-made badge (SVG)
+  return `<div class="tile"><div class="ic">${String(ic).startsWith('<') ? ic : icon(ic)}</div><div class="grow"><div class="lbl">${esc(label)}</div><div class="val ${cls}">${esc(value)}</div></div></div>`;
 }
 function statBox(ic, label, value) {
   return `<div class="stat-box"><div class="ic">${icon(ic)}</div><div class="lbl" style="font:700 13px var(--head);color:var(--accent2);text-transform:uppercase">${esc(label)}</div><div class="tile"><div class="val grow">${esc(value)}</div></div></div>`;
@@ -849,7 +866,7 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
           <div class="tiles">
-            ${tile('chevrons', `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name))}
+            ${tile(wpgBadge(p.wpg_server?.level, 34, p.wpg_server?.name), `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name))}
             ${tile('star', `${state.settings.clan_tag || 'WPG'} XP`, fmtNum(p.wpg_server?.xp || 0))}
             ${tile('trophy', 'Server position', p.wpg_server?.position ? `#${fmtNum(p.wpg_server.position)}` : '—')}
             ${p.wpg_server?.next ? tile('chevrons', `Next rank in ${fmtNum(Math.max(0, p.wpg_server.next.xp - (p.wpg_server.xp || 0)))} XP`, wpgRankName(p.wpg_server.next.name)) : ''}
@@ -1708,7 +1725,7 @@ async function serverBoardHtml(sort, serverId) {
           <td>${fmtNum(r.kills)}</td><td class="sb-x">${fmtNum(r.deaths)}</td><td>${ratio(r.kills, r.deaths)}</td>
           <td class="sb-m">${fmtNum(r.matches)}</td><td>${fmtNum(r.wins)}</td><td class="sb-x">${fmtNum(r.losses)}</td><td class="sb-x">${ratio(r.wins, r.losses)}</td>
           <td>${fmtMins(Math.floor(r.playtime_s / 60))}</td>
-          <td><span class="accent" style="font:700 13px var(--head);text-transform:uppercase;white-space:nowrap">${esc(wpgRankName(r.wpg?.name))}</span></td>
+          <td><span class="wpg-rank">${wpgBadge(r.wpg?.level, 26, r.wpg?.name)}<span class="accent">${esc(wpgRankName(r.wpg?.name))}</span></span></td>
           <td class="sb-x">${fmtNum(r.wpg?.xp || 0)}</td>
           <td class="sb-x">${r.member ? esc(roleName(r.member)) : '<span class="muted small">Not in app</span>'}</td>
           <td class="sb-x">${r.member && !isPmc(r.member) && r.member.rank ? esc(r.member.rank.abbr) : '<span class="muted">—</span>'}</td>
@@ -1745,13 +1762,13 @@ async function viewLeaderboard(main) {
           <div class="panel-title" style="margin:0">${icon('trophy')} ${esc(tag)} rank <span class="sub">Recruit I → Wardog X</span></div>
           <span class="muted small">${d.updated ? `${app ? 'Last match counted' : `From the ${esc(tag)} Discord bot · updated`} ${timeAgo(d.updated)}` : app ? 'Waiting for the first match' : 'Waiting for the Discord bot'}</span>
         </div>
-        ${me ? `<div style="margin:0 0 12px;max-width:560px"><p class="small" style="margin:0 0 6px">You're <b>#${mine + 1}</b>: ${esc(wpgRankName(me.rank))} · ${fmtNum(me.xp)} ${esc(tag)} XP${me.next ? ` · <b>${esc(wpgToNext(me))}</b>` : ''}</p>${wpgBar(me)}</div>` : ''}
+        ${me ? `<div class="row" style="margin:0 0 12px;gap:12px;flex-wrap:nowrap">${wpgBadge(me.level, 56, me.rank)}<div class="grow" style="max-width:560px"><p class="small" style="margin:0 0 6px">You're <b>#${mine + 1}</b>: ${esc(wpgRankName(me.rank))} · ${fmtNum(me.xp)} ${esc(tag)} XP${me.next ? ` · <b>${esc(wpgToNext(me))}</b>` : ''}</p>${wpgBar(me)}</div></div>` : ''}
         <div class="table-wrap"><table class="sb-table">
           <thead><tr><th>#</th><th>Player</th><th>${esc(tag)} rank</th><th>${esc(tag)} XP</th><th class="sb-x">Next rank</th><th class="sb-x">Role</th></tr></thead>
           <tbody>${d.rows.map((r, i) => `<tr${r.member?.id === state.me.id ? ' style="background:rgba(41,182,246,.08)"' : ''}>
             <td><b style="color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">${i + 1}</b></td>
             <td class="sb-name">${r.member ? `<a href="#/u/${r.member.id}">${esc(r.name)}</a>` : esc(r.name)}</td>
-            <td><span class="accent" style="font:700 13px var(--head);text-transform:uppercase;white-space:nowrap">${esc(wpgRankName(r.rank))}</span></td>
+            <td><span class="wpg-rank">${wpgBadge(r.level, 26, r.rank)}<span class="accent">${esc(wpgRankName(r.rank))}</span></span></td>
             <td><b>${fmtNum(r.xp)}</b></td>
             <td class="sb-x small">${r.next ? esc(wpgToNext(r)) : r.from !== null ? '<span class="muted">Top rank</span>' : '<span class="muted">—</span>'}</td>
             <td class="sb-x">${r.member ? esc(roleName(r.member)) : '<span class="muted small">Not in app</span>'}</td>
@@ -1759,6 +1776,7 @@ async function viewLeaderboard(main) {
         </table></div>
         <p class="muted small" style="margin:10px 0 0">${rules} ${fmtNum(d.total)} players ranked.</p>
       </div>
+      ${ladderHtml(d.ladder || [], me)}
       ${history.length ? `<div class="panel">
         <div class="panel-title">${icon('star')} Your last matches <span class="sub">${esc(tag)} XP</span></div>
         <div class="list">${history.map((h) => `<div class="item"><div class="grow small">${Object.keys(PARTS).filter((k) => h.detail?.[k]).map((k) => part(k, h.detail[k])).join(' · ') || '<span class="muted">Nothing earned</span>'}

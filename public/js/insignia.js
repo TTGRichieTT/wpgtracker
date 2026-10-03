@@ -35,7 +35,8 @@ function escapeText(s) {
 
 let uidCounter = 0;
 
-export function insigniaSVG(spec, { size = 48, color = '#c9a227', abbr = '', plate = true, title = '' } = {}) {
+// tag: a short label on a tab at the foot of the shield (WPG ranks use it for I–X).
+export function insigniaSVG(spec, { size = 48, color = '#c9a227', abbr = '', plate = true, title = '', tag = '' } = {}) {
   let s = spec;
   if (typeof s === 'string') {
     try { s = JSON.parse(s); } catch { s = {}; }
@@ -184,16 +185,67 @@ export function insigniaSVG(spec, { size = 48, color = '#c9a227', abbr = '', pla
        <path d="M50 15 L86 22.5 V25 L50 17.5 L14 25 V22.5 Z" fill="#1f3a93" opacity=".9"/>`
     : '';
 
+  const tagSvg = tag
+    ? `<rect x="33" y="78" width="34" height="15" rx="4" fill="#070d16" stroke="${rank}" stroke-width="1.6"/>
+       <text x="50" y="90" text-anchor="middle" font-family="Rajdhani, Arial Narrow, sans-serif" font-weight="700" font-size="13" fill="${rank}" letter-spacing=".5">${escapeText(tag)}</text>`
+    : '';
+  if (tag && parts.length) content = content.replace(`translate(50 ${centreY})`, `translate(50 ${centreY - 4})`);
+
   return `<svg class="insignia" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" role="img" aria-label="${escapeText(title || abbr || 'Rank')}">
     <defs>
       <linearGradient id="${uid}m" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${m0}"/><stop offset="1" stop-color="${m1}"/></linearGradient>
       <linearGradient id="${uid}p" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16263a"/><stop offset="1" stop-color="#070d16"/></linearGradient>
     </defs>
-    ${plateSvg}${back}${content}
+    ${plateSvg}${back}${content}${tagSvg}
   </svg>`;
 }
 
 export function rankBadge(rank, size = 40) {
   if (!rank) return insigniaSVG({}, { size, abbr: '?' });
   return insigniaSVG(rank.insignia, { size, color: rank.color, abbr: rank.abbr, title: `${rank.name} (${rank.abbr})` });
+}
+
+// ---------- WPG server ranks (Recruit I → Wardog X) ----------
+// 20 tiers of 10 (I–X). The tier sets the insignia and colour; the numeral tab shows the step within it.
+// Enlisted in bronze, NCOs in silver, officers in gold, generals in red, WPG Commander and Wardog in WPG blue.
+export const WPG_TIERS = [
+  { name: 'Recruit', abbr: 'RCT', color: '#8a8f7a', insignia: {} },
+  { name: 'Private', color: '#cd7f32', insignia: { chevrons: 1 } },
+  { name: 'Private First Class', color: '#cd7f32', insignia: { chevrons: 1, rockers: 1 } },
+  { name: 'Lance Corporal', color: '#cd7f32', insignia: { chevrons: 2 } },
+  { name: 'Corporal', color: '#cd7f32', insignia: { chevrons: 2, rockers: 1 } },
+  { name: 'Sergeant', color: '#c0c8d0', insignia: { chevrons: 3, metal: 'silver' } },
+  { name: 'Staff Sergeant', color: '#c0c8d0', insignia: { chevrons: 3, rockers: 1, metal: 'silver' } },
+  { name: 'Sergeant Major', color: '#c0c8d0', insignia: { chevrons: 3, rockers: 2, metal: 'silver' } },
+  { name: 'Warrant Officer', color: '#c0c8d0', insignia: { crown: true, metal: 'silver' } },
+  { name: 'Second Lieutenant', color: '#c9a227', insignia: { pips: 1 } },
+  { name: 'Lieutenant', color: '#c9a227', insignia: { pips: 2 } },
+  { name: 'Captain', color: '#c9a227', insignia: { pips: 3 } },
+  { name: 'Major', color: '#c9a227', insignia: { oak: true } },
+  { name: 'Lieutenant Colonel', color: '#c9a227', insignia: { oak: true, metal: 'silver' } },
+  { name: 'Colonel', color: '#c9a227', insignia: { crown: true, pips: 2 } },
+  { name: 'Brigadier', color: '#c9a227', insignia: { crown: true, pips: 3 } },
+  { name: 'General', color: '#e5484d', insignia: { swords: true, stars: 3 } },
+  { name: 'Field Marshal', color: '#e5484d', insignia: { swords: true, crown: true, wreath: true } },
+  { name: 'WPG Commander', color: '#29b6f6', insignia: { stars: 5 } },
+  { name: 'Wardog', color: '#7fdcff', insignia: { crown: true, stars: 3, wreath: true } },
+];
+const WPG_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+// Which tier and step a WPG rank is: from its level (1 = Recruit I), or from its name if there's no level.
+export function wpgTierOf(level, name = '') {
+  let lv = Math.round(Number(level) || 0);
+  if (lv < 1 && name) {
+    const m = /^(.*?)\s+([IVX]+)$/i.exec(String(name).trim());
+    const t = m ? WPG_TIERS.findIndex((x) => x.name.toLowerCase() === m[1].toLowerCase()) : -1;
+    const n = m ? WPG_NUMERALS.indexOf(m[2].toUpperCase()) : -1;
+    if (t >= 0 && n >= 0) lv = t * 10 + n + 1;
+  }
+  lv = Math.max(1, lv || 1);
+  return { tier: WPG_TIERS[Math.min(WPG_TIERS.length - 1, Math.floor((lv - 1) / 10))], numeral: WPG_NUMERALS[(lv - 1) % 10] };
+}
+
+export function wpgBadge(level, size = 40, name = '') {
+  const { tier, numeral } = wpgTierOf(level, name);
+  return insigniaSVG(tier.insignia, { size, color: tier.color, abbr: tier.abbr || '', tag: numeral, title: name || `${tier.name} ${numeral}` });
 }

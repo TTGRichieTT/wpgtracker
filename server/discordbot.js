@@ -264,7 +264,7 @@ async function cardName(u) {
 async function cmdRank(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
-  const p = await one('SELECT xp, rank_name FROM server_progress WHERE steam_id=$1', [f.user.steam_id]);
+  const p = await one('SELECT xp, rank_level, rank_name FROM server_progress WHERE steam_id=$1', [f.user.steam_id]);
   const [pos, total, ranks, wpgNext] = await Promise.all([
     p ? one('SELECT COUNT(*)::int + 1 AS n FROM server_progress WHERE xp > $1', [p.xp]) : null,
     one('SELECT COUNT(*)::int AS n FROM server_progress'),
@@ -296,7 +296,7 @@ async function cmdRank(data, caller) {
   return asPicture('rank', async (cards) => cards.renderRankCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
-    wpg: { rank: p?.rank_name || 'RECRUIT I', xp: p?.xp || 0, position: pos?.n || null, total: total?.n || 0, from: wpgNext?.from || 0, next: wpgNext?.next || null },
+    wpg: { rank: p?.rank_name || 'RECRUIT I', level: p?.rank_level || 1, xp: p?.xp || 0, position: pos?.n || null, total: total?.n || 0, from: wpgNext?.from || 0, next: wpgNext?.next || null },
     clan: { pmc, rank: cur, xp: Number(f.user.xp) || 0, next, from: cur?.auto ? cur.min_xp : 0 },
   }), text, profileLink(f.user));
 }
@@ -1059,11 +1059,15 @@ async function medalPost(u, names) {
     () => ({ embeds: [{ color: GOLD, title: names.length === 1 ? '🎖️ Medal awarded' : '🎖️ Medals awarded', description: text.replace(/^🎖️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
 }
 // u may be null (a player on the WPG server who isn't in the app); name is then the bot's name for them.
-async function wpgRankPost(u, name, rank, xp) {
+async function wpgRankPost(u, name, rank, xp, level) {
   const text = `📈 **${u?.persona_name || name}**${mentionFor(u)} reached **${wpgRank(rank)}** (${num(xp)} WPG XP).`;
-  const pos = await one('SELECT COUNT(*)::int + 1 AS n, (SELECT COUNT(*)::int FROM server_progress) AS total FROM server_progress WHERE xp > $1', [xp]);
+  const [pos, prog] = await Promise.all([
+    one('SELECT COUNT(*)::int + 1 AS n, (SELECT COUNT(*)::int FROM server_progress) AS total FROM server_progress WHERE xp > $1', [xp]),
+    rankProgress(xp),
+  ]);
   return announcePicture('wpgrank', text, async (cards) => cards.renderWpgRankUpCard({
-    name: u ? await cardName(u) : cleanName(name), avatar: u ? avatarOf(u) : '', rank, xp, position: pos?.n, total: pos?.total,
+    name: u ? await cardName(u) : cleanName(name), avatar: u ? avatarOf(u) : '', rank, level, xp, position: pos?.n, total: pos?.total,
+    from: prog?.from || 0, next: prog?.next || null,
   }), () => ({ embeds: [{ color: COLOR, title: '📈 WPG rank up', description: text.replace(/^📈 /, '') }] }), u ? profileLink(u) : null);
 }
 // Admin → Settings preview of the channel posts, made from the admin's own rank, medals and WPG rank.
@@ -1081,7 +1085,7 @@ const POST_PREVIEWS = {
   },
   wpgrank: async (u) => {
     const p = await one('SELECT * FROM server_progress WHERE steam_id=$1', [u.steam_id]);
-    return wpgRankPost(u, u.persona_name, p?.rank_name || 'RECRUIT I', p?.xp || 0);
+    return wpgRankPost(u, u.persona_name, p?.rank_name || 'RECRUIT I', p?.xp || 0, p?.rank_level || 1);
   },
 };
 // Other parts of the app raise 'announce' events; each type can be switched off in Admin → Settings.
@@ -1095,7 +1099,7 @@ bus.on('announce', async (a) => {
       if (u && a.names?.length) await postToChannel(await medalPost(u, a.names));
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
-      await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp));
+      await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));
     } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
       const { streamForAnnounce } = await import('./streams.js');
       const d = await streamForAnnounce(a.accountId);

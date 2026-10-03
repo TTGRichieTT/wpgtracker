@@ -8,7 +8,7 @@ import {
   prepare, icon, fitText, roundRect, panel, title, ribbon, medalIcon, trophyIcon,
   W, FOOT_SRC, FOOT, MID_X, BAND_BG, BOX_FILL, WHITE, CYAN, GREEN, AMBER, VALUE_FONT, LABEL_FONT,
 } from './careercard.js';
-import { rankBadge } from '../public/js/insignia.js';
+import { rankBadge, wpgBadge } from '../public/js/insignia.js';
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const HEAD_H = 246; // the design's header art (logo, WARDOGS, soldier, slogans)
@@ -222,7 +222,7 @@ function skull(g, cx, cy) {
 }
 
 // ---------- /rank ----------
-// d: { name, avatar, wpg{rank,xp,position,total,from,next{name,xp}}, clan{pmc,rank,xp,next{name,min_xp},from} }
+// d: { name, avatar, wpg{rank,level,xp,position,total,from,next{name,xp}}, clan{pmc,rank,xp,next{name,min_xp},from} }
 export function renderRankCard(d) {
   return frame('RANK REPORT', 76 + 300 + 20, async (g, top) => {
     const y = await playerStrip(g, top, d.name, d.avatar);
@@ -230,7 +230,9 @@ export function renderRankCard(d) {
     panel(g, 28, y + 6, 794, 290);
     chevrons(g, 64, y + 42, 0.8);
     title(g, 100, y + 42, 'WPG RANK', '(WPG SERVER)');
-    bigValue(g, upper(d.wpg.rank || 'RECRUIT I'), 56, y + 124, 730, { size: 72, color: CYAN, font: LABEL_FONT, weight: 700 });
+    const wb = await loadImage(Buffer.from(wpgBadge(d.wpg.level, 150, d.wpg.rank))).catch(() => null);
+    if (wb) g.drawImage(wb, 650, y + 18, 150, 150);
+    bigValue(g, upper(d.wpg.rank || 'RECRUIT I'), 56, y + 124, wb ? 580 : 730, { size: 72, color: CYAN, font: LABEL_FONT, weight: 700 });
     label(g, 'WPG XP', 58, y + 186);
     bigValue(g, fmt(d.wpg.xp), 58, y + 222, 300, { size: 36 });
     label(g, 'POSITION', 400, y + 186);
@@ -895,12 +897,14 @@ export function renderMedalAwardCard(d) {
   });
 }
 
-// d: { name, avatar, rank, xp, position, total }
+// d: { name, avatar, rank, level, xp, position, total, from, next{name,xp} }
 export function renderWpgRankUpCard(d) {
   return frame('WPG RANK UP', 76 + 300 + 20, async (g, top) => {
     const y = await playerStrip(g, top, d.name, d.avatar);
     panel(g, 28, y + 6, 1480, 290);
-    chevrons(g, 170, y + 150, 3.2);
+    const wb = await loadImage(Buffer.from(wpgBadge(d.level, 250, d.rank))).catch(() => null);
+    if (wb) g.drawImage(wb, 48, y + 26, 250, 250);
+    else chevrons(g, 170, y + 150, 3.2);
     label(g, 'NOW RANKED', 320, y + 60, { size: 26 });
     bigValue(g, upper(d.rank || 'RECRUIT I'), 320, y + 128, 1150, { size: 80, color: CYAN, font: LABEL_FONT, weight: 700 });
     label(g, 'WPG XP', 322, y + 186);
@@ -909,9 +913,15 @@ export function renderWpgRankUpCard(d) {
       label(g, 'POSITION', 660, y + 186);
       bigValue(g, `#${fmt(d.position)}${d.total ? ` of ${fmt(d.total)}` : ''}`, 660, y + 220, 400, { size: 34 });
     }
-    const pct = Math.min(1, (Number(d.xp) || 0) / 650000);
-    bar(g, 322, y + 250, 1148, 12, pct);
-    label(g, `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}% OF THE WAY TO WARDOG X (650,000 WPG XP)`, 322, y + 276, { size: 17, color: MUTED });
+    if (d.next) {
+      const xp = Number(d.xp) || 0;
+      bar(g, 322, y + 250, 1148, 12, (xp - (d.from || 0)) / Math.max(1, d.next.xp - (d.from || 0)));
+      label(g, `NEXT: ${upper(d.next.name)} IN ${fmt(Math.max(0, d.next.xp - xp))} WPG XP`, 322, y + 276, { size: 17, color: MUTED });
+    } else {
+      const pct = Math.min(1, (Number(d.xp) || 0) / 650000);
+      bar(g, 322, y + 250, 1148, 12, pct);
+      label(g, `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}% OF THE WAY TO WARDOG X (650,000 WPG XP)`, 322, y + 276, { size: 17, color: MUTED });
+    }
   });
 }
 

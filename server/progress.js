@@ -47,7 +47,7 @@ export async function syncProgress() {
     if (own) Object.assign(row, { rank_level: own.level, rank_name: own.name });
     const old = before.get(sid);
     if (old && row.rank_level > old.rank_level) {
-      bus.emit('announce', { type: 'wpgrank', steamId: sid, name: row.bot_name, rank: row.rank_name, xp: row.xp });
+      bus.emit('announce', { type: 'wpgrank', steamId: sid, name: row.bot_name, rank: row.rank_name, level: row.rank_level, xp: row.xp });
     }
     if (!old || old.bot_name !== row.bot_name || old.xp !== row.xp || old.rank_level !== row.rank_level || old.rank_name !== row.rank_name) changed.push(row);
   }
