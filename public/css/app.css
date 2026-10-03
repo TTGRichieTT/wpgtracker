@@ -684,7 +684,12 @@ body::after { display: none; }
 .cc-role { font: 700 13px var(--head); text-transform: uppercase; letter-spacing: .4px; color: var(--accent2); width: 190px; flex: 0 0 auto; }
 .cc-open { font: 700 13px var(--head); color: #f5a524; flex: 1; }
 .cc-who { display: flex; align-items: center; gap: 6px; color: var(--text); flex: 1; min-width: 0; text-decoration: none; }
-.cc-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-who b { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; } /* the whole name, wrapping if it must */
+.cc-badges { display: inline-flex; gap: 2px; flex: none; }
+.cc-unit { container-type: inline-size; }
+/* Narrow unit cards: a filled slot puts the role on its own line, so the badges and full name get the width */
+@container (max-width: 480px) { .cc-slot:not(.open) .cc-role { width: 100%; } }
+@container (max-width: 360px) { .cc-who b { font-size: 13px; } .cc-badges .insignia { width: 21px; height: 21px; } }
 .cc-who:hover b { color: var(--accent2); text-decoration: underline; }
 .cc-slot > .btn { flex: none; }
 .cc-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

@@ -2,6 +2,7 @@
 // Also the Recruitment and Units tabs in the Command panel (mods review, admins edit units).
 import { api, esc, state, toast, fail, modal, confirmBox, promptBox, onLive, fmtNum, timeAgo, userLine } from './app.js';
 import { icon } from './icons.js';
+import { rankBadge, wpgBadge } from './insignia.js';
 
 const isStaff = () => ['mod', 'admin'].includes(state.me?.role);
 const isAdmin = () => state.me?.role === 'admin';
@@ -35,10 +36,11 @@ export async function viewCommand(main, _r, alive, again) {
     if (!m) return `<div class="cc-slot open"><span class="cc-role">${r.leader ? '★ ' : ''}${esc(r.name)}</span><span class="cc-open">OPEN</span>
       ${d.can_assign ? `<button class="btn small ghost" data-fill="${u.id}" data-role="${esc(r.id)}">Fill</button>` : ''}</div>`;
     if (onlyOn && !m.on_server && !m.in_game) return '';
-    // Just the name (tap for their profile); where they are shows on hover.
+    // Clan rank + WPG rank badges and the full name (tap for their profile); where they are shows on hover.
     const where = m.on_server ? 'On the WPG server now' : m.in_game ? `Playing ${m.in_game}` : '';
     return `<div class="cc-slot"><span class="cc-role">${r.leader ? '★ ' : ''}${esc(r.name)}</span>
-      <a class="cc-who" href="#/u/${m.id}"${where ? ` title="${esc(where)}"` : ''}><b>${esc(m.name)}</b></a>
+      <a class="cc-who" href="#/u/${m.id}"${where ? ` title="${esc(where)}"` : ''}>
+        <span class="cc-badges">${rankBadge(m.rank, 24)}${wpgBadge(m.wpg?.level, 24, m.wpg?.name)}</span><b>${esc(m.name)}</b></a>
       ${d.can_assign ? `<button class="btn small ghost" data-move="${m.id}" title="Move or remove">⋯</button>` : ''}</div>`;
   };
   const unitHtml = (u) => `<div class="panel cc-unit" style="--uc:${esc(u.color)}">

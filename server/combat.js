@@ -40,7 +40,8 @@ async function onServerSteamIds() {
 export async function boardData() {
   const [units, posts, profiles] = await Promise.all([
     q('SELECT * FROM combat_units ORDER BY sort_order, id'),
-    q(`SELECT cp.unit_id, cp.role_id, cp.assigned_at, u.* FROM combat_postings cp JOIN users u ON u.id = cp.user_id
+    q(`SELECT cp.unit_id, cp.role_id, cp.assigned_at, u.*, sp.rank_level AS wpg_level, sp.rank_name AS wpg_rank
+         FROM combat_postings cp JOIN users u ON u.id = cp.user_id LEFT JOIN server_progress sp ON sp.steam_id = u.steam_id
         WHERE u.status = 'active' ORDER BY cp.assigned_at`),
     q('SELECT * FROM combat_profiles'),
   ]);
@@ -54,6 +55,7 @@ export async function boardData() {
     combat: prof.get(p.id) || null,
     in_game: playing[p.id]?.game || '',
     on_server: onServer.has(row.steam_id),
+    wpg: { level: row.wpg_level || 1, name: row.wpg_rank || 'RECRUIT I' }, // WPG server rank (badge on the board)
   });
   const byUnit = new Map();
   posts.forEach((row, i) => {
