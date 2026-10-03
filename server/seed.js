@@ -317,6 +317,25 @@ Every member will have a **primary role** (main specialty), a **secondary role**
     await q("INSERT INTO settings (key, value) VALUES ('_cleared_chat_logins', 'true') ON CONFLICT DO NOTHING");
   }
 
+  // Saving Admin → Settings used to put the recruitment roles through a one-line box, which joined them into
+  // one long line (2026-10-03). Split them back once, if the line is made only of the standard roles.
+  if (!(await one("SELECT value FROM settings WHERE key = '_fixed_specialties'"))) {
+    const cur = String((await one("SELECT value FROM settings WHERE key = 'combat_specialties'"))?.value || '').trim();
+    if (cur && !cur.includes('\n')) {
+      const known = DEFAULT_SETTINGS.combat_specialties.split('\n');
+      const found = [];
+      let rest = cur;
+      while (rest) {
+        const next = known.filter((k) => rest.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+        if (!next) break;
+        found.push(next);
+        rest = rest.slice(next.length).trimStart();
+      }
+      if (!rest && found.length > 1) await q("UPDATE settings SET value = $1 WHERE key = 'combat_specialties'", [found.join('\n')]);
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_fixed_specialties', 'true') ON CONFLICT DO NOTHING");
+  }
+
   // WPG XP is worked out from matches on servers ticked "Earns WPG XP" (2026-10-03). Tick the WPG server once.
   if (!(await one("SELECT value FROM settings WHERE key = '_wpgxp_server'"))) {
     await q("UPDATE game_servers SET wpg_xp = true WHERE join_code = 'bf019b3b-7670-4879-9220-b541edc58e1b'");

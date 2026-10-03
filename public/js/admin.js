@@ -695,11 +695,13 @@ async function discordBotPanel(el) {
 async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
-  const extra = Object.keys(s).filter((k) => !known.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
+  // Settings with their own page aren't repeated here (saving them from a one-line box would lose their line breaks).
+  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel']); // Admin → Recruitment
+  const extra = Object.keys(s).filter((k) => !known.has(k) && !ELSEWHERE.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';
     if (type === 'check') return `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="${k}" ${v === 'true' ? 'checked' : ''}> ${esc(label)}</label>`;
-    if (type === 'textarea') return `<label class="field" style="grid-column:1/-1"><span>${esc(label)}</span><textarea name="${k}">${esc(v)}</textarea></label>`;
+    if (type === 'textarea' || String(v).includes('\n')) return `<label class="field" style="grid-column:1/-1"><span>${esc(label)}</span><textarea name="${k}">${esc(v)}</textarea></label>`;
     if (type === 'color') return `<label class="field"><span>${esc(label)}</span><input type="color" name="${k}" value="${esc(v || '#29b6f6')}"></label>`;
     return `<label class="field"><span>${esc(label)}</span><input type="${type === 'number' ? 'number' : 'text'}" name="${k}" value="${esc(v)}"></label>`;
   };
