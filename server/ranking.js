@@ -2,6 +2,7 @@
 // unlocks and each class level. Used with permission from the source site and never shown with its
 // name. Fetched gently: a few small lookups per member, and the 1000-player blocks are shared and cached.
 import { q, one } from './db.js';
+import { bus } from './bus.js';
 
 const BASE = 'https://wardogs.tools/api/leaderboards';
 const UA = { 'User-Agent': 'WPG-Barracks/1.0 (clan app, with permission)' };
@@ -82,6 +83,26 @@ async function linkStatus(socialId) {
 export const STALE_STATES = ['paused', 'stalled', 'unavailable'];
 const STATUS_EVERY_MS = 3 * 3600 * 1000;
 
+// Tells a member (Discord DM + app notice) when their link has stopped working, then once more after
+// 3 days if it still hasn't been fixed, then not again until it has been fixed. "Stalled" can sort itself
+// out, so it only counts once nothing has come through for 12 hours. Updates `ranks` (saved by the caller).
+const REMIND_AFTER_MS = 3 * 24 * 3600 * 1000;
+function linkAlert(user, ranks, known) {
+  const polledAgo = Date.now() - (Date.parse(ranks.polled_at || '') || Date.now());
+  const broken = ranks.state === 'paused' || ranks.state === 'unavailable' || (ranks.state === 'stalled' && polledAgo > 12 * 3600 * 1000);
+  if (!broken) return; // working (or unknown): nothing carried over, so a later expiry alerts again
+  ranks.alerted_at = known?.alerted_at || null;
+  ranks.reminded = !!known?.reminded;
+  const now = Date.now();
+  let kind = null;
+  if (!ranks.alerted_at) kind = 'first';
+  else if (!ranks.reminded && now - Date.parse(ranks.alerted_at) > REMIND_AFTER_MS) kind = 'reminder';
+  if (!kind) return;
+  if (kind === 'first') ranks.alerted_at = new Date(now).toISOString();
+  else ranks.reminded = true;
+  bus.emit('wardogs:link', { userId: user.id, state: ranks.state, polled_at: ranks.polled_at, reminder: kind === 'reminder' });
+}
+
 // Fetches the member's global stats and world ranks and saves them. { ok, official, reason? }
 // force: also re-check the link status now (when the member presses Sync stats / Find my stats).
 export async function syncRanks(user, { force = false } = {}) {
@@ -104,6 +125,7 @@ export async function syncRanks(user, { force = false } = {}) {
   } else if (sameAccount) {
     Object.assign(ranks, { polled_at: known.polled_at, state: known.state, status_checked: known.status_checked });
   }
+  linkAlert(user, ranks, sameAccount ? known : null);
   let offset = null;
   for (const by of BOARDS) {
     await pause(300);
