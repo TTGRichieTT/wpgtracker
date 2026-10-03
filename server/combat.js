@@ -319,6 +319,20 @@ combat.post('/admin/recruitment/applications/:id/decline', role('mod'), async (r
   res.json({ ok: true });
 });
 
+// Delete one application or PMC request. New / waiting ones must be answered first, so nobody is left hanging.
+combat.delete('/admin/recruitment/applications/:id', role('mod'), async (req, res) => {
+  const a = await one("DELETE FROM recruit_applications WHERE id=$1 AND status <> 'new' RETURNING id, user_id, status", [int(req.params.id)]);
+  if (!a) throw new HttpError(400, 'Accept or decline it first — new applications can\'t be deleted.');
+  await audit(req.user.id, 'recruit.delete', `#${a.id}`, { status: a.status });
+  res.json({ ok: true });
+});
+combat.delete('/admin/recruitment/requests/:id', role('mod'), async (req, res) => {
+  const r = await one("DELETE FROM apply_requests WHERE id=$1 AND status <> 'pending' RETURNING id, status", [int(req.params.id)]);
+  if (!r) throw new HttpError(400, 'Allow or decline it first — waiting requests can\'t be deleted.');
+  await audit(req.user.id, 'recruit.request.delete', `#${r.id}`, { status: r.status });
+  res.json({ ok: true });
+});
+
 // ---------- Staff: postings and specialties ----------
 combat.put('/admin/combat/postings/:userId', role('mod'), async (req, res) => {
   const user = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [int(req.params.userId)]);

@@ -6,7 +6,7 @@
 //    spikes during a live match. Member reports (app or Discord /report) land here too.
 import crypto from 'crypto';
 import express from 'express';
-import { q, one, setting, flag } from './db.js';
+import { q, one, setting, flag, audit } from './db.js';
 import { bus } from './bus.js';
 import { HttpError, member, role, roleAtLeast, str, cleanName } from './util.js';
 import { steamGet } from './steam.js';
@@ -381,6 +381,23 @@ cheat.post('/admin/cheat/killfeed/connect', role('admin'), async (req, res) => {
   const { setKillFeed } = await import('./servers.js');
   await setKillFeed(server, `${SITE()}/feed/kills`, await killFeedToken());
   await q("INSERT INTO settings (key, value) VALUES ('_killfeed_on', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+  res.json({ ok: true });
+});
+
+// Delete one report (any staff) or one staff note (its author, or an admin).
+cheat.delete('/admin/cheat/reports/:id', role('mod'), async (req, res) => {
+  const r = await one('DELETE FROM player_reports WHERE id=$1 RETURNING name, reason', [Number(req.params.id) || 0]);
+  if (!r) throw new HttpError(404, 'Report not found.');
+  await audit(req.user.id, 'cheat.report.delete', r.name, { reason: r.reason.slice(0, 200) });
+  cache = null;
+  res.json({ ok: true });
+});
+cheat.delete('/admin/cheat/notes/:id', role('mod'), async (req, res) => {
+  const n = await one('SELECT * FROM player_notes WHERE id=$1', [Number(req.params.id) || 0]);
+  if (!n) throw new HttpError(404, 'Note not found.');
+  if (n.author_id !== req.user.id && !roleAtLeast(req.user.role, 'admin')) throw new HttpError(403, 'Only the person who wrote it, or an admin, can delete a note.');
+  await q('DELETE FROM player_notes WHERE id=$1', [n.id]);
+  await audit(req.user.id, 'cheat.note.delete', n.steam_id, { text: n.text.slice(0, 200) });
   res.json({ ok: true });
 });
 

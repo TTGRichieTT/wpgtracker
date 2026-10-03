@@ -685,3 +685,9 @@ body::after { display: none; }
 .doctrine ul { margin: 4px 0 8px; padding-left: 20px; }
 .doctrine p { margin: 4px 0; }
 @media (max-width: 600px) { .cc-role { min-width: 0; width: 100%; } .cc-arrow { display: none; } }
+
+/* Clean up tab: one compact list */
+.cu-list { padding-top: 6px; padding-bottom: 6px; }
+.cu-row { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.cu-row:last-child { border-bottom: 0; }
+.cu-row select { width: auto; min-width: 120px; padding: 6px 10px; }

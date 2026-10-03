@@ -277,19 +277,26 @@ export async function recruitmentTab(body) {
       ${appSummary(a)}
       ${statLine(a.stats || {})}
       ${a.status === 'new' ? `<div class="row" style="margin-top:8px;gap:6px"><button class="btn small primary" data-accept="${a.id}">Accept…</button><button class="btn small ghost" data-decline="${a.id}">Decline</button></div>`
-        : `<div class="small muted" style="margin-top:6px">${esc(STATUS[a.status]?.[0] || a.status)}${a.reviewer ? ` by ${esc(a.reviewer)}` : ''}${a.posted_to ? ` · posted to ${esc(a.posted_to)}` : ''}${a.decision_note ? ` · "${esc(a.decision_note)}"` : ''}</div>`}
+        : `<div class="row" style="margin-top:6px;gap:8px"><span class="small muted grow">${esc(STATUS[a.status]?.[0] || a.status)}${a.reviewer ? ` by ${esc(a.reviewer)}` : ''}${a.posted_to ? ` · posted to ${esc(a.posted_to)}` : ''}${a.decision_note ? ` · "${esc(a.decision_note)}"` : ''}</span><button class="btn small ghost" data-delapp="${a.id}" title="Delete">${icon('trash')}</button></div>`}
     </div>`;
   body.innerHTML = `<div class="stack">
     <div class="panel"><div class="panel-title">${icon('target')} PMCs asking to apply <span class="sub">${waiting.length} waiting</span></div>
       <div class="list">${d.requests.map((r) => `<div class="item" style="display:block">
         <div class="row between">${r.user ? userLine(r.user) : '<b>Unknown</b>'}<span class="muted small">${esc(({ pending: 'Waiting', allowed: 'Allowed to apply', declined: 'Declined', used: 'Applied' })[r.status] || r.status)} · ${esc(timeAgo(r.created_at))}</span></div>
         ${r.message ? `<p class="small" style="margin:6px 0">${esc(r.message)}</p>` : ''}${statLine(r.stats || {})}
-        ${r.status === 'pending' ? `<div class="row" style="margin-top:8px;gap:6px"><button class="btn small primary" data-allow="${r.id}">Allow to apply</button><button class="btn small ghost" data-refuse="${r.id}">Decline</button></div>` : ''}
+        ${r.status === 'pending' ? `<div class="row" style="margin-top:8px;gap:6px"><button class="btn small primary" data-allow="${r.id}">Allow to apply</button><button class="btn small ghost" data-refuse="${r.id}">Decline</button></div>` : `<div class="row" style="margin-top:6px"><span class="grow"></span><button class="btn small ghost" data-delreq="${r.id}" title="Delete">${icon('trash')}</button></div>`}
       </div>`).join('') || '<p class="muted">No requests.</p>'}</div></div>
     <div class="panel"><div class="panel-title">Applications <span class="sub">${fresh.length} new</span></div>
       <div class="list">${d.applications.map(appHtml).join('') || '<p class="muted">No applications yet. Members apply on the Recruitment page (or /apply in Discord).</p>'}</div></div>
   </div>`;
   const again = () => recruitmentTab(body);
+  body.querySelectorAll('[data-delapp],[data-delreq]').forEach((b) => {
+    b.onclick = async () => {
+      if (!(await confirmBox('Delete this? The member keeps any unit and roles they were given.'))) return;
+      const path = b.dataset.delapp ? `admin/recruitment/applications/${b.dataset.delapp}` : `admin/recruitment/requests/${b.dataset.delreq}`;
+      try { await api(path, { method: 'DELETE' }); again(); } catch (x) { fail(x); }
+    };
+  });
   body.querySelectorAll('[data-allow],[data-refuse]').forEach((b) => {
     b.onclick = async () => {
       const allow = !!b.dataset.allow;

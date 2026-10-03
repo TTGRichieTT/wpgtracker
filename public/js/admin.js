@@ -21,6 +21,7 @@ const TABS = [
   { key: 'units', label: 'Units' },
   { key: 'cheatwatch', label: 'Cheat watch', mod: true },
   { key: 'streams', label: 'Streams', mod: true },
+  { key: 'cleanup', label: 'Clean up' },
   { key: 'audit', label: 'Audit log', mod: true },
 ];
 
@@ -193,6 +194,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'users') return usersTab(body);
   if (tab.key === 'settings') return settingsTab(body);
   if (tab.key === 'audit') return auditTab(body);
+  if (tab.key === 'cleanup') return cleanupTab(body);
   if (tab.key === 'cheatwatch') return cheatTab(body);
   if (tab.key === 'recruitment') return (await import('./combat.js')).recruitmentTab(body);
   if (tab.key === 'units') return (await import('./combat.js')).unitsTab(body);
@@ -797,6 +799,7 @@ async function cheatTab(body, { showLow = false } = {}) {
               <div class="row" style="gap:6px">
                 ${r.steam_id ? `<button class="btn small ghost" data-cw="${esc(r.steam_id)}">Open player</button>` : '<span class="muted small">no match on our server</span>'}
                 ${r.status === 'open' ? `<button class="btn small" data-close="${r.id}">Close</button>` : `<span class="pill">Closed${r.closed_by_name ? ` by ${esc(r.closed_by_name)}` : ''}</span>`}
+                <button class="btn small ghost" data-delrep="${r.id}" title="Delete report">${icon('trash')}</button>
               </div>
             </div>
             <div style="white-space:pre-wrap;margin-top:4px">${esc(r.reason)}</div>
@@ -804,6 +807,12 @@ async function cheatTab(body, { showLow = false } = {}) {
       </div>
     </div>`;
   body.querySelector('#cwLow').onchange = (e) => cheatTab(body, { showLow: e.target.checked });
+  body.querySelectorAll('[data-delrep]').forEach((b) => {
+    b.onclick = async () => {
+      if (!(await confirmBox('Delete this report? This can’t be undone.'))) return;
+      try { await api(`admin/cheat/reports/${b.dataset.delrep}`, { method: 'DELETE' }); cheatTab(body, { showLow }); } catch (x) { fail(x); }
+    };
+  });
   body.querySelectorAll('[data-cw]').forEach((b) => { b.onclick = () => cheatPlayer(b.dataset.cw, () => cheatTab(body, { showLow })); });
   body.querySelectorAll('[data-close]').forEach((b) => {
     b.onclick = async () => {
@@ -851,7 +860,7 @@ async function cheatPlayer(steamId, onChange) {
     </tbody></table></div></details>` : ''}
     ${p.reports.length ? `<details><summary><b>Reports</b> (${p.reports.length})</summary>${p.reports.map((r) => `<p class="small" style="margin:6px 0"><b>${esc(r.reporter_name || 'a member')}</b> · ${esc(timeAgo(r.created_at))} · ${esc(r.status)}<br>${esc(r.reason)}</p>`).join('')}</details>` : ''}
     <div style="margin-top:10px"><b>Staff notes</b>
-      ${p.notes.length ? p.notes.map((n) => `<p class="small" style="margin:6px 0"><b>${esc(n.author || 'staff')}</b> · <span class="muted">${esc(timeAgo(n.created_at))}</span><br>${esc(n.text)}</p>`).join('') : '<p class="small muted">No notes yet.</p>'}
+      ${p.notes.length ? p.notes.map((n) => `<p class="small" style="margin:6px 0"><b>${esc(n.author || 'staff')}</b> · <span class="muted">${esc(timeAgo(n.created_at))}</span>${n.author_id === state.me.id || isAdmin() ? ` <button type="button" class="btn small ghost" data-delnote="${n.id}" title="Delete note" style="padding:0 6px">${icon('trash')}</button>` : ''}<br>${esc(n.text)}</p>`).join('') : '<p class="small muted">No notes yet.</p>'}
       <form class="row" id="cwNote" style="margin-top:6px"><input type="text" name="text" maxlength="1000" placeholder="Add a note (what you checked, clips, decisions)" class="grow"><button class="btn small">Add</button></form>
     </div>
     <div class="row" style="margin-top:14px;gap:6px">
@@ -862,6 +871,12 @@ async function cheatPlayer(steamId, onChange) {
     </div>`;
   const reload = () => { m.close(); cheatPlayer(steamId, onChange); onChange?.(); };
   m.el.querySelector('[data-close]').onclick = () => { m.close(); onChange?.(); };
+  m.el.querySelectorAll('[data-delnote]').forEach((b) => {
+    b.onclick = async () => {
+      if (!(await confirmBox('Delete this note?'))) return;
+      try { await api(`admin/cheat/notes/${b.dataset.delnote}`, { method: 'DELETE' }); reload(); } catch (x) { fail(x); }
+    };
+  });
   m.el.querySelector('#cwNote').onsubmit = async (e) => {
     e.preventDefault();
     const text = e.target.text.value.trim();
@@ -883,6 +898,63 @@ async function cheatPlayer(steamId, onChange) {
         await api(`admin/cheat/player/${encodeURIComponent(steamId)}/notes`, { method: 'POST', body: { text: `${action === 'ban' ? 'Banned' : 'Kicked'}${reason ? `: ${reason}` : ''}` } });
         toast('Done', `${p.name} was ${action === 'ban' ? 'banned' : 'kicked'}.`);
         reload();
+      } catch (x) { fail(x); }
+    };
+  });
+}
+
+// ---------- Clean up (admins) ----------
+// Delete old items by hand, or set them to delete themselves after a number of days.
+const AGES = [[7, '1 week'], [30, '1 month'], [90, '3 months'], [180, '6 months'], [365, '1 year'], [730, '2 years']];
+const sizeText = (b) => (b === null || b === undefined ? '' : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+async function cleanupTab(body) {
+  const d = await api('admin/cleanup');
+  const ageOpts = (min, sel) => AGES.filter(([n]) => n >= min).map(([n, l]) => `<option value="${n}"${n === sel ? ' selected' : ''}>${l}</option>`).join('');
+  body.innerHTML = `<div class="stack">
+    <div class="panel"><div class="panel-title">${icon('trash')} Clean up <span class="sub">delete old items</span></div>
+      <p class="muted small" style="margin:0">Pick an age, check how many items it would delete, then delete them. Or set <b>Auto-delete</b> and the app does it by itself once a day.
+        Open reports, new applications, waiting requests and pinned news are never deleted. Every clean-up is written to the audit log.
+        ${d.database_bytes ? ` Database size now: <b>${sizeText(d.database_bytes)}</b> (free plan limit 500 MB).` : ''}</p></div>
+    <div class="panel cu-list">${d.types.map((t) => `<div class="cu-row" data-type="${t.key}">
+      <div class="row between"><div><b>${esc(t.label)}</b> <span class="muted small">${fmtNum(t.deletable)}${t.deletable !== t.total ? ` of ${fmtNum(t.total)}` : ''} item${t.total === 1 ? '' : 's'}${t.oldest ? ` · oldest ${esc(timeAgo(t.oldest))}` : ''}${t.bytes ? ` · ${sizeText(t.bytes)}` : ''}</span></div></div>
+      <p class="muted small" style="margin:4px 0 10px">${esc(t.help)}</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <span class="small">Delete older than</span><select data-age>${ageOpts(t.min, Math.max(t.min, 90))}</select>
+        <button class="btn small" data-check>Check</button>
+        <button class="btn small danger" data-go hidden>Delete</button>
+        <span class="small" data-result></span>
+        <span class="grow"></span>
+        <span class="small">Auto-delete after</span><select data-auto><option value="0">Never</option>${ageOpts(t.min, t.auto)}</select>
+      </div></div>`).join('')}</div>
+  </div>`;
+  body.querySelectorAll('[data-type]').forEach((row) => {
+    const key = row.dataset.type;
+    const age = row.querySelector('[data-age]');
+    const go = row.querySelector('[data-go]');
+    const out = row.querySelector('[data-result]');
+    const reset = () => { go.hidden = true; out.textContent = ''; };
+    age.onchange = reset;
+    row.querySelector('[data-check]').onclick = async () => {
+      try {
+        const r = await api(`admin/cleanup/${key}/preview`, { method: 'POST', body: { days: Number(age.value) } });
+        out.textContent = r.count ? `${fmtNum(r.count)} item${r.count === 1 ? '' : 's'} would be deleted.` : 'Nothing that old.';
+        go.hidden = !r.count;
+        go.textContent = `Delete ${fmtNum(r.count)}`;
+      } catch (x) { fail(x); }
+    };
+    go.onclick = async () => {
+      const label = d.types.find((t) => t.key === key).label;
+      if (!(await confirmBox(`Delete ${go.textContent.replace('Delete ', '')} ${label.toLowerCase()} older than ${age.options[age.selectedIndex].text}? This can't be undone.`))) return;
+      try {
+        const r = await api(`admin/cleanup/${key}`, { method: 'POST', body: { days: Number(age.value) } });
+        toast('Cleaned up', `${fmtNum(r.deleted)} deleted.`);
+        cleanupTab(body);
+      } catch (x) { fail(x); }
+    };
+    row.querySelector('[data-auto]').onchange = async (e) => {
+      try {
+        await api('admin/cleanup/auto', { method: 'PUT', body: { [key]: Number(e.target.value) } });
+        toast('Saved', Number(e.target.value) ? `Auto-delete after ${e.target.options[e.target.selectedIndex].text}.` : 'Auto-delete turned off.');
       } catch (x) { fail(x); }
     };
   });
