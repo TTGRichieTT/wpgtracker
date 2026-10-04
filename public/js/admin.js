@@ -601,9 +601,9 @@ const SETTINGS = [
   ]],
   ['Discord bot (automatic posts)', [
     ['discord_post_channel', 'Channel ID for posts (in Discord: right-click the channel → Copy Channel ID). Empty = no posts'],
-    ['discord_post_promotions', 'Post clan promotions', 'check'],
-    ['discord_post_medals', 'Post new medals', 'check'],
-    ['discord_post_wpg_ranks', 'Post WPG rank-ups', 'check'],
+    ['discord_post_promotions', 'Post clan promotions (WPG members only, not PMCs)', 'check'],
+    ['discord_post_medals', 'Post new medals (WPG members only, not PMCs)', 'check'],
+    ['discord_post_wpg_ranks', 'Post WPG rank-ups (WPG members only, not PMCs)', 'check'],
   ]],
   ['Streams', [
     ['discord_stream_channel', 'Discord channel ID for "… is live" posts (right-click the channel → Copy Channel ID). Empty = no posts'],

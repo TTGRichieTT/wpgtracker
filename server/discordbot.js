@@ -1114,18 +1114,22 @@ const POST_PREVIEWS = {
     return wpgRankPost(u, u.persona_name, p?.rank_name || 'RECRUIT I', p?.xp || 0, p?.rank_level || 1);
   },
 };
+// Promotion, medal and WPG rank-up posts are for WPG members only (not PMC guests or players who aren't in the
+// app), so the clan channel isn't filled with news about people outside the clan. PMCs who want them apply to join.
+const isWpgMember = (u) => !!u && u.status === 'active' && u.membership !== 'pmc';
+
 // Other parts of the app raise 'announce' events; each type can be switched off in Admin → Settings.
 bus.on('announce', async (a) => {
   try {
     if (a.type === 'promotion' && (await flag('discord_post_promotions'))) {
       const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
-      if (u) await postToChannel(await promotionPost(u, a.rank, a.from));
+      if (isWpgMember(u)) await postToChannel(await promotionPost(u, a.rank, a.from));
     } else if (a.type === 'medals' && (await flag('discord_post_medals'))) {
       const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
-      if (u && a.names?.length) await postToChannel(await medalPost(u, a.names));
+      if (isWpgMember(u) && a.names?.length) await postToChannel(await medalPost(u, a.names));
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
-      await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));
+      if (isWpgMember(u)) await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));
     } else if (a.type === 'giveaway' && (await flag('discord_post_giveaways'))) {
       const { giveawayChannelKey } = await import('./giveaways.js');
       await postToChannel(await giveawayPost(a), await giveawayChannelKey());
