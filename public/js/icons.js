@@ -7,6 +7,7 @@ const P = {
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.5-4 3.3-6 6.5-6s6 2 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14c3 0 5 1.8 5.5 5"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c.8-4.5 4-7 8-7s7.2 2.5 8 7"/>',
   friends: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.5-4 3.3-6 6.5-6s6 2 6.5 6"/><path d="M19 8v6M16 11h6"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9M12 8H8.5a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8zM12 8h3.5a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8z"/>',
   trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8 20h8M9 17h6"/>',
   chevrons: '<path d="m5 11 7-5 7 5"/><path d="m5 16 7-5 7 5"/><path d="m5 21 7-5 7 5"/>',
   shield: '<path d="M12 3 20 6v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',

@@ -202,6 +202,19 @@ They were cut from the WPG Discord career card. The mountain background is `publ
 - Members see **XP to their next rank** on HQ, their profile, the leaderboard and the Discord /rank card, and their
   last matches (what each gave or took) under the WPG rank leaderboard.
 
+### Giveaways (Admin → Giveaways)
+
+- **Giveaway:** runs between a start and end time; winners are drawn at random at the end. Members press **Enter**,
+  or everyone who plays on the WPG server is entered. Optional things to do on the WPG server during it (minutes
+  played, matches, kills), counted as each match ends.
+- **Random drops:** in a time window, the app picks secret random moments (one per drop). At each, a random person
+  who is on the WPG server right then wins. Nobody on? It tries again 10 minutes later.
+- **Prizes:** something real (staff hand it over: the winner presses **Claim** in the app within the days you set,
+  then you press **Mark sent**; optional codes/keys, one per winner, are shown only to that winner once claimed),
+  Clan XP, WPG XP (once WPG XP is switched over to the app) or a medal. XP and medals are given straight away.
+- Winners are told in the app, on Discord (Admin → Settings → *Post giveaways*) and on the WPG server.
+  **Draw someone else** gives an unclaimed prize to a new winner. Members see everything on the **Giveaways** page.
+
 ### Progression page and artillery data
 
 - **Unlocks** (Admin → Unlocks): the full Wardogs progression — 197 unlocks with levels, costs and pictures.

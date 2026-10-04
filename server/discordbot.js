@@ -1070,6 +1070,22 @@ async function wpgRankPost(u, name, rank, xp, level) {
     from: prog?.from || 0, next: prog?.next || null,
   }), () => ({ embeds: [{ color: COLOR, title: '📈 WPG rank up', description: text.replace(/^📈 /, '') }] }), u ? profileLink(u) : null);
 }
+// Giveaways (giveaways.js): one post when it starts, one with the winners.
+async function giveawayPost(a) {
+  const button = { type: 1, components: [{ type: 2, style: 5, label: 'Open Giveaways', url: `${SITE()}/#/giveaways` }] };
+  const image = /^https:\/\//.test(a.image || '') ? { image: { url: a.image } } : {};
+  if (a.event === 'start') {
+    const ends = `<t:${Math.floor(new Date(a.end_at).getTime() / 1000)}:R>`;
+    const text = a.kind === 'drop'
+      ? `🎁 **Random drops are live!** Be on the WPG server for a chance to win **${a.prize}**. Drops end ${ends}.`
+      : `🎁 **Giveaway: ${a.title}**. Win **${a.prize}**. ${a.entry === 'auto' ? 'Play on the WPG server to be entered.' : 'Press **Enter** in WPG Barracks to take part.'} Ends ${ends}.`;
+    return { embeds: [{ color: GOLD, title: a.kind === 'drop' ? '🎁 Random drops' : `🎁 ${a.title}`, description: `${text}${a.description ? `\n\n${a.description}` : ''}`, ...image }], components: [button] };
+  }
+  const users = await q('SELECT * FROM users WHERE id = ANY($1)', [a.userIds || []]);
+  const names = users.map((u) => `**${u.persona_name}**${mentionFor(u)}`).join(', ');
+  const text = `🎉 ${names} won **${a.prize}** ${a.kind === 'drop' ? 'in a random drop on the WPG server' : `in the **${a.title}** giveaway`}! GG`;
+  return { embeds: [{ color: GOLD, title: '🎉 Giveaway winner', description: text, ...image }], components: [button] };
+}
 // Admin → Settings preview of the channel posts, made from the admin's own rank, medals and WPG rank.
 const POST_PREVIEWS = {
   promotion: async (u) => {
@@ -1100,6 +1116,8 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
       await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));
+    } else if (a.type === 'giveaway' && (await flag('discord_post_giveaways'))) {
+      await postToChannel(await giveawayPost(a));
     } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
       const { streamForAnnounce } = await import('./streams.js');
       const d = await streamForAnnounce(a.accountId);

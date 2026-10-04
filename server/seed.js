@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   discord_post_promotions: 'true',
   discord_post_medals: 'true',
   discord_post_wpg_ranks: 'true',
+  discord_post_giveaways: 'true',
   // Cheat watch: staff-only alerts (Discord channel ID empty = app alerts only).
   discord_staff_channel: '',
   cheat_alerts: 'true',

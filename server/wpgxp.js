@@ -232,6 +232,27 @@ export async function awardMatch(serverId, players, match) {
   bus.emit('server:board', null);
 }
 
+// Extra WPG XP for one player (giveaway prizes), with a line in their match history. Only once the app is in
+// charge of WPG XP: while the bot is, its numbers would simply overwrite it.
+export async function grantWpgXp(steamId, name, amount, reason) {
+  if (!(await appIsSource())) throw new HttpError(400, 'WPG XP prizes work once WPG XP is switched over to the app (Admin → WPG XP).');
+  const ranks = await wpgRanks();
+  const old = await one('SELECT xp, best_level FROM wpg_xp WHERE steam_id=$1', [steamId]);
+  const xp = Math.max(0, (old?.xp || 0) + amount);
+  const rank = rankAt(xp, ranks);
+  const best = old?.best_level || 1;
+  const level = rank?.level || 1;
+  await q(
+    `INSERT INTO wpg_xp (steam_id, name, xp, best_level) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (steam_id) DO UPDATE SET xp=EXCLUDED.xp, best_level=GREATEST(wpg_xp.best_level, EXCLUDED.best_level), updated_at=now()`,
+    [steamId, name, xp, Math.max(best, level)],
+  );
+  await q('INSERT INTO wpg_xp_log (steam_id, xp, counted, detail) VALUES ($1,$2,true,$3)', [steamId, amount, JSON.stringify({ bonus: amount, reason })]);
+  await upsertShown(JSON.stringify([{ steam_id: steamId, name, xp, level, rank: rank?.name || '' }]));
+  if (rank && level > best) bus.emit('announce', { type: 'wpgrank', steamId, name, rank: rank.name, level, xp });
+  bus.emit('server:board', null);
+}
+
 // ---------- Comparing with the bot, and switching over ----------
 // Starts the comparison afresh: the bot's XP now is everyone's starting point; the app's counts go to 0.
 export async function resetComparison() {

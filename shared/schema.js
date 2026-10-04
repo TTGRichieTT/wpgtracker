@@ -354,6 +354,58 @@ export const wpgXpLog = pgTable('wpg_xp_log', {
   created_at: now(),
 }, (t) => [index('wpg_xp_log_steam_idx').on(t.steam_id, t.created_at)]);
 
+// ---------- Giveaways (giveaways.js) ----------
+// kind: 'scheduled' (runs start → end, winners drawn at the end) or 'drop' (random drops: at secret random
+// times between start and end, one winner each from whoever is on the WPG server right then).
+// reward_type: 'item' (a real-life or other prize staff hand over; optional codes shown only to the winner),
+// 'clan_xp', 'wpg_xp' (amount) or 'medal' (reward_medal). status: scheduled | open | done | cancelled
+export const giveaways = pgTable('giveaways', {
+  id: serial().primaryKey(),
+  kind: text().notNull().default('scheduled'),
+  title: text().notNull(),
+  description: text().notNull().default(''),
+  image: text().notNull().default(''),
+  reward_type: text().notNull().default('item'),
+  reward_text: text().notNull().default(''),
+  reward_amount: integer().notNull().default(0),
+  reward_medal: integer(),
+  reward_codes: jsonb().notNull().default([]), // sealed codes / keys, one per winner (never sent to browsers)
+  winners: integer().notNull().default(1),
+  start_at: timestamp({ withTimezone: true }).notNull(),
+  end_at: timestamp({ withTimezone: true }).notNull(),
+  who: text().notNull().default('members'), // members (WPG members + staff) | everyone (PMCs too)
+  no_staff: boolean().notNull().default(false),
+  entry: text().notNull().default('enter'), // scheduled: enter (press Enter) | auto (everyone who qualifies)
+  min_minutes: integer().notNull().default(0), // played on the WPG server during the giveaway
+  min_matches: integer().notNull().default(0),
+  min_kills: integer().notNull().default(0),
+  fire_times: jsonb().notNull().default([]), // drops: the secret random times (never sent to members)
+  fired: integer().notNull().default(0),
+  claim_days: integer().notNull().default(7),
+  in_game: boolean().notNull().default(true), // announce on the WPG server
+  status: text().notNull().default('scheduled'),
+  created_by: integer(),
+  created_at: now(),
+});
+
+export const giveawayEntries = pgTable('giveaway_entries', {
+  giveaway_id: integer().notNull().references(() => giveaways.id, { onDelete: 'cascade' }),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  created_at: now(),
+}, (t) => [primaryKey({ name: 'giveaway_entries_pkey', columns: [t.giveaway_id, t.user_id] })]);
+
+// status: given (XP / medal handed over automatically) | won (prize waiting to be claimed) | claimed | sent | expired
+export const giveawayWinners = pgTable('giveaway_winners', {
+  id: serial().primaryKey(),
+  giveaway_id: integer().notNull().references(() => giveaways.id, { onDelete: 'cascade' }),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  code: text().notNull().default(''), // sealed
+  status: text().notNull().default('won'),
+  won_at: now(),
+  claimed_at: timestamp({ withTimezone: true }),
+  sent_at: timestamp({ withTimezone: true }),
+}, (t) => [index('giveaway_winners_user_idx').on(t.user_id)]);
+
 export const sessions = pgTable('sessions', {
   sid: text().primaryKey(),
   sess: jsonb().notNull(),

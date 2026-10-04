@@ -150,7 +150,7 @@ h3 { font-size: 18px; }
 
 label.field { display: block; }
 label.field > span { display: block; font: 600 13px var(--head); color: var(--accent2); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 5px; }
-input[type=text], input[type=number], input[type=url], input[type=search], input[type=password], select, textarea {
+input[type=text], input[type=number], input[type=url], input[type=search], input[type=password], input[type=datetime-local], select, textarea {
   width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
   background: #06101c; color: var(--text); font: 15px var(--body);
 }
@@ -687,6 +687,16 @@ body::after { display: none; }
 .cc-who b { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; } /* the whole name, wrapping if it must */
 .cc-badges { display: inline-flex; gap: 2px; flex: none; }
 .cc-unit { container-type: inline-size; }
+input[type=datetime-local] { color-scheme: dark; }
+.ga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.ga-card .ga-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 10px; }
+.ga-prize { display: flex; align-items: center; gap: 8px; font: 700 18px var(--head); color: var(--gold, #c9a227); }
+.ga-prize svg { width: 22px; height: 22px; flex: none; }
+.ga-rules { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.ga-code { background: #06101c; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; user-select: all; overflow-wrap: anywhere; }
+.ga-admin .small svg { width: 15px; height: 15px; vertical-align: -3px; }
+.ga-banner { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); border-color: var(--gold, #c9a227); }
+.ga-banner > svg { width: 30px; height: 30px; color: var(--gold, #c9a227); flex: none; }
 .profile-skills { margin-top: 14px; }
 .profile-skills .lbl { display: flex; align-items: center; gap: 6px; font: 700 13px var(--head); color: var(--accent2); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
 .profile-skills .lbl svg { width: 18px; height: 18px; color: var(--accent); }

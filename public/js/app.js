@@ -313,6 +313,7 @@ const NAV = [
   { href: '#/streams', key: 'streams', label: 'Streams', icon: 'live', count: () => state.liveStreams },
   { href: '#/members', key: 'members', label: 'Members', icon: 'users' },
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
+  { href: '#/giveaways', key: 'giveaways', label: 'Giveaways', icon: 'gift' },
   { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
   { href: '#/progression', key: 'progression', label: 'Progression', icon: 'unlock' },
   { href: '#/ranks', key: 'ranks', label: 'Clan ranks', icon: 'chevrons' },
@@ -490,6 +491,7 @@ async function route() {
     servers: viewServers,
     streams: async (m, r, alive) => (await import('./streams.js')).viewStreams(m, r, alive),
     leaderboard: viewLeaderboard,
+    giveaways: async (m) => (await import('./giveaways.js')).viewGiveaways(m),
     progression: viewTools,
     tools: () => { location.hash = '#/progression'; },
     map: async (m, r, alive) => (await import('./artymap.js')).viewArtyMap(m, r, alive),
@@ -518,7 +520,8 @@ function viewNotFound(main) {
 // ---------- HQ ----------
 async function viewHome(main) {
   const me = state.me;
-  const [ranks, news, members] = await Promise.all([api('ranks'), api('announcements'), api('members')]);
+  const [ranks, news, members, giveawayLine] = await Promise.all([api('ranks'), api('announcements'), api('members'),
+    import('./giveaways.js').then((m) => m.giveawayBanner()).catch(() => '')]);
   const next = ranks.filter((r) => r.auto && r.min_xp > me.xp).sort((a, b) => a.min_xp - b.min_xp)[0];
   const cur = me.rank;
   let progress = '';
@@ -568,6 +571,7 @@ async function viewHome(main) {
         </div>
       </div>
       ${needsTracker() ? trackerCardHtml() : staleLink() ? staleCardHtml() : ''}
+      ${giveawayLine}
       <div class="panel" id="liveNow" hidden></div>
       <div class="grid two">
         <div class="panel">
@@ -1768,7 +1772,7 @@ async function viewLeaderboard(main) {
         ? ` Taken away: −${ru.loss} XP for a loss, −${ru.leave} XP for leaving early (after ${ru.leaveMinutes} min), and −${ru.kdEach} XP per death more than kills (at most −${ru.kdCap}, after ${ru.kdMinutes} min).${ru.floor ? " Penalties never take you below the start of your rank." : ''}`
         : ''} Counted when each match ends.`
       : `Earned only on the ${esc(tag)} server: +15 XP per kill, +5 XP every 5 minutes played, +100 XP per completed match, +250 XP per win. Updates every 5 minutes.`;
-    const PARTS = { kill_xp: 'kills', time_xp: 'time', finish: 'finished', win: 'win', loss: 'loss', kd: 'K/D', left: 'left early' };
+    const PARTS = { kill_xp: 'kills', time_xp: 'time', finish: 'finished', win: 'win', loss: 'loss', kd: 'K/D', left: 'left early', bonus: 'prize' };
     const part = (k, v) => `<span style="color:${v < 0 ? 'var(--red)' : 'inherit'}">${v > 0 ? '+' : '−'}${fmtNum(Math.abs(v))} ${PARTS[k]}</span>`;
     main.innerHTML = `<h1>Leaderboard</h1>
       <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
@@ -1798,7 +1802,7 @@ async function viewLeaderboard(main) {
       ${history.length ? `<div class="panel">
         <div class="panel-title">${icon('star')} Your last matches <span class="sub">${esc(tag)} XP</span></div>
         <div class="list">${history.map((h) => `<div class="item"><div class="grow small">${Object.keys(PARTS).filter((k) => h.detail?.[k]).map((k) => part(k, h.detail[k])).join(' · ') || '<span class="muted">Nothing earned</span>'}
-          <div class="muted">${timeAgo(h.created_at)} · ${fmtNum(h.detail?.minutes || 0)} min · ${fmtNum(h.detail?.kills || 0)} kills / ${fmtNum(h.detail?.deaths || 0)} deaths${h.detail?.floor ? ' · kept at the start of your rank' : ''}</div></div>
+          <div class="muted">${timeAgo(h.created_at)} · ${h.detail?.reason ? esc(h.detail.reason) : `${fmtNum(h.detail?.minutes || 0)} min · ${fmtNum(h.detail?.kills || 0)} kills / ${fmtNum(h.detail?.deaths || 0)} deaths`}${h.detail?.floor ? ' · kept at the start of your rank' : ''}</div></div>
           <b style="font:700 18px var(--head);color:${h.xp < 0 ? 'var(--red)' : 'var(--accent2)'}">${h.xp > 0 ? '+' : h.xp < 0 ? '−' : ''}${fmtNum(Math.abs(h.xp))}</b></div>`).join('')}</div>
       </div>` : ''}`;
     onLive('server-board', () => route());

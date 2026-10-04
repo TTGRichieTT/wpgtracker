@@ -12,6 +12,7 @@ const TABS = [
   { key: 'units', label: 'Units', group: 'People' },
   { key: 'cheatwatch', label: 'Cheat watch', mod: true, group: 'People' },
   { key: 'streams', label: 'Streams', mod: true, group: 'People' },
+  { key: 'giveaways', label: 'Giveaways', group: 'People' },
   { key: 'ranks', label: 'Ranks', group: 'Game' },
   { key: 'awards', label: 'Medals', group: 'Game' },
   { key: 'stat-defs', label: 'Stats', group: 'Game' },
@@ -206,6 +207,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'units') return (await import('./combat.js')).unitsTab(body);
   if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
   if (tab.key === 'wpgxp') return (await import('./wpgxp.js')).wpgXpAdminTab(body);
+  if (tab.key === 'giveaways') return (await import('./giveaways.js')).giveawaysAdminTab(body);
   return resourceTab(body, tab.key);
 }
 
@@ -602,6 +604,7 @@ const SETTINGS = [
     ['discord_post_promotions', 'Post clan promotions', 'check'],
     ['discord_post_medals', 'Post new medals', 'check'],
     ['discord_post_wpg_ranks', 'Post WPG rank-ups', 'check'],
+    ['discord_post_giveaways', 'Post giveaways (start and winners)', 'check'],
   ]],
   ['Streams', [
     ['discord_stream_channel', 'Discord channel ID for "… is live" posts (right-click the channel → Copy Channel ID). Empty = no posts'],
