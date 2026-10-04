@@ -209,11 +209,16 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   played, matches, kills), counted as each match ends.
 - **Random drops:** in a time window, the app picks secret random moments (one per drop). At each, a random person
   who is on the WPG server right then wins. Nobody on? It tries again 10 minutes later.
-- **Prizes:** something real (staff hand it over: the winner presses **Claim** in the app within the days you set,
-  then you press **Mark sent**; optional codes/keys, one per winner, are shown only to that winner once claimed),
-  Clan XP, WPG XP (once WPG XP is switched over to the app) or a medal. XP and medals are given straight away.
-- Winners are told in the app, on Discord (Admin → Settings → *Post giveaways*) and on the WPG server.
-  **Draw someone else** gives an unclaimed prize to a new winner. Members see everything on the **Giveaways** page.
+- **Top players:** whoever does best on the WPG server in the time window wins by place: most kills, time played,
+  matches, wins, WPG XP earned, or highest on the WPG rank leaderboard. Members see the live standings.
+- **Prizes:** each giveaway has a list of prizes, in order (the first goes to the first winner / drop / place), each
+  with how many winners, drops or places get it, e.g. 1st: £25 card, 2nd–3rd: 500 Clan XP, 4th–10th: 100 Clan XP.
+  A prize is something real (the winner presses **Claim** in the app within the days you set, then you press **Mark
+  sent**; optional codes/keys, one per winner, are shown only to that winner once claimed), Clan XP, WPG XP (once WPG
+  XP is switched over to the app) or a medal. XP and medals are given straight away.
+- Winners are told in the app, on Discord and on the WPG server. **Discord:** put the giveaways channel ID at the top of
+  Admin → Giveaways (empty = the channel for the other automatic posts). **Draw someone else** / **Give to the next
+  player** hands an unclaimed prize on. Members see everything on the **Giveaways** page.
 
 ### Progression page and artillery data
 

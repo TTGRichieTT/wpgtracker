@@ -692,6 +692,11 @@ input[type=datetime-local] { color-scheme: dark; }
 .ga-card .ga-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 10px; }
 .ga-prize { display: flex; align-items: center; gap: 8px; font: 700 18px var(--head); color: var(--gold, #c9a227); }
 .ga-prize svg { width: 22px; height: 22px; flex: none; }
+.ga-prizes { display: flex; flex-direction: column; gap: 4px; }
+.ga-prizes .ga-prize { font-size: 16px; }
+.ga-place { display: inline-block; min-width: 54px; padding: 2px 8px; border-radius: 6px; background: rgba(201,162,39,.15); border: 1px solid rgba(201,162,39,.5); color: #ffe08a; font: 700 13px var(--head); text-align: center; text-transform: uppercase; }
+.ga-prize-row { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.02); }
+.ga-prize-row .ga-place { align-self: center; margin-bottom: 8px; }
 .ga-rules { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .ga-code { background: #06101c; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; user-select: all; overflow-wrap: anywhere; }
 .ga-admin .small svg { width: 15px; height: 15px; vertical-align: -3px; }

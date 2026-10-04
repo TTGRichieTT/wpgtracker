@@ -1076,15 +1076,21 @@ async function giveawayPost(a) {
   const image = /^https:\/\//.test(a.image || '') ? { image: { url: a.image } } : {};
   if (a.event === 'start') {
     const ends = `<t:${Math.floor(new Date(a.end_at).getTime() / 1000)}:R>`;
-    const text = a.kind === 'drop'
-      ? `🎁 **Random drops are live!** Be on the WPG server for a chance to win **${a.prize}**. Drops end ${ends}.`
-      : `🎁 **Giveaway: ${a.title}**. Win **${a.prize}**. ${a.entry === 'auto' ? 'Play on the WPG server to be entered.' : 'Press **Enter** in WPG Barracks to take part.'} Ends ${ends}.`;
-    return { embeds: [{ color: GOLD, title: a.kind === 'drop' ? '🎁 Random drops' : `🎁 ${a.title}`, description: `${text}${a.description ? `\n\n${a.description}` : ''}`, ...image }], components: [button] };
+    const prizes = (a.prizes || []).map((p) => `• ${p.places ? `**${p.places}:** ` : ''}${p.label}${!p.places && p.count > 1 ? ` ×${p.count}` : ''}`).join('\n');
+    const how = a.kind === 'drop' ? `Be on the WPG server: at random moments until ${ends}, someone on the server wins.`
+      : a.kind === 'top' ? `**${a.metric}** on the WPG server until ${ends} wins.`
+        : `${a.entry === 'auto' ? 'Play on the WPG server to be entered.' : 'Press **Enter** in WPG Barracks to take part.'} Ends ${ends}.`;
+    const title = a.kind === 'drop' ? `🎁 Random drops: ${a.title}` : a.kind === 'top' ? `🏆 Top players: ${a.title}` : `🎁 Giveaway: ${a.title}`;
+    return { embeds: [{ color: GOLD, title, description: `${how}\n\n**Prizes**\n${prizes}${a.description ? `\n\n${a.description}` : ''}`, ...image }], components: [button] };
   }
-  const users = await q('SELECT * FROM users WHERE id = ANY($1)', [a.userIds || []]);
-  const names = users.map((u) => `**${u.persona_name}**${mentionFor(u)}`).join(', ');
-  const text = `🎉 ${names} won **${a.prize}** ${a.kind === 'drop' ? 'in a random drop on the WPG server' : `in the **${a.title}** giveaway`}! GG`;
-  return { embeds: [{ color: GOLD, title: '🎉 Giveaway winner', description: text, ...image }], components: [button] };
+  const users = new Map((await q('SELECT * FROM users WHERE id = ANY($1)', [(a.winners || []).map((w) => w.userId)])).map((u) => [u.id, u]));
+  const lines = (a.winners || []).map((w) => {
+    const u = users.get(w.userId);
+    const who = `**${u?.persona_name || 'Someone'}**${mentionFor(u)}`;
+    return a.kind === 'top' ? `**${w.place}.** ${who} (${w.score}): ${w.prize}` : `${who} won **${w.prize}**`;
+  });
+  const title = a.kind === 'top' ? `🏆 Top players results: ${a.title}` : a.kind === 'drop' ? '🎉 Random drop winner' : `🎉 Giveaway winners: ${a.title}`;
+  return { embeds: [{ color: GOLD, title, description: `${a.kind === 'top' ? `${a.metric}\n\n` : ''}${lines.join('\n')}\n\nGG!`, ...image }], components: [button] };
 }
 // Admin → Settings preview of the channel posts, made from the admin's own rank, medals and WPG rank.
 const POST_PREVIEWS = {
@@ -1117,7 +1123,8 @@ bus.on('announce', async (a) => {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
       await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));
     } else if (a.type === 'giveaway' && (await flag('discord_post_giveaways'))) {
-      await postToChannel(await giveawayPost(a));
+      const { giveawayChannelKey } = await import('./giveaways.js');
+      await postToChannel(await giveawayPost(a), await giveawayChannelKey());
     } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
       const { streamForAnnounce } = await import('./streams.js');
       const d = await streamForAnnounce(a.accountId);

@@ -604,7 +604,6 @@ const SETTINGS = [
     ['discord_post_promotions', 'Post clan promotions', 'check'],
     ['discord_post_medals', 'Post new medals', 'check'],
     ['discord_post_wpg_ranks', 'Post WPG rank-ups', 'check'],
-    ['discord_post_giveaways', 'Post giveaways (start and winners)', 'check'],
   ]],
   ['Streams', [
     ['discord_stream_channel', 'Discord channel ID for "… is live" posts (right-click the channel → Copy Channel ID). Empty = no posts'],
@@ -699,7 +698,7 @@ async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
   // Settings with their own page aren't repeated here (saving them from a one-line box would lose their line breaks).
-  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel']); // Admin → Recruitment
+  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways']); // Admin → Recruitment / Giveaways
   const extra = Object.keys(s).filter((k) => !known.has(k) && !ELSEWHERE.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';

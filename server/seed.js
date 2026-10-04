@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS = {
   discord_post_medals: 'true',
   discord_post_wpg_ranks: 'true',
   discord_post_giveaways: 'true',
+  discord_giveaway_channel: '', // empty = the channel for the other automatic posts
   // Cheat watch: staff-only alerts (Discord channel ID empty = app alerts only).
   discord_staff_channel: '',
   cheat_alerts: 'true',

@@ -355,10 +355,12 @@ export const wpgXpLog = pgTable('wpg_xp_log', {
 }, (t) => [index('wpg_xp_log_steam_idx').on(t.steam_id, t.created_at)]);
 
 // ---------- Giveaways (giveaways.js) ----------
-// kind: 'scheduled' (runs start → end, winners drawn at the end) or 'drop' (random drops: at secret random
-// times between start and end, one winner each from whoever is on the WPG server right then).
-// reward_type: 'item' (a real-life or other prize staff hand over; optional codes shown only to the winner),
-// 'clan_xp', 'wpg_xp' (amount) or 'medal' (reward_medal). status: scheduled | open | done | cancelled
+// kind: 'scheduled' (runs start → end, winners drawn at the end), 'drop' (random drops: at secret random
+// times between start and end, one winner each from whoever is on the WPG server right then) or 'top'
+// (top players on the WPG server during start → end, by `metric`, win by place).
+// prizes: [{ type: item | clan_xp | wpg_xp | medal, text, amount, medal, count, codes: [sealed] }] in order:
+// the first prize goes to the first winner / drop / place. (reward_* columns: giveaways made before prizes lists.)
+// status: scheduled | open | done | cancelled
 export const giveaways = pgTable('giveaways', {
   id: serial().primaryKey(),
   kind: text().notNull().default('scheduled'),
@@ -370,6 +372,8 @@ export const giveaways = pgTable('giveaways', {
   reward_amount: integer().notNull().default(0),
   reward_medal: integer(),
   reward_codes: jsonb().notNull().default([]), // sealed codes / keys, one per winner (never sent to browsers)
+  prizes: jsonb().notNull().default([]),
+  metric: text().notNull().default(''), // top: kills | minutes | matches | wins | wpg_xp | rank
   winners: integer().notNull().default(1),
   start_at: timestamp({ withTimezone: true }).notNull(),
   end_at: timestamp({ withTimezone: true }).notNull(),
@@ -400,6 +404,10 @@ export const giveawayWinners = pgTable('giveaway_winners', {
   giveaway_id: integer().notNull().references(() => giveaways.id, { onDelete: 'cascade' }),
   user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
   code: text().notNull().default(''), // sealed
+  prize_index: integer().notNull().default(0),
+  prize: jsonb().notNull().default({}), // what they won: { type, text, amount, medal }
+  place: integer(), // top players: their place
+  score: integer(),
   status: text().notNull().default('won'),
   won_at: now(),
   claimed_at: timestamp({ withTimezone: true }),
