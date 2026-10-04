@@ -377,7 +377,12 @@ export const giveaways = pgTable('giveaways', {
   drop_mode: text().notNull().default('random'), // drops: random (secret random times) | manual (only when staff trigger one)
   drop_to: text().notNull().default('one'), // drops: one (a random player who qualifies) | all (everyone who qualifies)
   drop_min_minutes: integer().notNull().default(0), // drops: minutes played in that match to qualify
-  live_draw: boolean().notNull().default(false), // giveaway: draw at the end of the match running at the end time, among those on the server
+  live_draw: boolean().notNull().default(false), // (no longer used: giveaways always draw at the end of their last match)
+  // Giveaways run for a number of matches on the WPG server: they start with the next match (after start_at)
+  // and draw at the end of the last one, among those on the server then.
+  matches: integer().notNull().default(1),
+  matches_done: integer().notNull().default(0),
+  match_server: integer(),
   // Draws waiting for a match to end: drops [{ slot, at, server, pool: [steam ids] }] or { slot, retry_at } to try again.
   pending: jsonb().notNull().default([]),
   winners: integer().notNull().default(1),

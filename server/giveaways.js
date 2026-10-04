@@ -1,7 +1,8 @@
 // Giveaways, linked to the WPG server.
-//  - Giveaway: runs from start to end. Members press Enter (or everyone who plays is entered), optionally
-//    with things to do on the WPG server during it (minutes played, matches, kills). Winners are drawn at
-//    random when it ends.
+//  - Giveaway: runs for a number of matches on the WPG server, starting with the next match (after its start
+//    time). Members press Enter (or everyone who plays is entered), optionally with things to do on the WPG
+//    server during those matches (minutes played, matches, kills: finished matches only). Winners are drawn at
+//    random at the end of the last match, from those on the server then.
 //  - Drops: trigger at secret random times between start and end, or whenever staff press the button. Everyone
 //    who can win and is on the WPG server when one triggers is in it; when that match ends, those still on who
 //    played enough of it get the prize (everyone, or one at random). Crash or nobody qualified? It tries again later.
@@ -108,7 +109,7 @@ function canWin(g, u) {
 }
 
 // Minutes / matches / kills on the WPG server during the giveaway, per user (counted as each match ends).
-async function progressFor(g, userIds) {
+async function progressFor(g, userIds, until = g.end_at) {
   if (!userIds.length) return new Map();
   const rows = await q(
     `SELECT u.id AS user_id, COALESCE(SUM(mp.seconds), 0)::int AS secs, COUNT(mp.id)::int AS matches, COALESCE(SUM(mp.kills), 0)::int AS kills
@@ -116,15 +117,16 @@ async function progressFor(g, userIds) {
        JOIN game_servers s ON s.id = mp.server_id AND s.wpg_xp = true
       WHERE u.id = ANY($1) AND mp.ended_at >= $2 AND mp.ended_at <= LEAST($3::timestamptz, now()) AND mp.stayed IS NOT FALSE
       GROUP BY u.id`,
-    [userIds, g.start_at, g.end_at],
+    [userIds, g.start_at, until],
   );
   return new Map(rows.map((r) => [r.user_id, { minutes: Math.floor(r.secs / 60), matches: r.matches, kills: r.kills }]));
 }
 const hasRules = (g) => g.min_minutes > 0 || g.min_matches > 0 || g.min_kills > 0;
 const meets = (g, p) => (p?.minutes || 0) >= g.min_minutes && (p?.matches || 0) >= g.min_matches && (p?.kills || 0) >= g.min_kills;
 
-// Everyone who could win a giveaway draw now (not counting people who've already won it).
-async function candidates(g) {
+// Everyone who could win a giveaway draw now (not counting people who've already won it). until: count matches
+// that ended up to then (the draw itself happens when the match running at the end time ends).
+async function candidates(g, until = g.end_at) {
   const already = new Set((await q('SELECT user_id FROM giveaway_winners WHERE giveaway_id=$1', [g.id])).map((r) => r.user_id));
   const users = g.entry === 'enter'
     ? await q('SELECT u.* FROM giveaway_entries e JOIN users u ON u.id = e.user_id WHERE e.giveaway_id=$1', [g.id])
@@ -133,11 +135,11 @@ async function candidates(g) {
       `SELECT DISTINCT u.* FROM users u JOIN match_players mp ON mp.steam_id = u.steam_id
          JOIN game_servers s ON s.id = mp.server_id AND s.wpg_xp = true
         WHERE mp.ended_at >= $1 AND mp.ended_at <= LEAST($2::timestamptz, now()) AND mp.stayed IS NOT FALSE`,
-      [g.start_at, g.end_at],
+      [g.start_at, until],
     );
   const ok = users.filter((u) => canWin(g, u) && !already.has(u.id));
   if (!hasRules(g)) return ok;
-  const prog = await progressFor(g, ok.map((u) => u.id));
+  const prog = await progressFor(g, ok.map((u) => u.id), until);
   return ok.filter((u) => meets(g, prog.get(u.id)));
 }
 
@@ -247,13 +249,12 @@ async function finish(g, actor, pool, won) {
   return won;
 }
 
-// onlyIds: a live draw only counts people on the WPG server at the end of the match (their Steam IDs).
-async function drawScheduled(g, actor = null, onlyIds = null) {
+// atEnd: Steam ID → seconds played in the match that just ended, for those on the WPG server at its end: only they can win.
+async function drawScheduled(g, actor, atEnd) {
   // Only one copy of the app may draw (during a deploy two can briefly run).
-  const locked = await one("UPDATE giveaways SET status='done', pending='[]' WHERE id=$1 AND status IN ('open','drawing') RETURNING *", [g.id]);
+  const locked = await one("UPDATE giveaways SET status='done', pending='[]', end_at=LEAST(end_at, now()) WHERE id=$1 AND status IN ('open','drawing') RETURNING *", [g.id]);
   if (!locked) return [];
-  let pool = await candidates(locked);
-  if (onlyIds) pool = pool.filter((u) => onlyIds.has(u.steam_id));
+  const pool = (await candidates(locked, new Date())).filter((u) => atEnd.has(u.steam_id));
   const won = [];
   const n = slots(locked).length;
   for (const [i, u] of pick(pool, n).entries()) won.push(await giveReward(locked, u, i));
@@ -270,14 +271,8 @@ async function drawTop(g, actor = null) {
   return finish(locked, actor, ranked.length, won);
 }
 
-// A live-draw giveaway reached its end time: the draw happens when the match running now ends.
-async function startLiveDraw(g) {
-  const locked = await one("UPDATE giveaways SET status='drawing', pending=$2 WHERE id=$1 AND status='open' RETURNING *", [g.id, JSON.stringify([{ final: true, at: new Date().toISOString() }])]);
-  if (!locked) return false;
-  await sayInGame(locked, `WPG GIVEAWAY "${locked.title}": the draw is at the END OF THIS MATCH. Stay on the server to be in it!`);
-  changed();
-  return true;
-}
+// Whoever is on the WPG server now, counted as having played enough (when a draw can't wait for a match end).
+const onNowAsPlayed = async () => new Map([...(await onServerNow()).keys()].map((sid) => [sid, Number.MAX_SAFE_INTEGER]));
 
 // ---------- Drops ----------
 // A drop triggers (now, or at a secret random time): everyone who can win and is on the WPG server right then is
@@ -379,9 +374,25 @@ async function settleDrops(server, stayed, trusted) {
 // everyone still on at the end. trusted: false if the app lost sight of the server or half the players dropped at once.
 export async function matchEnded(serverId, stayed, { trusted }) {
   await settleDrops(serverId, stayed, trusted);
-  // Live draws: whoever qualifies and was on at the end of this match. Not trusted? Wait for the next one.
-  if (!trusted) return;
-  for (const g of await q("SELECT * FROM giveaways WHERE status='drawing'")) await drawScheduled(g, null, new Set(stayed.keys()));
+  // Giveaways count their matches; after the last one, the draw is among whoever qualifies and is on now.
+  // A match that can't be trusted (crash, app restart) doesn't count: the giveaway runs one more.
+  if (trusted) {
+    for (const g of await q("SELECT * FROM giveaways WHERE status='drawing'")) await drawScheduled(g, null, stayed);
+    for (const g of await q("SELECT * FROM giveaways WHERE kind='scheduled' AND status='open' AND match_server=$1", [serverId])) {
+      const done = await one("UPDATE giveaways SET matches_done = matches_done + 1 WHERE id=$1 AND status='open' AND matches_done=$2 RETURNING *", [g.id, g.matches_done]);
+      if (!done) continue;
+      if (done.matches_done >= done.matches) await drawScheduled(done, null, stayed);
+      else {
+        if (done.matches_done === done.matches - 1) await sayInGame(done, `WPG GIVEAWAY "${done.title}": this is the LAST MATCH. Be on the server at the end of it to be in the draw!`);
+        changed();
+      }
+    }
+  }
+  // Giveaways waiting to start: they start with the match beginning now.
+  for (const g of await q(
+    "UPDATE giveaways SET status='open', start_at=now(), matches_done=0, match_server=$1 WHERE kind='scheduled' AND status='scheduled' AND start_at <= now() RETURNING *",
+    [serverId],
+  )) await announceStart(g);
 }
 
 // Random times for drops, spread over the window (from now if it has already started).
@@ -393,35 +404,33 @@ function dropTimes(start, end, n) {
   return Array.from({ length: n }, () => from + crypto.randomInt(Math.max(1, to - from))).sort((a, b) => a - b).map((t) => new Date(t).toISOString());
 }
 
+async function announceStart(g) {
+  const prizes = await prizeSummary(g);
+  await sayInGame(g, g.kind === 'drop'
+    ? `WPG DROPS are on: be on the server when one triggers and stay until the end of the match! (${prizes})`
+    : g.kind === 'top'
+      ? `WPG TOP PLAYERS is on: ${METRICS[g.metric] || ''} on this server wins prizes. Open WPG Barracks > Giveaways.`
+      : `WPG GIVEAWAY "${g.title}" starts now and runs for ${g.matches} match${g.matches === 1 ? '' : 'es'} (this one is match 1). ${g.entry === 'auto' ? 'Play to be entered.' : 'Enter in WPG Barracks > Giveaways.'} Be on at the end of the last match for the draw!`);
+  bus.emit('announce', {
+    type: 'giveaway', event: 'start', id: g.id, kind: g.kind, title: g.title, image: g.image, description: g.description,
+    end_at: g.end_at, entry: g.entry, metric: METRICS[g.metric] || '', prizes: await prizeList(g),
+    drop_to: g.drop_to, drop_min_minutes: g.drop_min_minutes, drop_mode: g.drop_mode, matches: g.matches, min_minutes: g.min_minutes,
+  });
+  changed();
+}
+
 // ---------- The clock ----------
 async function tick() {
-  // Starting.
-  for (const g of await q("UPDATE giveaways SET status='open' WHERE status='scheduled' AND start_at <= now() RETURNING *")) {
-    const prizes = await prizeSummary(g);
-    await sayInGame(g, g.kind === 'drop'
-      ? `WPG DROPS are on: be on the server when one triggers and stay until the end of the match! (${prizes})`
-      : g.kind === 'top'
-        ? `WPG TOP PLAYERS is on: ${METRICS[g.metric] || ''} on this server wins prizes. Open WPG Barracks > Giveaways.`
-        : `WPG GIVEAWAY started: ${g.title}. Open WPG Barracks > Giveaways to take part.`);
-    bus.emit('announce', {
-      type: 'giveaway', event: 'start', id: g.id, kind: g.kind, title: g.title, image: g.image, description: g.description,
-      end_at: g.end_at, entry: g.entry, metric: METRICS[g.metric] || '', prizes: await prizeList(g),
-      drop_to: g.drop_to, drop_min_minutes: g.drop_min_minutes, drop_mode: g.drop_mode, live_draw: g.live_draw,
-    });
-    changed();
-  }
-  // Ending: giveaways draw now (or wait for the match to end, for a live draw); top players hand out by place.
-  for (const g of await q("SELECT * FROM giveaways WHERE status='open' AND kind='scheduled' AND end_at <= now()")) {
-    if (g.live_draw) await startLiveDraw(g); else await drawScheduled(g);
-  }
+  // Starting (drops and top players; giveaways start with a match, in matchEnded).
+  for (const g of await q("UPDATE giveaways SET status='open' WHERE status='scheduled' AND kind <> 'scheduled' AND start_at <= now() RETURNING *")) await announceStart(g);
+  // Ending: top players hand out by place.
   for (const g of await q("SELECT * FROM giveaways WHERE status='open' AND kind='top' AND end_at <= now()")) await drawTop(g);
-  // A live draw whose match never ended (e.g. the server emptied): draw from whoever is on now.
+  // A giveaway draw whose match never ended (e.g. the server emptied): draw from whoever is on now.
   for (const g of await q("SELECT * FROM giveaways WHERE status='drawing' AND end_at < now() - interval '90 minutes'")) {
-    await drawScheduled(g, null, new Set((await onServerNow()).keys()));
+    await drawScheduled(g, null, await onNowAsPlayed());
   }
   // Drops waiting too long for their match to end: decide with whoever is on now.
-  const online = await onServerNow();
-  await settleDrops(null, new Map([...online.keys()].map((sid) => [sid, Number.MAX_SAFE_INTEGER])), true);
+  await settleDrops(null, await onNowAsPlayed(), true);
   for (const g of await q("SELECT * FROM giveaways WHERE status='open' AND kind='drop'")) {
     const end = new Date(g.end_at).getTime();
     const times = Array.isArray(g.fire_times) ? g.fire_times : [];
@@ -489,7 +498,7 @@ async function publicGiveaway(g, extra = {}) {
     prizes: (await prizeList(g)).map(({ codes, ...p }) => p), metric: g.metric, metric_label: METRICS[g.metric] || '',
     start_at: g.start_at, end_at: g.end_at, who: g.who, no_staff: g.no_staff, entry: g.entry,
     min_minutes: g.min_minutes, min_matches: g.min_matches, min_kills: g.min_kills, claim_days: g.claim_days, status: g.status,
-    drop_mode: g.drop_mode, drop_to: g.drop_to, drop_min_minutes: g.drop_min_minutes, live_draw: g.live_draw,
+    drop_mode: g.drop_mode, drop_to: g.drop_to, drop_min_minutes: g.drop_min_minutes, matches: g.matches, matches_done: g.matches_done,
     ...extra,
   };
 }
@@ -621,8 +630,10 @@ function readBody(b, existing) {
     description: str(b.description, 1500),
     image: safeUrl(b.image),
     metric: kind === 'top' ? (METRICS[b.metric] ? b.metric : 'kills') : '',
-    start_at: new Date(b.start_at),
-    end_at: new Date(b.end_at),
+    // Giveaways run for a number of matches: start_at = don't start before; end_at only caps how long it can wait.
+    start_at: kind === 'scheduled' && !b.start_at ? new Date() : new Date(b.start_at),
+    end_at: kind === 'scheduled' ? new Date(new Date(b.start_at || Date.now()).getTime() + 60 * 86400000) : new Date(b.end_at),
+    matches: kind === 'scheduled' ? Math.max(1, Math.min(20, int(b.matches, 1))) : 1,
     who: b.who === 'everyone' ? 'everyone' : 'members',
     no_staff: bool(b.no_staff),
     entry: b.entry === 'auto' ? 'auto' : 'enter',
@@ -633,8 +644,9 @@ function readBody(b, existing) {
     in_game: b.in_game === undefined ? true : bool(b.in_game),
     drop_mode: kind === 'drop' && b.drop_mode === 'manual' ? 'manual' : 'random',
     drop_to: kind === 'drop' && b.drop_to === 'all' ? 'all' : 'one',
+    // Drops: minutes played in the match the drop is decided in.
     drop_min_minutes: kind === 'drop' ? Math.max(0, Math.min(180, int(b.drop_min_minutes))) : 0,
-    live_draw: kind === 'scheduled' && bool(b.live_draw),
+    live_draw: kind === 'scheduled',
   };
   if (!g.title) throw new HttpError(400, 'Give it a title.');
   if (Number.isNaN(g.start_at.getTime()) || Number.isNaN(g.end_at.getTime())) throw new HttpError(400, 'Pick a start and an end time.');
@@ -645,7 +657,7 @@ function readBody(b, existing) {
 
 const COLS = ['kind', 'title', 'description', 'image', 'metric', 'start_at', 'end_at', 'who', 'no_staff', 'entry',
   'min_minutes', 'min_matches', 'min_kills', 'claim_days', 'in_game', 'prizes', 'winners', 'reward_type',
-  'drop_mode', 'drop_to', 'drop_min_minutes', 'live_draw'];
+  'drop_mode', 'drop_to', 'drop_min_minutes', 'live_draw', 'matches'];
 const rowValues = (g) => COLS.map((c) => (c === 'prizes' ? JSON.stringify(g.prizes) : g[c]));
 
 giveaways.get('/admin/giveaways', role('admin'), async (_req, res) => {
@@ -697,6 +709,10 @@ giveaways.put('/admin/giveaways/:id', role('admin'), async (req, res) => {
   const old = await one("SELECT * FROM giveaways WHERE id=$1 AND status IN ('scheduled','open')", [int(req.params.id)]);
   if (!old) throw new HttpError(400, 'Only giveaways that haven\'t finished can be changed.');
   const g = readBody(req.body || {}, old);
+  if (old.kind === 'scheduled' && old.status === 'open') {
+    g.matches = Math.max(g.matches, old.matches_done + 1);
+    g.start_at = old.start_at; // already started
+  }
   g.prizes = await readPrizes(req.body?.prizes, prizesOf(old));
   g.winners = g.prizes.reduce((n, p) => n + p.count, 0);
   g.reward_type = g.prizes[0].type;
@@ -730,11 +746,11 @@ giveaways.delete('/admin/giveaways/:id', role('admin'), async (req, res) => {
   res.json({ ok: true });
 });
 
-// Drops: trigger the next drop now (handed out when the match ends). Live-draw giveaway: draw at the end of the
-// match running now (or, if it's already waiting, right now from whoever is on). Others: end it and hand out now.
+// Drops: trigger the next drop now (handed out when the match ends). Giveaway: end it, drawing at the end of the
+// match running now (or, if it's already waiting, right now from whoever is on). Top players: hand out now.
 giveaways.post('/admin/giveaways/:id/draw', role('admin'), async (req, res) => {
   const g = await one("SELECT * FROM giveaways WHERE id=$1 AND status IN ('open','drawing')", [int(req.params.id)]);
-  if (!g) throw new HttpError(400, 'Only a running giveaway can be drawn.');
+  if (!g) throw new HttpError(400, 'Only a running giveaway can be drawn (a giveaway starts with the next match on the WPG server).');
   if (g.kind === 'drop') {
     const r = await triggerDrop(g.id);
     if (r.none) throw new HttpError(400, 'All the drops in this one have been used.');
@@ -742,12 +758,13 @@ giveaways.post('/admin/giveaways/:id/draw', role('admin'), async (req, res) => {
     await audit(req.user.id, 'giveaway.trigger', `${g.title} (#${g.id})`, { players: r.players });
     return res.json({ ok: true, winners: [], note: `Drop triggered: ${r.players} player${r.players === 1 ? '' : 's'} on the server ${r.players === 1 ? 'is' : 'are'} in it. It's handed out when this match ends.` });
   }
-  if (g.kind === 'scheduled' && g.live_draw && g.status === 'open') {
-    await startLiveDraw(g);
-    return res.json({ ok: true, winners: [], note: 'The draw happens when the match running now ends, among those on the server for it.' });
+  if (g.kind === 'scheduled' && g.status === 'open') {
+    await q("UPDATE giveaways SET matches = matches_done + 1 WHERE id=$1 AND status='open'", [g.id]);
+    await sayInGame(g, `WPG GIVEAWAY "${g.title}": this is now the LAST MATCH. Be on the server at the end of it to be in the draw!`);
+    changed();
+    return res.json({ ok: true, winners: [], note: 'This is now the last match: the draw happens when it ends, among those on the server for it.' });
   }
-  const won = g.kind === 'top' ? await drawTop(g, req.user.id)
-    : await drawScheduled(g, req.user.id, g.status === 'drawing' ? new Set((await onServerNow()).keys()) : null);
+  const won = g.kind === 'top' ? await drawTop(g, req.user.id) : await drawScheduled(g, req.user.id, await onNowAsPlayed());
   res.json({ ok: true, winners: won.map((w) => `${w.user.persona_name} (${w.prize})`), note: won.length ? '' : 'Nobody qualified, so there was no winner.' });
 });
 

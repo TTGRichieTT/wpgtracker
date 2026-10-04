@@ -1081,7 +1081,7 @@ async function giveawayPost(a) {
     const how = a.kind === 'drop'
       ? `${a.drop_mode === 'manual' ? 'Drops can trigger at any time' : 'Drops trigger at random times'} until ${ends}. Be on the WPG server when one triggers and ${stay}: ${a.drop_to === 'all' ? '**everyone** who does gets the prize' : 'one of you wins'}.`
       : a.kind === 'top' ? `**${a.metric}** on the WPG server until ${ends} wins (finished matches only).`
-        : `${a.entry === 'auto' ? 'Play on the WPG server to be entered.' : 'Press **Enter** in WPG Barracks to take part.'} Ends ${ends}.${a.live_draw ? ' The draw is at the end of the match running then: be on the WPG server for it.' : ''}`;
+        : `Runs for the next **${a.matches} match${a.matches === 1 ? '' : 'es'}** on the WPG server (starting now). ${a.entry === 'auto' ? 'Play to be entered.' : 'Press **Enter** in WPG Barracks to take part.'}${a.min_minutes ? ` Play at least ${a.min_minutes} minutes during them.` : ''} The draw is at the end of the last match: be on the server then.`;
     const title = a.kind === 'drop' ? `🎁 Drops: ${a.title}` : a.kind === 'top' ? `🏆 Top players: ${a.title}` : `🎁 Giveaway: ${a.title}`;
     return { embeds: [{ color: GOLD, title, description: `${how}\n\n**Prizes**\n${prizes}${a.description ? `\n\n${a.description}` : ''}`, ...image }], components: [button] };
   }

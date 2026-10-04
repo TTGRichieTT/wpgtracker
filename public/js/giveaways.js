@@ -40,7 +40,7 @@ function rulesHtml(g) {
   ].filter(Boolean);
   if (!rules.length) return '';
   const open = g.status === 'open';
-  return `<div class="ga-rules"><div class="small muted" style="margin-bottom:4px">On the WPG server during the giveaway (counted as each match ends):</div>
+  return `<div class="ga-rules"><div class="small muted" style="margin-bottom:4px">Also needed on the WPG server during these matches (finished matches only):</div>
     ${rules.map(([label, done, have]) => `<div class="small">${open && done ? '✅' : '⬜'} ${esc(label)}${open ? ` <span class="muted">(you: ${esc(have)})</span>` : ''}</div>`).join('')}</div>`;
 }
 
@@ -53,6 +53,8 @@ function standingsHtml(g) {
     ${g.my_place ? `<div class="small" style="margin-top:6px">You're <b>${ordinal(g.my_place.place)}</b> (${esc(g.my_place.score)})</div>` : ''}</div>`;
 }
 
+// Giveaways: when the draw happens and who can win it.
+const drawRule = (g) => `Runs for <b>${fmtNum(g.matches)} match${g.matches === 1 ? '' : 'es'}</b> on the WPG server. The draw is at the end of the last one: be on the server then to be in it.`;
 // Drops: the rule in one line.
 const dropRule = (g) => `Be on the <b>WPG server</b> when a drop triggers and stay until the <b>end of that match</b>${g.drop_min_minutes ? `, playing at least <b>${fmtNum(g.drop_min_minutes)} minutes</b> of it` : ''}: ${g.drop_to === 'all' ? '<b>everyone</b> who does gets the prize.' : 'one of you wins it.'}`;
 // A triggered drop waiting for its match to end.
@@ -63,19 +65,22 @@ function liveCard(g) {
   const open = g.status === 'open' || g.status === 'drawing';
   const [kindName, kindCls] = KIND[g.kind] || KIND.scheduled;
   const timing = g.status === 'drawing' ? 'Draw at the end of the current match'
-    : open
-      ? g.kind === 'drop' ? `${fmtNum(g.drops_left)} drop${g.drops_left === 1 ? '' : 's'} left · ends ${until(g.end_at)}` : `Ends ${until(g.end_at)} (${when(g.end_at)})`
-      : `Starts ${until(g.start_at)} (${when(g.start_at)})`;
+    : g.kind === 'scheduled'
+      ? open ? `Match ${fmtNum(Math.min(g.matches, g.matches_done + 1))} of ${fmtNum(g.matches)}${g.matches_done + 1 >= g.matches ? ' · last match: draw at the end' : ''}`
+        : new Date(g.start_at) > new Date() ? `Starts with the first match after ${when(g.start_at)}` : 'Starts with the next match on the WPG server'
+      : open
+        ? g.kind === 'drop' ? `${fmtNum(g.drops_left)} drop${g.drops_left === 1 ? '' : 's'} left · ends ${until(g.end_at)}` : `Ends ${until(g.end_at)} (${when(g.end_at)})`
+        : `Starts ${until(g.start_at)} (${when(g.start_at)})`;
   let action = '';
   if (!g.can_win) action = `<p class="small muted" style="margin:0">${g.who === 'members' ? 'This one is for WPG members.' : 'Staff can\'t win this one.'}</p>`;
-  else if (g.status === 'drawing') action = `<p class="small" style="margin:0"><b>The draw is at the end of the match on the WPG server.</b> ${g.entered || g.entry === 'auto' ? 'Be on the server until it ends to be in it.' : ''}</p>`;
+  else if (g.status === 'drawing') action = `<p class="small" style="margin:0"><b>The draw is at the end of the match on the WPG server now.</b> ${g.entered || g.entry === 'auto' ? 'Be on the server until it ends to be in it.' : ''}</p>`;
   else if (g.kind === 'drop') action = `<p class="small" style="margin:0">${dropRule(g)}${g.drop_mode === 'manual' ? ' Drops can trigger at any time.' : ''}</p>`;
   else if (g.kind === 'top') action = `<p class="small" style="margin:0"><b>${esc(g.metric_label)}</b> on the WPG server ${open ? 'until it ends' : 'once it starts'} wins. No need to enter.</p>`;
   else if (g.entry === 'auto') action = '<p class="small" style="margin:0">No need to enter: play on the <b>WPG server</b> during the giveaway and you\'re in.</p>';
-  else action = (g.entered
+  else action = g.entered
     ? `<div class="row" style="gap:8px"><span style="color:var(--green);font-weight:700">✓ You're in</span><button class="btn small ghost" data-leave="${g.id}">Leave</button></div>`
-    : `<button class="btn primary" data-enter="${g.id}">${icon('plus')} Enter</button>`)
-    + (g.live_draw ? '<p class="small muted" style="margin:6px 0 0">Live draw: you must be on the WPG server at the end of the match when it ends.</p>' : '');
+    : `<button class="btn primary" data-enter="${g.id}">${icon('plus')} Enter</button>`;
+  if (g.kind === 'scheduled' && g.status !== 'drawing') action += `<p class="small muted" style="margin:6px 0 0">${drawRule(g)}</p>`;
   return `<div class="panel ga-card${open ? ' glow' : ''}">
     ${g.image ? `<img class="ga-img" src="${esc(g.image)}" alt="" loading="lazy">` : ''}
     <div class="row between" style="gap:8px;align-items:flex-start">
@@ -132,7 +137,7 @@ export async function giveawaysAdminTab(body) {
   const d = await api('admin/giveaways');
   body.innerHTML = `<div class="panel">
       <div class="row between"><div class="panel-title" style="margin:0">${icon('gift')} Giveaways</div><button class="btn primary" id="gaNew">${icon('plus')} New giveaway</button></div>
-      <p class="muted small"><b>Giveaway</b>: runs between two times and draws its winners at random at the end. <b>Drops</b>: at secret random times (or whenever you press <b>Trigger a drop now</b>), for players on the WPG server who stay until the end of that match (and play long enough).
+      <p class="muted small"><b>Giveaway</b>: runs for a number of matches on the WPG server, starting with the next match; winners are drawn at random at the end of the last match, from those on the server then. <b>Drops</b>: at secret random times (or whenever you press <b>Trigger a drop now</b>), for players on the WPG server who stay until the end of that match (and play long enough).
         <b>Top players</b>: whoever does best on the WPG server in the time window (most kills, time played…) wins by place.
         Each can have several prizes. Clan XP, WPG XP and medals are given automatically; real prizes are claimed by the winner in the app and you mark them sent here.
         Server: ${d.servers.length ? esc(d.servers.join(', ')) : '<span style="color:var(--red)">none ticked "Matches here earn WPG XP" with RCON (Admin → Game servers): drops, top players and requirements need one</span>'}.</p>
@@ -153,14 +158,14 @@ export async function giveawaysAdminTab(body) {
         <div class="row" style="gap:6px">
           ${['scheduled', 'open'].includes(g.status) ? `<button class="btn small" data-edit="${g.id}">${icon('edit')} Edit</button>` : ''}
           ${['open', 'drawing'].includes(g.status) ? `<button class="btn small primary" data-draw="${g.id}">${g.kind === 'drop' ? `${icon('gift')} Trigger a drop now` : g.kind === 'top' ? 'End & give prizes now'
-            : g.status === 'drawing' ? 'Draw now (whoever is on)' : g.live_draw ? 'End: draw at the end of this match' : 'End & draw now'}</button>` : ''}
+            : g.status === 'drawing' ? 'Draw now (whoever is on)' : 'Make this the last match'}</button>` : ''}
           ${['scheduled', 'open', 'drawing'].includes(g.status) ? `<button class="btn small ghost" data-cancel="${g.id}">Cancel</button>` : `<button class="btn small ghost" data-del="${g.id}">${icon('trash')}</button>`}
         </div>
       </div>
-      <div class="small" style="margin-top:6px">${esc(when(g.start_at))} → ${esc(when(g.end_at))} · ${g.who === 'everyone' ? 'members + PMCs' : 'WPG members'}${g.no_staff ? ', no staff' : ''}
+      <div class="small" style="margin-top:6px">${g.kind === 'scheduled' ? `${fmtNum(g.matches)} match${g.matches === 1 ? '' : 'es'}${g.status === 'open' ? ` (${fmtNum(g.matches_done)} played)` : g.status === 'scheduled' ? ` from the next match${new Date(g.start_at) > new Date() ? ` after ${esc(when(g.start_at))}` : ''}` : ''}` : `${esc(when(g.start_at))} → ${esc(when(g.end_at))}`} · ${g.who === 'everyone' ? 'members + PMCs' : 'WPG members'}${g.no_staff ? ', no staff' : ''}
         ${g.kind === 'top' ? ` · <b>${esc(g.metric_label)}</b>` : ''}
         ${g.kind === 'drop' ? ` · ${g.drop_mode === 'manual' ? 'drops when you trigger them' : 'drops at random times'} · ${g.drop_to === 'all' ? 'everyone who qualifies gets it' : 'one winner each'}${g.drop_min_minutes ? ` · ${mins(g.drop_min_minutes)} in the match` : ''}${g.status !== 'done' ? ` · ${fmtNum(g.drops_left)} of ${fmtNum(g.winners)} left` : ''}` : ''}
-        ${g.kind === 'scheduled' && g.live_draw ? ' · live draw' : ''}
+
         ${g.kind === 'scheduled' ? ` · ${g.entry === 'auto' ? 'everyone who plays is entered' : `${fmtNum(g.entrants)} entered`}` : ''}
         ${g.min_minutes || g.min_matches || g.min_kills ? ` · needs ${[g.min_minutes && mins(g.min_minutes), g.min_matches && `${g.min_matches} matches`, g.min_kills && `${g.min_kills} kills`].filter(Boolean).join(', ')}` : ''}</div>
       <div class="small" style="margin-top:4px">${g.prizes.map((p) => `${icon('gift')} ${p.places ? `<b>${esc(p.places)}</b>: ` : ''}${esc(p.label)}${!p.places && p.count > 1 ? ` ×${p.count}` : ''}${p.codes ? ` <span class="muted">(${p.codes} code${p.codes === 1 ? '' : 's'})</span>` : ''}`).join(' &nbsp; ')}</div>
@@ -183,7 +188,8 @@ export async function giveawaysAdminTab(body) {
     b.onclick = async () => {
       const g = d.list.find((x) => x.id === Number(b.dataset.draw));
       const ask = g.kind === 'drop' ? 'Trigger a drop now? Everyone on the WPG server right now is in it, and it\'s handed out when this match ends.'
-        : g.kind === 'top' ? `End "${g.title}" now and give the prizes to the top players so far?` : `End "${g.title}" now and draw the winners?`;
+        : g.kind === 'top' ? `End "${g.title}" now and give the prizes to the top players so far?`
+          : g.status === 'drawing' ? `Draw "${g.title}" now from whoever is on the WPG server, without waiting for the match to end?` : `Make this the last match of "${g.title}"? The draw happens when it ends.`;
       if (!(await confirmBox(ask))) return;
       act(() => api(`admin/giveaways/${g.id}/draw`, { method: 'POST', body: {} }), (r) => (r.winners.length ? `Winners: ${r.winners.join(', ')}` : r.note || 'Done'));
     };
@@ -198,8 +204,8 @@ async function giveawayForm(g, d, done) {
   const medals = await api('admin/awards').catch(() => []);
   const now = Date.now();
   const v = g ? { ...g } : {
-    kind: 'scheduled', title: '', description: '', image: '', metric: 'kills', drop_mode: 'random', drop_to: 'one', drop_min_minutes: 0, live_draw: false,
-    start_at: new Date(now + 5 * 60000).toISOString(), end_at: new Date(now + 7 * 86400000).toISOString(),
+    kind: 'scheduled', title: '', description: '', image: '', metric: 'kills', drop_mode: 'random', drop_to: 'one', drop_min_minutes: 0, matches: 1,
+    start_at: new Date(now).toISOString(), end_at: new Date(now + 7 * 86400000).toISOString(),
     who: 'members', no_staff: false, entry: 'enter', min_minutes: 0, min_matches: 0, min_kills: 0, claim_days: 7, in_game: true,
   };
   // Prizes being edited (codes are never sent back: typing new ones replaces the saved ones).
@@ -208,7 +214,7 @@ async function giveawayForm(g, d, done) {
   const m = modal(`<form id="gaf" class="stack" style="max-width:700px">
     <div class="row between"><h2 style="margin:0">${g ? 'Edit giveaway' : 'New giveaway'}</h2><button type="button" class="btn ghost small" data-close>✕</button></div>
     ${g ? '' : `<div class="stack" style="gap:6px">
-      <label class="check"><input type="radio" name="kind" value="scheduled"${v.kind === 'scheduled' ? ' checked' : ''}> <b>Giveaway</b> <span class="small muted">— winners drawn at random at the end</span></label>
+      <label class="check"><input type="radio" name="kind" value="scheduled"${v.kind === 'scheduled' ? ' checked' : ''}> <b>Giveaway</b> <span class="small muted">— runs for a number of matches, drawn at the end of the last one</span></label>
       <label class="check"><input type="radio" name="kind" value="drop"${v.kind === 'drop' ? ' checked' : ''}> <b>Drops</b> <span class="small muted">— at random times or when you trigger one, for players on the WPG server who stay to the end of the match</span></label>
       <label class="check"><input type="radio" name="kind" value="top"${v.kind === 'top' ? ' checked' : ''}> <b>Top players</b> <span class="small muted">— best on the WPG server in the time window win by place</span></label></div>`}
     <label class="field"><span>Title</span><input type="text" name="title" maxlength="100" required value="${esc(v.title)}" placeholder="e.g. Weekend kill race"></label>
@@ -226,19 +232,19 @@ async function giveawayForm(g, d, done) {
     <label class="field"><span>Description (optional)</span><textarea name="description" maxlength="1500">${esc(v.description)}</textarea></label>
     <label class="field"><span>Picture link (optional, https)</span><input type="url" name="image" value="${esc(v.image)}"></label>
     <div class="form-grid">
-      <label class="field"><span>Starts</span><input type="datetime-local" name="start_at" required value="${localInput(v.start_at)}"></label>
-      <label class="field"><span>Ends</span><input type="datetime-local" name="end_at" required value="${localInput(v.end_at)}"></label>
+      <label class="field" data-kind="scheduled"><span>Number of matches</span><input type="number" name="matches" min="1" max="20" value="${esc(v.matches || 1)}"></label>
+      <label class="field"><span data-start-label>Starts</span><input type="datetime-local" name="start_at" required value="${localInput(v.start_at)}"></label>
+      <label class="field" data-not-scheduled><span>Ends</span><input type="datetime-local" name="end_at" value="${localInput(v.end_at)}"></label>
       <label class="field"><span>Who can win</span><select name="who"><option value="members"${v.who === 'members' ? ' selected' : ''}>WPG members</option><option value="everyone"${v.who === 'everyone' ? ' selected' : ''}>WPG members and PMCs</option></select></label>
       <label class="field" data-kind="scheduled"><span>Taking part</span><select name="entry"><option value="enter"${v.entry === 'enter' ? ' selected' : ''}>Members press Enter</option><option value="auto"${v.entry === 'auto' ? ' selected' : ''}>Everyone who plays on the WPG server</option></select></label>
       <label class="field" data-items><span>Days to claim real prizes</span><input type="number" name="claim_days" min="1" max="60" value="${esc(v.claim_days)}"></label>
     </div>
-    <div data-kind="scheduled"><span class="small muted">Must do on the WPG server during the giveaway (0 = no need):</span>
+    <div data-kind="scheduled"><span class="small muted">Needed on the WPG server during these matches (finished matches only, 0 = no need):</span>
       <div class="form-grid" style="margin-top:6px">
         <label class="field"><span>Minutes played</span><input type="number" name="min_minutes" min="0" value="${esc(v.min_minutes)}"></label>
         <label class="field"><span>Matches</span><input type="number" name="min_matches" min="0" value="${esc(v.min_matches)}"></label>
         <label class="field"><span>Kills</span><input type="number" name="min_kills" min="0" value="${esc(v.min_kills)}"></label>
       </div></div>
-    <label class="check" data-kind="scheduled"><input type="checkbox" name="live_draw"${v.live_draw ? ' checked' : ''}> Live draw: winners must be on the WPG server at the end of the match running at the end time</label>
     <label class="check"><input type="checkbox" name="no_staff"${v.no_staff ? ' checked' : ''}> Staff (mods and admins) can't win</label>
     <label class="check"><input type="checkbox" name="in_game"${v.in_game ? ' checked' : ''}> Announce on the WPG server (start and winners)</label>
     <p class="small muted" style="margin:0">Times are in your own time zone. Only people with a WPG Barracks account can win. Winners are told in the app, on Discord and in-game.</p>
@@ -294,7 +300,12 @@ async function giveawayForm(g, d, done) {
   });
   f.querySelector('#gaAdd').onclick = () => { prizes.push({ type: 'clan_xp', text: '', amount: 500, medal: medals[0]?.id, count: 1, codes: '' }); drawPrizes(); };
 
-  const sync = () => { f.querySelectorAll('[data-kind]').forEach((el) => { el.style.display = el.dataset.kind === kind() ? '' : 'none'; }); drawPrizes(); };
+  const sync = () => {
+    f.querySelectorAll('[data-kind]').forEach((el) => { el.style.display = el.dataset.kind === kind() ? '' : 'none'; });
+    f.querySelectorAll('[data-not-scheduled]').forEach((el) => { el.style.display = kind() === 'scheduled' ? 'none' : ''; });
+    f.querySelector('[data-start-label]').textContent = kind() === 'scheduled' ? 'Starts with the first match after' : 'Starts';
+    drawPrizes();
+  };
   f.querySelectorAll('[name=kind]').forEach((r) => r.addEventListener('change', sync));
   sync();
   f.onsubmit = async (e) => {
@@ -302,10 +313,10 @@ async function giveawayForm(g, d, done) {
     const b = {
       kind: kind(), title: f.title.value, description: f.description.value, image: f.image.value, metric: f.metric.value,
       prizes: prizes.map((p) => ({ type: p.type, text: p.text, amount: p.amount, medal: p.medal, count: p.count, codes: p.codes })),
-      claim_days: f.claim_days.value, start_at: new Date(f.start_at.value).toISOString(), end_at: new Date(f.end_at.value).toISOString(),
+      claim_days: f.claim_days.value, start_at: new Date(f.start_at.value).toISOString(), end_at: f.end_at.value ? new Date(f.end_at.value).toISOString() : '',
       who: f.who.value, entry: f.entry.value, min_minutes: f.min_minutes.value, min_matches: f.min_matches.value, min_kills: f.min_kills.value,
       no_staff: f.no_staff.checked, in_game: f.in_game.checked,
-      drop_mode: f.drop_mode.value, drop_to: f.drop_to.value, drop_min_minutes: f.drop_min_minutes.value, live_draw: f.live_draw.checked,
+      drop_mode: f.drop_mode.value, drop_to: f.drop_to.value, drop_min_minutes: f.drop_min_minutes.value, matches: f.matches.value,
     };
     try {
       await api(g ? `admin/giveaways/${g.id}` : 'admin/giveaways', { method: g ? 'PUT' : 'POST', body: b });

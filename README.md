@@ -204,10 +204,11 @@ They were cut from the WPG Discord career card. The mountain background is `publ
 
 ### Giveaways (Admin → Giveaways)
 
-- **Giveaway:** runs between a start and end time; winners are drawn at random at the end. Members press **Enter**,
-  or everyone who plays on the WPG server is entered. Optional things to do on the WPG server during it (minutes
-  played, matches, kills). Tick **Live draw** and the draw waits for the match running at the end time to finish:
-  only people on the server at the end of it can win.
+- **Giveaway:** runs for a set number of matches on the WPG server, starting with the next match (optionally not
+  before a set time). Members press **Enter**, or everyone who plays on the WPG server is entered. Optional
+  requirements during those matches (minutes played, matches, kills: finished matches only). Winners are drawn at
+  random at the end of the last match, from those on the server then. A crashed match doesn't count (it runs one
+  more). **Make this the last match** ends it early.
 - **Drops:** trigger at secret random times in the window, or only when you press **Trigger a drop now** (which also
   works any time). Everyone on the WPG server when a drop triggers is in it; when that match ends, those still on who
   played at least the set minutes of it get the prize: **everyone who qualifies**, or **one random player**. If the app
