@@ -179,7 +179,7 @@ export async function awardMatch(serverId, players, match) {
   const log = [];
   const rankUps = [];
   for (const p of players) {
-    const d = { minutes: Math.round(p.secs / 60), kills: p.kills, deaths: p.deaths };
+    const d = { minutes: Math.round(p.secs / 60), kills: p.kills, deaths: p.deaths, ...(p.stayed ? {} : { stayed: false }) };
     let gain = 0;
     let penalty = 0;
     const add = (key, v) => {

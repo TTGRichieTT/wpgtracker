@@ -206,11 +206,16 @@ They were cut from the WPG Discord career card. The mountain background is `publ
 
 - **Giveaway:** runs between a start and end time; winners are drawn at random at the end. Members press **Enter**,
   or everyone who plays on the WPG server is entered. Optional things to do on the WPG server during it (minutes
-  played, matches, kills), counted as each match ends.
-- **Random drops:** in a time window, the app picks secret random moments (one per drop). At each, a random person
-  who is on the WPG server right then wins. Nobody on? It tries again 10 minutes later.
+  played, matches, kills). Tick **Live draw** and the draw waits for the match running at the end time to finish:
+  only people on the server at the end of it can win.
+- **Drops:** trigger at secret random times in the window, or only when you press **Trigger a drop now** (which also
+  works any time). Everyone on the WPG server when a drop triggers is in it; when that match ends, those still on who
+  played at least the set minutes of it get the prize: **everyone who qualifies**, or **one random player**. If the app
+  lost sight of the server or half the players dropped out at once (a crash), or nobody qualified, the drop triggers
+  again 10 minutes later. A match that never ends is settled after 90 minutes with whoever is on.
 - **Top players:** whoever does best on the WPG server in the time window wins by place: most kills, time played,
   matches, wins, WPG XP earned, or highest on the WPG rank leaderboard. Members see the live standings.
+- **Finished matches only:** requirements and Top players count only matches the player stayed in until the end.
 - **Prizes:** each giveaway has a list of prizes, in order (the first goes to the first winner / drop / place), each
   with how many winners, drops or places get it, e.g. 1st: £25 card, 2nd–3rd: 500 Clan XP, 4th–10th: 100 Clan XP.
   A prize is something real (the winner presses **Claim** in the app within the days you set, then you press **Mark

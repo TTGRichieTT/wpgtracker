@@ -374,6 +374,12 @@ export const giveaways = pgTable('giveaways', {
   reward_codes: jsonb().notNull().default([]), // sealed codes / keys, one per winner (never sent to browsers)
   prizes: jsonb().notNull().default([]),
   metric: text().notNull().default(''), // top: kills | minutes | matches | wins | wpg_xp | rank
+  drop_mode: text().notNull().default('random'), // drops: random (secret random times) | manual (only when staff trigger one)
+  drop_to: text().notNull().default('one'), // drops: one (a random player who qualifies) | all (everyone who qualifies)
+  drop_min_minutes: integer().notNull().default(0), // drops: minutes played in that match to qualify
+  live_draw: boolean().notNull().default(false), // giveaway: draw at the end of the match running at the end time, among those on the server
+  // Draws waiting for a match to end: drops [{ slot, at, server, pool: [steam ids] }] or { slot, retry_at } to try again.
+  pending: jsonb().notNull().default([]),
   winners: integer().notNull().default(1),
   start_at: timestamp({ withTimezone: true }).notNull(),
   end_at: timestamp({ withTimezone: true }).notNull(),
@@ -443,6 +449,7 @@ export const matchPlayers = pgTable('match_players', {
   deaths: integer().notNull().default(0),
   seconds: integer().notNull().default(0),
   won: boolean(),
+  stayed: boolean(), // still on when the match ended (null: recorded before this was kept)
   ended_at: now(),
 }, (t) => [index('match_players_steam_idx').on(t.steam_id)]);
 

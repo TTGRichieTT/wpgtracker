@@ -11,6 +11,7 @@ import { recalcXp } from './steam.js';
 import { bus } from './bus.js';
 import { watchPoll } from './cheatwatch.js';
 import { awardMatch } from './wpgxp.js';
+import { matchEnded } from './giveaways.js';
 
 const POLL_MS = 30 * 1000;
 const RECENT_MS = 3 * 60 * 1000; // must have been seen this recently at match end to get a win/loss
@@ -40,8 +41,8 @@ async function finishMatch(server, state) {
     }
     if ((p.secs || 0) >= 60) {
       await q(
-        'INSERT INTO match_players (server_id, steam_id, name, faction, kills, deaths, seconds, won) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [serverId, sid, String(p.name || '').slice(0, 64), p.faction || '', kills, deaths, p.secs, won],
+        'INSERT INTO match_players (server_id, steam_id, name, faction, kills, deaths, seconds, won, stayed) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [serverId, sid, String(p.name || '').slice(0, 64), p.faction || '', kills, deaths, p.secs, won, !!stayed],
       ).catch((e) => console.warn('[tracker] match row', e.message));
       played.push({ steam_id: sid, name: String(p.name || '').slice(0, 64), secs: p.secs, kills, deaths, stayed: !!stayed, won });
     }
@@ -50,6 +51,12 @@ async function finishMatch(server, state) {
     const healthy = (state.maxGap || 0) <= HEALTHY_GAP_MS && Date.now() - (state.at || 0) <= HEALTHY_GAP_MS;
     await awardMatch(serverId, played, { winner: !!winner, scored: best > 0, healthy })
       .catch((e) => console.warn('[tracker] WPG XP', e.message));
+    // Giveaway draws waiting for this match to end: everyone still on at the end, with the seconds they played in it.
+    // Not trusted if the app lost sight of the server, or half the players dropped out at once (a crash).
+    const stayed = new Map(Object.entries(state.players || {}).filter(([, p]) => p.faction && Date.now() - (p.seen || 0) <= RECENT_MS).map(([sid, p]) => [sid, p.secs || 0]));
+    const crash = played.length > 0 && played.filter((p) => !p.stayed).length / played.length >= 0.5;
+    await matchEnded(serverId, stayed, { trusted: healthy && !crash })
+      .catch((e) => console.warn('[tracker] giveaways', e.message));
   }
 }
 

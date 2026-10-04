@@ -1077,19 +1077,23 @@ async function giveawayPost(a) {
   if (a.event === 'start') {
     const ends = `<t:${Math.floor(new Date(a.end_at).getTime() / 1000)}:R>`;
     const prizes = (a.prizes || []).map((p) => `• ${p.places ? `**${p.places}:** ` : ''}${p.label}${!p.places && p.count > 1 ? ` ×${p.count}` : ''}`).join('\n');
-    const how = a.kind === 'drop' ? `Be on the WPG server: at random moments until ${ends}, someone on the server wins.`
-      : a.kind === 'top' ? `**${a.metric}** on the WPG server until ${ends} wins.`
-        : `${a.entry === 'auto' ? 'Play on the WPG server to be entered.' : 'Press **Enter** in WPG Barracks to take part.'} Ends ${ends}.`;
-    const title = a.kind === 'drop' ? `🎁 Random drops: ${a.title}` : a.kind === 'top' ? `🏆 Top players: ${a.title}` : `🎁 Giveaway: ${a.title}`;
+    const stay = `stay until the end of that match${a.drop_min_minutes ? ` and play at least ${a.drop_min_minutes} minutes of it` : ''}`;
+    const how = a.kind === 'drop'
+      ? `${a.drop_mode === 'manual' ? 'Drops can trigger at any time' : 'Drops trigger at random times'} until ${ends}. Be on the WPG server when one triggers and ${stay}: ${a.drop_to === 'all' ? '**everyone** who does gets the prize' : 'one of you wins'}.`
+      : a.kind === 'top' ? `**${a.metric}** on the WPG server until ${ends} wins (finished matches only).`
+        : `${a.entry === 'auto' ? 'Play on the WPG server to be entered.' : 'Press **Enter** in WPG Barracks to take part.'} Ends ${ends}.${a.live_draw ? ' The draw is at the end of the match running then: be on the WPG server for it.' : ''}`;
+    const title = a.kind === 'drop' ? `🎁 Drops: ${a.title}` : a.kind === 'top' ? `🏆 Top players: ${a.title}` : `🎁 Giveaway: ${a.title}`;
     return { embeds: [{ color: GOLD, title, description: `${how}\n\n**Prizes**\n${prizes}${a.description ? `\n\n${a.description}` : ''}`, ...image }], components: [button] };
   }
   const users = new Map((await q('SELECT * FROM users WHERE id = ANY($1)', [(a.winners || []).map((w) => w.userId)])).map((u) => [u.id, u]));
-  const lines = (a.winners || []).map((w) => {
+  const all = (a.winners || []).map((w) => {
     const u = users.get(w.userId);
     const who = `**${u?.persona_name || 'Someone'}**${mentionFor(u)}`;
     return a.kind === 'top' ? `**${w.place}.** ${who} (${w.score}): ${w.prize}` : `${who} won **${w.prize}**`;
   });
-  const title = a.kind === 'top' ? `🏆 Top players results: ${a.title}` : a.kind === 'drop' ? '🎉 Random drop winner' : `🎉 Giveaway winners: ${a.title}`;
+  // A drop to everyone can have lots of winners: keep the post short.
+  const lines = all.length > 25 ? [...all.slice(0, 25), `…and ${all.length - 25} more`] : all;
+  const title = a.kind === 'top' ? `🏆 Top players results: ${a.title}` : a.kind === 'drop' ? `🎉 Drop: ${a.title}` : `🎉 Giveaway winners: ${a.title}`;
   return { embeds: [{ color: GOLD, title, description: `${a.kind === 'top' ? `${a.metric}\n\n` : ''}${lines.join('\n')}\n\nGG!`, ...image }], components: [button] };
 }
 // Admin → Settings preview of the channel posts, made from the admin's own rank, medals and WPG rank.
