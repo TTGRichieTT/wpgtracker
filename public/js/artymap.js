@@ -1,5 +1,5 @@
 // Interactive artillery map: place your gun and targets, get distance, bearing and elevation.
-// Map tiles were imported once from WARDOGS Tracker (with permission); map positions use the
+// Map tiles were imported once from WARDOGS Tracker; map positions use the
 // in-game coordinate system (1 unit = 100 m, x to the east, y to the NORTH / up the map).
 import { api, esc, fmtNum, elevationFor } from './app.js';
 import { icon } from './icons.js';

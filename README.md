@@ -241,7 +241,7 @@ They were cut from the WPG Discord career card. The mountain background is `publ
 ### Progression page and artillery data
 
 - **Unlocks** (Admin → Unlocks): the full Wardogs progression — 197 unlocks with levels, costs and pictures.
-  Imported once from WARDOGS Tracker (used with permission) and now stored in our own database.
+  Imported once from WARDOGS Tracker and now stored in our own database.
   Pictures are in `public/img/unlocks/`. After a game update, edit, add or delete items in Admin → Unlocks.
 - **Artillery** (Admin → Artillery): firing tables for the L81 mortar and SPH-2 (low and high arc), used by the
   Arty map. Originally from [wardogs-calculator](https://github.com/apollyon-sys/wardogs-calculator)
@@ -254,7 +254,7 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   in-game X, Y), then tap targets. Each target shows **distance**, **bearing** (degrees and mils) and **elevation** for the
   chosen gun, with Add / Drop / Left / Right 10 m corrections. Range rings show the gun's minimum and maximum range.
 - Positions use the in-game coordinates (1 unit = 100 m). Saved per map on each device.
-- Map pictures were imported once from WARDOGS Tracker (with permission) into `public/maps/`; spawn/tower positions
+- Map pictures were imported once from WARDOGS Tracker into `public/maps/`; spawn/tower positions
   and map coordinates from wardogs-calculator (MIT). Map engine: Leaflet (BSD licence, `public/vendor/leaflet/`).
 
 ---

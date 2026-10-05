@@ -115,7 +115,7 @@ export async function seed({ q, one }) {
 
   // Fill in the WPG Discord invite once for databases made before it was the default.
   // One-off imports, stored in our own database from then on (admins edit them in Admin):
-  //  - unlocks: full WARDOGS progression, from WARDOGS Tracker (used with permission), pictures in public/img/unlocks
+  //  - unlocks: full WARDOGS progression, from WARDOGS Tracker, pictures in public/img/unlocks
   //  - artillery: firing tables from wardogs-calculator by Apollyon (MIT licence, server/data/LICENSE-wardogs-calculator.txt)
   if (!(await one("SELECT value FROM settings WHERE key = '_imported_unlocks_v2'"))) {
     const unlocks = readData('unlocks.json');
