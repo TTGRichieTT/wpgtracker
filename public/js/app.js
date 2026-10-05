@@ -614,9 +614,6 @@ async function syncMine(e) {
     if (r.steam && !r.steam.ok) notes.push(`Steam: ${r.steam.reason}`);
     if (r.steam?.private) notes.push('Steam: your game details are private, so playtime cannot be read.');
     if (r.wardogs && !r.wardogs.ok) notes.push(`Wardogs: ${r.wardogs.reason}`);
-    else if (r.wardogs && !r.wardogs.official) notes.push('Wardogs: no global stats found. Add your in-game name (Name#1234) in Edit profile.');
-    else if (r.wardogs?.state === 'resuming') notes.push('Wardogs: re-linked — your stats catch up within about 15 minutes.');
-    else if (STALE_STATES[r.wardogs?.state]) notes.push(`Wardogs: not updating — ${STALE_STATES[r.wardogs.state]}. Re-link on wardogs.tools (see HQ).`);
     toast('Stats synced', notes.join(' ') || 'All up to date.');
     await refreshMe();
     route();
@@ -627,70 +624,31 @@ async function syncMine(e) {
   }
 }
 
-// ---------- Wardogs stats linking ----------
-// Global stats are found by the member's in-game name (Name#1234). Once found they update by themselves.
+// ---------- Wardogs stats ----------
+// Keep legacy tracker state recognizable while showing only that the saved snapshot is no longer refreshed.
 const needsTracker = () => state.realSteam && !state.trackerLinked;
-// Linked, but the source stopped reading my account (my link to WARDOGS expired), so my stats are frozen.
-const STALE_STATES = { paused: 'your link to WARDOGS has expired', stalled: 'nothing has come through for several hours', unavailable: 'WARDOGS no longer recognises your account' };
-const staleLink = () => state.trackerLinked && !!STALE_STATES[state.trackerState];
+// Preserve a visible notice for older saved tracker states that had already stopped updating.
+const STALE_STATES = new Set(['paused', 'stalled', 'unavailable']);
+const staleLink = () => state.trackerLinked && STALE_STATES.has(state.trackerState);
 function staleCardHtml() {
   const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
   return `<div class="panel glow tracker-card" style="border-color:#f5a524">
-    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Your Wardogs stats stopped updating${since}</div>
-    <p style="margin:0 0 6px">wardogs.tools says ${STALE_STATES[state.trackerState]}, so your level, cash and class levels here are the last ones it read.</p>
-    <p style="margin:0 0 10px"><b>Fix (one minute):</b> open wardogs.tools, sign in and link your Wardogs account again. Then come back and press <b>Sync stats</b> — it can take up to 15 minutes to catch up.</p>
-    <div class="row"><a class="btn primary" href="${WARDOGS_LINK}" target="_blank" rel="noopener">${icon('target')} Re-link on wardogs.tools</a><button class="btn" type="button" data-stale-sync>${icon('refresh')} Sync stats</button></div>
+    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Wardogs stats are a saved snapshot${since}</div>
+    <p style="margin:0">External Wardogs Tracker syncing is disabled. Any level, cash and class levels shown here are the last saved values and will not refresh.</p>
   </div>`;
 }
-document.addEventListener('click', (e) => { const b = e.target.closest('[data-stale-sync]'); if (b) syncMine({ currentTarget: b }); });
-const WARDOGS_LINK = 'https://wardogs.tools/account';
 
 function trackerCardHtml() {
   return `<div class="panel glow tracker-card" data-tracker-card>
     <div class="row" style="align-items:flex-start;gap:16px">
       <img src="/img/brand/wolf-emblem.webp" alt="" style="width:74px;border-radius:6px">
-      <form class="grow" style="min-width:220px" data-tracker-form>
-        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Link your <span class="sub">Wardogs stats</span></div>
-        <p style="margin:0 0 10px">One time only, about a minute. After this your level, XP, cash and class levels show here and <b>update by themselves</b>.</p>
-        <p style="margin:0 0 6px"><b>1.</b> Open wardogs.tools, sign in and link your Wardogs account. It then shows your <b>in-game name with its 4 numbers</b> — copy it.</p>
-        <div class="row" style="margin:0 0 12px">
-          <a class="btn" href="${WARDOGS_LINK}" target="_blank" rel="noopener">${icon('target')} Link on wardogs.tools</a>
-        </div>
-        <p style="margin:0 0 6px"><b>2.</b> Paste your <b>in-game name</b> here, like <b>Richie_TT#6201</b>, and press Find my stats.</p>
-        <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
-        <div class="row">
-          <input type="text" name="wardogs_name" maxlength="60" placeholder="Name#1234" class="grow" style="min-width:160px">
-          <button class="btn primary">${icon('target')} Find my stats</button>
-        </div>
-      </form>
+      <div class="grow" style="min-width:220px">
+        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Wardogs stats sync is disabled</div>
+        <p style="margin:0">External Wardogs Tracker requests are turned off. Previously saved level, XP, cash and class levels remain available as snapshots and will not refresh.</p>
+      </div>
     </div>
   </div>`;
 }
-
-// One listener for every link card, wherever it appears.
-document.addEventListener('submit', async (e) => {
-  const form = e.target.closest('[data-tracker-form]');
-  if (!form) return;
-  e.preventDefault();
-  const status = form.querySelector('[data-tracker-status]');
-  const btn = form.querySelector('button');
-  btn.disabled = true;
-  if (status) status.textContent = 'Looking…';
-  try {
-    const r = await api('me/tracker-check', { method: 'POST', body: { wardogs_name: form.wardogs_name.value.trim() } });
-    if (r.linked) {
-      state.trackerLinked = true;
-      toast('Wardogs stats linked!', 'Your global stats are now on your career profile.', { link: `#/u/${state.me.id}` });
-      route();
-      return;
-    }
-    if (status) status.textContent = `${r.reason || 'Not found'}. Check the spelling and the 4 numbers. If you only just linked on wardogs.tools, give it a few minutes to sync, then try again.`;
-  } catch (x) {
-    if (status) status.textContent = x.status === 429 ? 'Wait a few seconds, then try again.' : x.message;
-  } finally {
-    btn.disabled = false;
-  }
-});
 
 // ---------- Unlocks (admin-maintained list) ----------
 export function lastNextUnlock(list, role, level) {
@@ -864,8 +822,8 @@ async function viewProfile(main, [id]) {
 
       <div class="grid two">
         <div class="panel">
-          <div class="panel-title">${icon('target')} Official Wardogs <span class="sub">(global server)</span></div>
-          ${off && p.wardogs.ranks?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${STALE_STATES[p.wardogs.ranks.state] ? '#f5a524' : 'var(--muted)'}">Stats as of ${esc(fmtDate(p.wardogs.ranks.polled_at))} ${esc(new Date(p.wardogs.ranks.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${STALE_STATES[p.wardogs.ranks.state] ? ' — not updating (the link to WARDOGS needs renewing on wardogs.tools)' : ''}</p>` : ''}
+          <div class="panel-title">${icon('target')} Wardogs <span class="sub">(saved snapshot)</span></div>
+          ${off && p.wardogs.ranks?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:var(--muted)">Last saved ${esc(fmtDate(p.wardogs.ranks.polled_at))} ${esc(new Date(p.wardogs.ranks.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))} · external syncing is disabled</p>` : ''}
           ${officialHtml}
         </div>
         <div class="panel">
@@ -982,7 +940,7 @@ async function viewEditProfile(main) {
         ${fields.map((f) => `<label class="field"><span>${esc(f.label)}</span>${f.type === 'select'
           ? `<select name="cf_${esc(f.key)}"><option value="">—</option>${f.options.split(',').map((o) => o.trim()).filter(Boolean).map((o) => `<option ${u.custom_fields?.[f.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
           : `<input type="text" name="cf_${esc(f.key)}" maxlength="200" value="${esc(u.custom_fields?.[f.key] || '')}"${f.key === 'wardogs_name' ? ' placeholder="Name#1234"' : ''}>`}${f.key === 'wardogs_name'
-          ? `<small class="muted">First time? <a href="${WARDOGS_LINK}" target="_blank" rel="noopener">Link your account on wardogs.tools</a> — once you're signed in there it shows your in-game name with its 4 numbers.</small>` : ''}</label>`).join('')}
+          ? `<small class="muted">This in-game name was used for external Wardogs stats matching. External syncing is disabled, so changing it will not refresh those stats.</small>` : ''}</label>`).join('')}
       </div>
       <label class="field"><span>About me</span><textarea name="bio" maxlength="1000">${esc(u.bio)}</textarea></label>
       ${skillList.length ? `<div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">My skills <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— shown on your profile (tick any)</span></span>

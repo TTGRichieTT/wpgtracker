@@ -170,20 +170,11 @@ export async function careerCard(user) {
 
 // ---------- Commands ----------
 // /stats: the WPG career card picture (falls back to a text card if the picture can't be made).
-// Gets the member's latest numbers from wardogs.tools before a stats card is made (at most once every
-// 2 minutes per member). Returns a warning line if their stats have stopped updating there.
+// Wardogs stats are saved snapshots; external tracker syncing is disabled.
 async function freshWardogs(user) {
   const ws = await one('SELECT ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
-  let ranks = ws?.ranks || null;
-  if (!ws?.ranks_synced || Date.now() - new Date(ws.ranks_synced).getTime() > 2 * 60 * 1000) {
-    const { syncWardogs } = await import('./wardogs.js');
-    const r = await syncWardogs(user, { force: true }).catch((e) => { problem('Refreshing Wardogs stats', e.message); return null; });
-    if (r?.ok) ranks = r;
-  }
-  const STALE = { paused: 'their link to WARDOGS has expired', stalled: 'nothing has come through for several hours', unavailable: 'WARDOGS no longer recognises the account' };
-  if (!STALE[ranks?.state]) return '';
-  const since = ranks.polled_at ? ` on ${new Date(ranks.polled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '';
-  return `⚠️ **${user.persona_name}**'s Wardogs stats stopped updating${since} — ${STALE[ranks.state]}. Re-link on wardogs.tools to fix it.`;
+  if (!ws?.ranks && !ws?.ranks_synced) return '';
+  return `ℹ️ **${user.persona_name}**'s Wardogs stats are saved snapshots; external tracker syncing is disabled.`;
 }
 
 async function cmdStats(data, caller) {
@@ -669,46 +660,6 @@ async function cmdUnit(data, caller) {
   const text = () => ({ content: `**${unit.name}** — ${unit.label}\n${unit.mission}\n${unit.roles.map((r) => `· ${r.name}: ${r.members.map((m) => m.name).join(', ') || '_open_'}`).join('\n')}`.slice(0, 1900) });
   return asPicture('unit', (cards) => cards.renderUnitCard(unit), text, { label: 'Open Combat Command', url: `${SITE()}/#/command` });
 }
-
-// A member's wardogs.tools link stopped working (ranking.js decides when, and limits it to one alert
-// plus one reminder): tell them in the app, and by Discord DM if they've linked their Discord.
-const LINK_PROBLEM = {
-  paused: 'your link to WARDOGS has expired',
-  stalled: 'nothing has come through from WARDOGS for a long time',
-  unavailable: 'WARDOGS no longer recognises your linked account',
-};
-bus.on('wardogs:link', async (a) => {
-  const why = LINK_PROBLEM[a.state] || 'your stats have stopped updating';
-  const since = a.polled_at ? ` on ${new Date(a.polled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : '';
-  const title = a.reminder ? 'Reminder: your Wardogs stats are still not updating' : 'Your Wardogs stats stopped updating';
-  bus.emit('notify', a.userId, { title, body: `${why[0].toUpperCase()}${why.slice(1)}. Re-link on wardogs.tools (one minute), then press Sync stats.`, link: '#/' });
-  try {
-    const u = await one('SELECT discord_id, persona_name FROM users WHERE id=$1', [a.userId]);
-    if (!u?.discord_id || !TOKEN()) return;
-    const dm = await discordFetch('/users/@me/channels', 'POST', { recipient_id: u.discord_id });
-    await sendToChannel(dm.id, {
-      embeds: [{
-        color: 0xf5a524,
-        title: `⚠️ ${title}`,
-        description: [
-          `Hi ${u.persona_name} — your Wardogs level, cash and class levels in WPG Barracks stopped updating${since}, because ${why}.`,
-          '',
-          '**Fix it in about a minute:**',
-          '1. Press **Re-link on wardogs.tools** below and sign in.',
-          '2. Link your Wardogs account again.',
-          '3. Back in the app, press **Sync stats** (it can take up to 15 minutes to catch up).',
-          a.reminder ? '\nThis is the only reminder — after this, the app will just show it on your HQ page.' : '',
-        ].join('\n'),
-      }],
-      components: [{ type: 1, components: [
-        { type: 2, style: 5, label: 'Re-link on wardogs.tools', url: 'https://wardogs.tools/account' },
-        { type: 2, style: 5, label: 'Open WPG Barracks', url: `${SITE()}/#/` },
-      ] }],
-    });
-  } catch (e) {
-    problem('Wardogs link reminder DM', e.message);
-  }
-});
 
 // Recruitment news: new applications / requests go to the recruitment channel (or the staff channel);
 // decisions go to the member as a Discord direct message (if they've linked their Discord).

@@ -2,7 +2,6 @@ import express from 'express';
 import { q, one, getSettings, flag } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp } from './steam.js';
-import { syncWardogs } from './wardogs.js';
 import { combatFor, isWpg, specialties } from './combat.js';
 import { rankProgress } from './wpgxp.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
@@ -80,29 +79,9 @@ api.delete('/me/discord-link', member, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Looks up my global stats now (after I fill in my in-game name).
-const trackerChecks = new Map();
-api.post('/me/tracker-check', member, async (req, res) => {
-  const last = trackerChecks.get(req.user.id) || 0;
-  if (Date.now() - last < 10 * 1000) throw new HttpError(429, 'Checking too often.');
-  trackerChecks.set(req.user.id, Date.now());
-  // Optional in-game name (Name#1234) typed on the HQ card; saved to the profile box of the same name.
-  let user = req.user;
-  const typed = str(req.body?.wardogs_name, 60);
-  if (typed) {
-    if (!/^.+#\d{3,6}$/.test(typed)) throw new HttpError(400, 'Type it as Name#1234 — your in-game name, then # and the 4 numbers.');
-    user = await one(
-      "UPDATE users SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || jsonb_build_object('wardogs_name', $2::text) WHERE id=$1 RETURNING *",
-      [req.user.id, typed],
-    );
-    bus.emit('user:changed', user.id);
-  }
-  const r = await syncWardogs(user, { force: true }).catch((e) => ({ ok: false, reason: e.message }));
-  if (r.official) await recalcXp(req.user.id);
-  res.json({
-    linked: !!r.official,
-    reason: !r.ok ? r.reason : r.official ? '' : `Found ${r.name}#${r.tag}, but the stats couldn't be read just then — wait a minute and press Find my stats again`,
-  });
+// Keep the old endpoint explicit for clients that still call it; it never reads or stores tracker data.
+api.post('/me/tracker-check', member, (_req, res) => {
+  res.json({ linked: false, reason: 'Wardogs Tracker sync is disabled; saved stats will not be refreshed' });
 });
 
 // ---------- Profile ----------

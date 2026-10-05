@@ -106,14 +106,26 @@ on the **Streams** tab with the stream's player, the platform's own chat box, an
 
 ## 5. How stats and XP work
 
-- **Global Wardogs stats** (level, XP, cash, role levels) come from **WARDOGS Tracker** (wardogstracker.gg).
-  Each member must sign in there once with Steam so their stats are public.
+- **Global Wardogs stats** (level, XP, cash, role levels) are saved snapshots from the external WARDOGS Tracker.
+  External syncing is disabled; existing saved values remain visible but will not refresh.
 - **WPG server kills and deaths** also come from WARDOGS Tracker.
   Put the WPG server's name in Admin → Settings → *WPG server name on WARDOGS Tracker*.
 - **Steam playtime and achievements** come from Steam. The member's Steam "Game details" must be set to Public.
 - **WPG XP** = Steam hours + achievements + WPG server kills + server stats + bonus XP.
   You can change every XP value in Admin (Games, Stats, Settings).
-- Stats update by themselves every hour. Members can also press **Sync stats**.
+- Steam playtime and achievements sync automatically and when a member presses **Sync stats**. Wardogs stats are not refreshed.
+
+### Wardogs Tracker requests (disabled)
+
+The app no longer makes requests to `wardogs.tools`. Before disabling this integration, it fetched:
+
+- `GET /api/leaderboards?by=level&dir=desc` to read the total ranked-player count.
+- `GET /api/leaderboards/locate?by=level&dir=desc&q=<name>` to resolve a public player by display name and discriminator. The name was the member's entered in-game name, or their Steam persona name if none was entered; the response's player ID was then used in the rank and status lookups.
+- `GET /api/leaderboards/locate?by=<level|worth|cash>&dir=desc&socialId=<id>` to read the player's rank in each of those three boards; the level response also supplied their row offset.
+- `GET /api/leaderboards?by=level&dir=desc&block=<n>` to read a 1,000-player level-board block. From matching rows, the app read the player ID, global level, cash, gold, six role levels, account worth, unlock count and career XP.
+- `GET /player/<socialId>` to read the player's last-polled timestamp and tracker-link state.
+
+The sync and relink controls are disabled. No new Wardogs Tracker data is fetched; existing saved values are retained as snapshots.
 
 ## 6. Discord bot stats (optional, for whoever runs the bot)
 
@@ -146,7 +158,7 @@ With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no St
   If the publish screen shows a red **DROP TABLE** or "delete" warning, press **Cancel**, restart the workspace app and try again.
 
 - **Site down:** Replit → Deployments → check the logs → press **Redeploy**.
-- **Stats not updating:** check `STEAM_API_KEY` in Secrets. Check the member has public Steam game details and a WARDOGS Tracker profile.
+- **Stats not updating:** Wardogs global stats are saved snapshots and do not refresh. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
 - **Locked out of admin:** another admin can fix your role in Admin → Members.
 - **Android app says "Can't reach HQ":** the website is down or the phone is offline.
 
