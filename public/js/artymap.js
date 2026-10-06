@@ -7,15 +7,15 @@ import { icon } from './icons.js';
 const UNITS = 163.84; // map width/height in game units
 // Set per map in viewArtyMap: Leaflet zoom-0 pixels per game unit.
 let K = 512 / UNITS;
-const toLL = (p) => window.L.latLng(-(UNITS - p.y) * K, p.x * K);
-const fromLL = (ll) => ({ x: ll.lng / K, y: UNITS + ll.lat / K });
+export const toLL = (p) => window.L.latLng(-(UNITS - p.y) * K, p.x * K);
+export const fromLL = (ll) => ({ x: ll.lng / K, y: UNITS + ll.lat / K });
 const round2 = (v) => Math.round(v * 100) / 100;
 const MAX_TARGETS = 8;
 const MAP_STYLES = [['normal', 'Normal'], ['tactical', 'Tactical'], ['night', 'Night']];
 let mapStyle = (() => { try { return localStorage.getItem('wpg.arty.style') || 'tactical'; } catch { return 'tactical'; } })();
 
 let leafletReady = null;
-function loadLeaflet() {
+export function loadLeaflet() {
   if (window.L) return Promise.resolve();
   if (!leafletReady) {
     leafletReady = new Promise((resolve, reject) => {
@@ -42,77 +42,12 @@ function save(mapId, data) {
   try { localStorage.setItem(storeKey(mapId), JSON.stringify(data)); } catch { /* storage blocked */ }
 }
 
-export function solution(gun, target, weapon) {
-  const dx = (target.x - gun.x) * 100; // metres east
-  const dy = (target.y - gun.y) * 100; // metres north
-  const dist = Math.hypot(dx, dy);
-  const bearing = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
-  const mil = weapon ? elevationFor(weapon.table, weapon.min, weapon.max, dist) : null;
-  return { dist, bearing, bearingMil: Math.round((bearing * 6400) / 360) % 6400, mil };
-}
-
-export async function viewArtyMap(main, _rest, alive) {
-  main.innerHTML = '<div class="spinner"></div>';
-  const [maps, guns] = await Promise.all([
-    fetch('/maps/maps.json').then((r) => r.json()),
-    api('artillery').catch(() => []),
-    loadLeaflet(),
-  ]).then(([m, g]) => [m, g]);
-  if (!alive()) return;
-  const L = window.L;
-  const params = new URLSearchParams(location.hash.split('?')[1] || '');
-  const map = maps.find((m) => m.id === params.get('map')) || maps[0];
+// The game map in a Leaflet map (tiles, 1 km grid, spawn areas, towers). Shared with the situation rooms.
+export function buildMap(L, elementId, map) {
   const nativeZoom = map.maxNativeZoom || 4;
   K = (512 * ((map.imageWidth || 512 * 2 ** nativeZoom) / (512 * 2 ** nativeZoom))) / UNITS;
-  const saved = loadSaved(map.id);
-  const st = {
-    gun: saved.gun || null,
-    targets: Array.isArray(saved.targets) ? saved.targets.slice(0, MAX_TARGETS) : [],
-    weaponId: guns.some((g) => g.id === saved.weaponId) ? saved.weaponId : guns[0]?.id,
-    mode: saved.gun ? 'target' : 'gun',
-  };
-  const weapon = () => guns.find((g) => g.id === st.weaponId);
-  const persist = () => save(map.id, { gun: st.gun, targets: st.targets, weaponId: st.weaponId });
-
-  main.innerHTML = `
-    <div class="row between"><h1 style="margin:0">Artillery map</h1>
-      <div class="tabs" style="margin:0">${maps.map((m) => `<a href="#/map?map=${m.id}" class="${m.id === map.id ? 'active' : ''}">${esc(m.name)}</a>`).join('')}</div></div>
-    <div class="arty-map-wrap">
-      <div class="panel arty-map-panel">
-        <div id="artyMap" class="arty-map style-${esc(mapStyle)}"></div>
-        <div class="arty-styles">${MAP_STYLES.map(([k, l]) => `<button type="button" class="btn small${k === mapStyle ? ' primary' : ''}" data-style="${k}">${l}</button>`).join('')}</div>
-        <div class="arty-cursor" id="artyCursor">Tap the map to place your ${st.gun ? 'targets' : 'gun'}</div>
-      </div>
-      <div class="panel arty-side">
-        <div class="arty-modes">
-          <button type="button" class="btn small" data-mode="gun">${icon('crosshair')} Place gun</button>
-          <button type="button" class="btn small" data-mode="target">${icon('target')} Place target</button>
-          <button type="button" class="btn small ghost" id="artyClear">${icon('trash')} Clear</button>
-        </div>
-        <label class="field"><span>Gun</span><select id="artyWeapon">${guns.map((g) => `<option value="${esc(g.id)}" ${g.id === st.weaponId ? 'selected' : ''}>${esc(g.label)}${g.note ? ` (${esc(g.note)})` : ''}</option>`).join('')}</select></label>
-        <div class="arty-coords">
-          <span class="lbl">Gun position (in-game X, Y)</span>
-          <div class="row" style="gap:6px;flex-wrap:nowrap">
-            <input type="number" step="0.01" id="gunX" placeholder="X" inputmode="decimal">
-            <input type="number" step="0.01" id="gunY" placeholder="Y" inputmode="decimal">
-            <button type="button" class="btn small" id="gunSet">Set</button>
-          </div>
-          <span class="lbl" style="margin-top:8px">Add a target by coordinates</span>
-          <div class="row" style="gap:6px;flex-wrap:nowrap">
-            <input type="number" step="0.01" id="tgtX" placeholder="X" inputmode="decimal">
-            <input type="number" step="0.01" id="tgtY" placeholder="Y" inputmode="decimal">
-            <button type="button" class="btn small" id="tgtAdd">Add</button>
-          </div>
-        </div>
-        <div id="artyResults"></div>
-        <p class="muted small" style="margin:10px 0 0">Bearing = compass direction from your gun (0° / 0 mil = north). Elevation assumes gun and target are at the same height —
-          fire a ranging shot, then use Add / Drop / Left / Right.</p>
-      </div>
-    </div>`;
-
-  // ----- the map -----
   const worldBounds = L.latLngBounds(toLL({ x: 0, y: 0 }), toLL({ x: UNITS, y: UNITS }));
-  const lmap = L.map('artyMap', {
+  const lmap = L.map(elementId, {
     crs: L.CRS.Simple,
     minZoom: 0,
     maxZoom: 6,
@@ -150,6 +85,89 @@ export async function viewArtyMap(main, _rest, alive) {
     L.circleMarker(toLL(m), { radius: m.icon === 'tower' ? 5 : 7, color: '#000', weight: 1, fillColor: color, fillOpacity: 0.95 })
       .addTo(lmap).bindTooltip(esc(m.label), { className: 'arty-label' });
   }
+  return lmap;
+}
+
+export function solution(gun, target, weapon) {
+  const dx = (target.x - gun.x) * 100; // metres east
+  const dy = (target.y - gun.y) * 100; // metres north
+  const dist = Math.hypot(dx, dy);
+  const bearing = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+  const mil = weapon ? elevationFor(weapon.table, weapon.min, weapon.max, dist) : null;
+  return { dist, bearing, bearingMil: Math.round((bearing * 6400) / 360) % 6400, mil };
+}
+
+export async function viewArtyMap(main, _rest, alive) {
+  main.innerHTML = '<div class="spinner"></div>';
+  const [maps, guns] = await Promise.all([
+    fetch('/maps/maps.json').then((r) => r.json()),
+    api('artillery').catch(() => []),
+    loadLeaflet(),
+  ]).then(([m, g]) => [m, g]);
+  if (!alive()) return;
+  const L = window.L;
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const map = maps.find((m) => m.id === params.get('map')) || maps[0];
+  const saved = loadSaved(map.id);
+  const st = {
+    gun: saved.gun || null,
+    targets: Array.isArray(saved.targets) ? saved.targets.slice(0, MAX_TARGETS) : [],
+    weaponId: guns.some((g) => g.id === saved.weaponId) ? saved.weaponId : guns[0]?.id,
+    mode: saved.gun ? 'target' : 'gun',
+  };
+  // From a situation room's fire mission: ?target=x,y adds that target (once).
+  const fromRoom = /^(-?[\d.]+),(-?[\d.]+)$/.exec(params.get('target') || '');
+  if (fromRoom) {
+    const t = { x: Number(fromRoom[1]), y: Number(fromRoom[2]) };
+    if (t.x >= 0 && t.y >= 0 && t.x <= UNITS && t.y <= UNITS && !st.targets.some((o) => Math.hypot(o.x - t.x, o.y - t.y) < 0.05)) {
+      if (st.targets.length >= MAX_TARGETS) st.targets.shift();
+      st.targets.push(t);
+      if (st.gun) st.mode = 'target';
+    }
+  }
+  const weapon = () => guns.find((g) => g.id === st.weaponId);
+  const persist = () => save(map.id, { gun: st.gun, targets: st.targets, weaponId: st.weaponId });
+  if (fromRoom) persist();
+
+  main.innerHTML = `
+    <div class="row between"><h1 style="margin:0">Artillery map</h1>
+      <a class="btn small ghost" href="#/sitrooms">Situation rooms</a>
+      <div class="tabs" style="margin:0">${maps.map((m) => `<a href="#/map?map=${m.id}" class="${m.id === map.id ? 'active' : ''}">${esc(m.name)}</a>`).join('')}</div></div>
+    <div class="arty-map-wrap">
+      <div class="panel arty-map-panel">
+        <div id="artyMap" class="arty-map style-${esc(mapStyle)}"></div>
+        <div class="arty-styles">${MAP_STYLES.map(([k, l]) => `<button type="button" class="btn small${k === mapStyle ? ' primary' : ''}" data-style="${k}">${l}</button>`).join('')}</div>
+        <div class="arty-cursor" id="artyCursor">Tap the map to place your ${st.gun ? 'targets' : 'gun'}</div>
+      </div>
+      <div class="panel arty-side">
+        <div class="arty-modes">
+          <button type="button" class="btn small" data-mode="gun">${icon('crosshair')} Place gun</button>
+          <button type="button" class="btn small" data-mode="target">${icon('target')} Place target</button>
+          <button type="button" class="btn small ghost" id="artyClear">${icon('trash')} Clear</button>
+        </div>
+        <label class="field"><span>Gun</span><select id="artyWeapon">${guns.map((g) => `<option value="${esc(g.id)}" ${g.id === st.weaponId ? 'selected' : ''}>${esc(g.label)}${g.note ? ` (${esc(g.note)})` : ''}</option>`).join('')}</select></label>
+        <div class="arty-coords">
+          <span class="lbl">Gun position (in-game X, Y)</span>
+          <div class="row" style="gap:6px;flex-wrap:nowrap">
+            <input type="number" step="0.01" id="gunX" placeholder="X" inputmode="decimal">
+            <input type="number" step="0.01" id="gunY" placeholder="Y" inputmode="decimal">
+            <button type="button" class="btn small" id="gunSet">Set</button>
+          </div>
+          <span class="lbl" style="margin-top:8px">Add a target by coordinates</span>
+          <div class="row" style="gap:6px;flex-wrap:nowrap">
+            <input type="number" step="0.01" id="tgtX" placeholder="X" inputmode="decimal">
+            <input type="number" step="0.01" id="tgtY" placeholder="Y" inputmode="decimal">
+            <button type="button" class="btn small" id="tgtAdd">Add</button>
+          </div>
+        </div>
+        <div id="artyResults"></div>
+        <p class="muted small" style="margin:10px 0 0">Bearing = compass direction from your gun (0° / 0 mil = north). Elevation assumes gun and target are at the same height —
+          fire a ranging shot, then use Add / Drop / Left / Right.</p>
+      </div>
+    </div>`;
+
+  // ----- the map -----
+  const lmap = buildMap(L, 'artyMap', map);
 
   const layer = L.layerGroup().addTo(lmap);
   const gunIcon = L.divIcon({ className: 'arty-pin gun', html: icon('crosshair'), iconSize: [34, 34], iconAnchor: [17, 17] });

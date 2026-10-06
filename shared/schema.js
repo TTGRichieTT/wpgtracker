@@ -708,3 +708,72 @@ export const applyRequests = pgTable('apply_requests', {
   reviewed_at: timestamp({ withTimezone: true }),
   note: text().notNull().default(''),
 }, (t) => [index('apply_requests_user_idx').on(t.user_id)]);
+
+// ---------- Situation rooms ----------
+// A shared tactical map for one group in a match. At most one open room per faction (Lonestar, Valkyra, Manticore),
+// so at most 3 at once. WPG members only (not PMC guests).
+export const sitRooms = pgTable('sit_rooms', {
+  id: serial().primaryKey(),
+  faction: text().notNull(), // lonestar | valkyra | manticore
+  name: text().notNull().default(''),
+  map_id: text().notNull().default(''),
+  creator_id: integer().references(() => users.id, { onDelete: 'set null' }),
+  status: text().notNull().default('open'), // open | closed
+  created_at: now(),
+  last_active_at: now(),
+  closed_at: timestamp({ withTimezone: true }),
+  closed_by: integer(),
+}, (t) => [index('sit_rooms_status_idx').on(t.status)]);
+
+export const sitMembers = pgTable('sit_members', {
+  room_id: integer().notNull().references(() => sitRooms.id, { onDelete: 'cascade' }),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  joined_at: now(),
+  last_seen: now(),
+}, (t) => [primaryKey({ name: 'sit_members_pkey', columns: [t.room_id, t.user_id] })]);
+
+// Waiting invites (sent by the room's creator or an admin) and requests to join (sent by the member).
+export const sitRequests = pgTable('sit_requests', {
+  room_id: integer().notNull().references(() => sitRooms.id, { onDelete: 'cascade' }),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text().notNull(), // invite | ask
+  from_id: integer(),
+  created_at: now(),
+}, (t) => [primaryKey({ name: 'sit_requests_pkey', columns: [t.room_id, t.user_id] })]);
+
+// Everything on a room's map: markers (position, FOB, enemy, need, objective, danger) and drawings (arrows,
+// lines, routes, areas, labels). Positions are in-game map units, like the arty map.
+export const sitItems = pgTable('sit_items', {
+  id: serial().primaryKey(),
+  room_id: integer().notNull().references(() => sitRooms.id, { onDelete: 'cascade' }),
+  user_id: integer().references(() => users.id, { onDelete: 'set null' }),
+  kind: text().notNull(), // marker | draw
+  type: text().notNull(),
+  data: jsonb().notNull().default({}),
+  created_at: now(),
+  updated_at: now(),
+  expires_at: timestamp({ withTimezone: true }),
+}, (t) => [index('sit_items_room_idx').on(t.room_id)]);
+
+// Quick text messages inside a situation room (deleted when the room closes).
+export const sitMessages = pgTable('sit_messages', {
+  id: serial().primaryKey(),
+  room_id: integer().notNull().references(() => sitRooms.id, { onDelete: 'cascade' }),
+  user_id: integer().references(() => users.id, { onDelete: 'set null' }),
+  body: text().notNull(),
+  created_at: now(),
+}, (t) => [index('sit_messages_room_idx').on(t.room_id, t.id.desc())]);
+
+// A copy of a room's board each time it's cleared (new match, map change, room closed), for admins. Kept 14 days.
+export const sitArchives = pgTable('sit_archives', {
+  id: serial().primaryKey(),
+  room_id: integer(),
+  faction: text().notNull().default(''),
+  name: text().notNull().default(''),
+  map_id: text().notNull().default(''),
+  reason: text().notNull().default(''),
+  items: jsonb().notNull().default([]),
+  members: jsonb().notNull().default([]),
+  messages: jsonb().notNull().default([]),
+  created_at: now(),
+});

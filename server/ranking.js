@@ -26,8 +26,13 @@ function playerId(value) {
   return /^\d{15,22}$/.test(id) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
-// Spaces, line breaks or quote marks pasted in with the key would make wardogs.tools refuse it.
-const apiKey = () => String(process.env.WARDOGS_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
+// Spaces, line breaks or quote marks pasted in with the key would make wardogs.tools refuse it. If the whole link
+// from the developer's message was pasted (https://wardogs.tools/api/…?key=…), only the key part is used.
+function apiKey() {
+  const raw = String(process.env.WARDOGS_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  const fromLink = /[?&]key=([^&#\s]+)/.exec(raw);
+  return fromLink ? decodeURIComponent(fromLink[1]) : raw;
+}
 
 function scheduleRequest(id) {
   const key = apiKey();

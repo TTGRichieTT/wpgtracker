@@ -6,6 +6,7 @@ import { publicUser } from './util.js';
 import { mentionedUserIds } from './mentions.js';
 import { playingNow } from './playing.js';
 import { liveStreamCount } from './streams.js';
+import { maySeeRoom, sitHeartbeat } from './sitrooms.js';
 
 // Which release is running. Open tabs compare it after a reconnect and reload themselves onto a new release.
 const APP_VERSION = (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 12);
@@ -39,6 +40,20 @@ export function startRealtime(httpServer, sessionMiddleware) {
     socket.emit('streams', liveStreamCount());
     q('UPDATE users SET last_seen=now() WHERE id=$1', [user.id]).catch(() => {});
 
+    // Situation rooms: the room page asks for its live updates (members and admins only) and says it's still open.
+    socket.on('sit:watch', async (roomId) => {
+      const id = Number(roomId) || 0;
+      const me = await one('SELECT * FROM users WHERE id=$1', [user.id]);
+      for (const r of socket.rooms) if (r.startsWith('sit:') && r !== `sit:${id}`) socket.leave(r);
+      if (id && (await maySeeRoom(id, me))) {
+        socket.join(`sit:${id}`);
+        sitHeartbeat(id, user.id).catch(() => {});
+      }
+    });
+    socket.on('sit:unwatch', () => {
+      for (const r of socket.rooms) if (r.startsWith('sit:')) socket.leave(r);
+    });
+
     socket.on('typing', (channelId) => {
       if (socket.rooms.has(`c:${channelId}`)) {
         socket.to(`c:${channelId}`).emit('typing', { channelId, userId: user.id, name: user.persona_name });
@@ -69,6 +84,13 @@ export function startRealtime(httpServer, sessionMiddleware) {
   bus.on('dms:read', (userId) => io.to(`u:${userId}`).emit('counts'));
   bus.on('notify', (userId, n) => io.to(`u:${userId}`).emit('notify', n));
   bus.on('streams:changed', (n) => io.emit('streams', n));
+  // Situation rooms: changes inside a room go to the people watching it; the list of rooms is just a nudge to reload.
+  bus.on('sit:room', (roomId, ev) => {
+    io.to(`sit:${roomId}`).emit('sit', { room: roomId, ...ev });
+    if (ev.type === 'removed') io.in(`u:${ev.user_id}`).socketsLeave(`sit:${roomId}`);
+    if (ev.type === 'closed') io.in(`sit:${roomId}`).socketsLeave(`sit:${roomId}`);
+  });
+  bus.on('sit:list', () => io.emit('sitrooms'));
   bus.on('stream:chat', async (msg) => {
     const author = await one('SELECT * FROM users WHERE id=$1', [msg.user_id]);
     const [user] = author ? await usersWithRanks([author]) : [null];

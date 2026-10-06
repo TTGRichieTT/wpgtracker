@@ -126,6 +126,32 @@ on the **Streams** tab with the stream's player, the platform's own chat box, an
 - **Discord "… is live" posts**: Command panel → Settings → Streams → paste the channel ID.
 - **Stream keys** are optional. They're encrypted when saved and never shown again, to anyone. The app doesn't use them.
 
+## 4c. Situation rooms
+
+A shared map for a group during a match (menu → **Situation rooms**, or the button on the Arty map). WPG members only:
+PMC guests can't see or use them.
+
+- **One room per faction** (Lonestar, Valkyra, Manticore), so at most 3 at once. Any WPG member can open a free one;
+  they pick the map they're playing on (it doesn't have to be our server).
+- **Getting in:** the room's creator invites people from the members list, or members press **Ask to join** and the
+  creator lets them in. Admins can also look into any room, join it, or close it. A member is in one room at a time.
+- **Outside a room** members only see its name and who's in it, never its map.
+- **Inside:** everyone marks the map (my position, FOB, enemy, need, objective, danger) and draws (attack and flank
+  arrows, defend lines, routes, areas, labels) in four colours; everyone in the room sees it straight away. Requests
+  go in the **Needs** list, where anyone can press **I'm on it** and then **Done**.
+- Positions fade after 2 minutes and enemy spots after 3–5 minutes unless refreshed. The creator (or an admin) can
+  change the map or press **New match / clear board**, both of which clear the board. A room nobody uses for
+  30 minutes closes by itself; if the creator leaves, the longest-serving member takes over.
+- **Fire mission:** tap an enemy, danger or objective mark → **Fire mission** shows elevation, bearing and distance
+  from your gun (set with **🔫 My gun**; it's the same saved position as the Arty map, only you see it). **I'm firing on
+  it** shows "💥 Name firing" on the mark for everyone; **Open in Arty map** adds it as a target there.
+- **Room chat:** a small text box for quick messages (kept until the room closes).
+- **Alerts:** a beep (and a buzz on phones) for new needs, enemy spots, messages and, for the room's creator, join
+  requests. Each member can switch them off with **🔔 Alerts on / off**.
+- **Last matches (admins):** each time a board is cleared (new match, map change, room closed) a copy is kept for
+  14 days; admins see them at the bottom of the Situation rooms page and can open each on its map (read only).
+- New maps: rooms use the same map files as the Arty map (`public/maps`).
+
 ## 5. How stats and XP work
 
 - **Global Wardogs stats** come from [wardogs.tools](https://wardogs.tools)'s player stats API, with the private key
