@@ -27,6 +27,9 @@ services:
         sync: false
       - key: STEAM_API_KEY
         sync: false
+      # Private key from the wardogs.tools developer, for global Wardogs stats.
+      - key: WARDOGS_API_KEY
+        sync: false
       - key: INGEST_KEY
         generateValue: true
       # Streams tab: live checks (optional, each platform works on its own).

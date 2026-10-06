@@ -644,29 +644,31 @@ async function syncMine(e) {
 // ---------- Wardogs stats ----------
 // Fetch stats only from the owner's ID-based API, and credit the source wherever those stats appear.
 const TRACKER_URL = 'https://wardogs.tools';
-export const trackerCredit = () => `<p class="muted small" style="margin:10px 0 0">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">WARDOGS Tracker</a>.</p>`;
+export const trackerCredit = () => `<p class="muted small" style="margin:10px 0 0">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>`;
 const needsTracker = () => state.realSteam && !state.trackerLinked;
 const staleLink = () => state.trackerLinked && state.trackerState && state.trackerState !== 'active';
 function staleCardHtml() {
   const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
   return `<div class="panel glow tracker-card" style="border-color:#f5a524">
-    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Wardogs API status: ${esc(state.trackerState)}${since}</div>
-    <p style="margin:0 0 10px">Stats are requested by account ID (Steam ID first, then the saved social ID) and cached for up to six hours. A manual check uses the same cache.</p>
-    <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open WARDOGS Tracker</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check stats</button></div>
+    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Your Wardogs stats stopped updating${since ? ` (last read${since})` : ''}</div>
+    <p style="margin:0 0 10px">wardogs.tools says your account is <b>${esc(state.trackerState)}</b>, so your numbers here are getting old. Open wardogs.tools, sign in and link your Wardogs account again, then press <b>Check now</b>.</p>
+    <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open wardogs.tools</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
   </div>`;
 }
 
 function trackerCardHtml() {
-  const why = { missing: 'The stats API returned no player for your Steam ID.', unsynced: 'The stats API returned a player without stats.' }[state.trackerState] || '';
+  const why = { missing: "We couldn't find you on wardogs.tools yet.", unsynced: 'wardogs.tools knows your account but has no stats for you yet.' }[state.trackerState] || '';
   return `<div class="panel glow tracker-card" data-tracker-card>
     <div class="row" style="align-items:flex-start;gap:16px">
       <img src="/img/brand/wolf-emblem.webp" alt="" style="width:74px;border-radius:6px">
       <div class="grow" style="min-width:220px">
-        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Check your <span class="sub">Wardogs stats</span></div>
-        <p style="margin:0 0 10px">Barracks requests your stats directly from the WARDOGS player API using your Steam ID, then the saved social ID. Responses are cached for up to six hours.</p>
+        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Show your <span class="sub">Wardogs stats</span></div>
+        <p style="margin:0 0 10px">Your Wardog level, cash, gold, account worth, class levels and world rank come from <b>wardogs.tools</b>. The app finds you by your Steam account. One time only:</p>
+        <p style="margin:0 0 6px"><b>1.</b> Open wardogs.tools, sign in and <b>link your Wardogs account</b>.</p>
+        <p style="margin:0 0 10px"><b>2.</b> Come back and press <b>Check now</b>. After that your stats update by themselves. Still not found? Add your in-game name with its 4 numbers (Name#1234) in <a href="#/profile/edit">Edit profile</a>.</p>
         ${why ? `<p class="small" style="margin:0 0 10px;color:#f5a524">${why}</p>` : ''}
         <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
-        <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} WARDOGS Tracker</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check stats</button></div>
+        <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open wardogs.tools</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
       </div>
     </div>
   </div>`;
@@ -993,7 +995,7 @@ async function viewEditProfile(main) {
         ${fields.map((f) => `<label class="field"><span>${esc(f.label)}</span>${f.type === 'select'
           ? `<select name="cf_${esc(f.key)}"><option value="">—</option>${f.options.split(',').map((o) => o.trim()).filter(Boolean).map((o) => `<option ${u.custom_fields?.[f.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
           : `<input type="text" name="cf_${esc(f.key)}" maxlength="200" value="${esc(u.custom_fields?.[f.key] || '')}"${f.key === 'wardogs_name' ? ' placeholder="Name#1234"' : ''}>`}${f.key === 'wardogs_name'
-          ? `<small class="muted">Not needed for global stats: they come from WARDOGS Tracker by your Steam account.</small>` : ''}</label>`).join('')}
+          ? `<small class="muted">Only needed if wardogs.tools can't find you by your Steam account: your in-game name with its 4 numbers.</small>` : ''}</label>`).join('')}
       </div>
       <label class="field"><span>About me</span><textarea name="bio" maxlength="1000">${esc(u.bio)}</textarea></label>
       ${skillList.length ? `<div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">My skills <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— shown on your profile (tick any)</span></span>
@@ -1902,7 +1904,7 @@ async function viewLeaderboard(main) {
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h', gold: 'gold', unlocks: 'unlocks' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
-    ${['worth', 'cash', 'level', 'gold', 'unlocks'].includes(by) ? `<p class="muted small" style="margin:-4px 0 12px">Global stats by <a href="${TRACKER_URL}" target="_blank" rel="noopener">WARDOGS Tracker</a>. Only values returned by its stats API are shown.</p>` : ''}
+    ${['worth', 'cash', 'level', 'gold', 'unlocks'].includes(by) ? `<p class="muted small" style="margin:-4px 0 12px">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>. Members it hasn't found show —.</p>` : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">
         <b style="font:700 22px var(--head);width:42px;text-align:center;color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">#${i + 1}</b>

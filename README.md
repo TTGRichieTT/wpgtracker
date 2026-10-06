@@ -128,19 +128,19 @@ on the **Streams** tab with the stream's player, the platform's own chat box, an
 
 ## 5. How stats and XP work
 
-- **Global Wardogs stats** come only from the owner's keyed [wardogs.tools player stats API](https://wardogs.tools).
-  The server requests `/api/player/stats/{id}?key=...` using a member's Steam ID, a saved social ID, or (for
-  `/stats` on a Discord user not in the app) their Discord ID. The API key is server-side only; set it as
-  `WARDOGS_API_KEY` in deployment secrets. The app does not call name-lookup or leaderboard endpoints, scrape the
-  site, or infer unsupported values.
-- Successful and not-found per-player results are cached for six hours, identical simultaneous requests are coalesced,
-  and outbound API requests are spaced at least ten seconds apart. A rate-limit response pauses later requests based
-  on `Retry-After`; the failed request is not automatically retried.
-- The fields shown are those returned by the player stats API: Wardog level, one overall rank and its total/bracket/change,
-  cash, gold, account worth and its breakdown, unlock count, per-role levels and XP, rates, and sync status/timestamps.
-  Career-wide XP, achievements, and separate XP/cash ranks are not returned and are not displayed as API stats.
-  Account worth comes from the API and is never estimated locally. API-sourced values link back to wardogs.tools.
-- **Discord `/stats`** for a person outside the app queries only their Discord ID; the command does not search by name.
+- **Global Wardogs stats** come from [wardogs.tools](https://wardogs.tools)'s player stats API, with the private key
+  its developer gave the clan. Put it in Render (and Replit Secrets if used) as **`WARDOGS_API_KEY`**; it never goes in
+  the code. Members are found by their Steam ID; their wardogs.tools id is then remembered and used from then on.
+  The developer's name search is only used as a last resort, for members who typed their in-game name (Name#1234) in
+  Edit profile. Discord `/stats` for someone not in the app looks them up by their Discord ID.
+- As the developer asked, every request sends the app's User-Agent and the stats always show
+  "Data provided by wardogs.tools" with a link (profiles, leaderboards, progression, Discord).
+- Requests are gentle: one at a time, 10 seconds apart, and paused when wardogs.tools says so. Found players are
+  re-read every six hours. "Not found" is asked again after 30 minutes, or straight away when the member presses
+  **Check now** (members who've just linked their account there don't have to wait).
+- Shown: Wardog level, world rank (position out of everyone, top %, change), cash, gold, account worth and its
+  breakdown, unlock count, each class's level and XP, XP and cash per minute. wardogs.tools doesn't give total
+  career XP or achievements, so those aren't shown.
 - **WPG server kills, deaths and matches** come from our own server (RCON and the game's kill feed).
 - **Steam playtime and achievements** come from Steam. The member's Steam "Game details" must be set to Public.
 - **Clan XP** = Steam hours + achievements + WPG server kills + server stats + bonus XP.
@@ -178,7 +178,7 @@ With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no St
   If the publish screen shows a red **DROP TABLE** or "delete" warning, press **Cancel**, restart the workspace app and try again.
 
 - **Site down:** Replit → Deployments → check the logs → press **Redeploy**.
-- **Stats not updating:** check that `WARDOGS_API_KEY` is set in deployment secrets and that the member's Steam ID has stats in the wardogs.tools API. Results are cached for six hours. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
+- **Stats not updating:** check that `WARDOGS_API_KEY` is set in Render, and that the member has linked their Wardogs account on wardogs.tools (then they press **Check now** on HQ). Found players update every six hours. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
 - **Locked out of admin:** another admin can fix your role in Admin → Members.
 - **Android app says "Can't reach HQ":** the website is down or the phone is offline.
 

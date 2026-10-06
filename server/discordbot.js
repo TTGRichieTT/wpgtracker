@@ -116,7 +116,7 @@ const header = (u) => ({
   author: { name: u.persona_name, icon_url: /^https:\/\//.test(u.avatar || '') ? u.avatar : undefined, url: `${SITE()}/#/u/${u.id}` },
 });
 const footer = { text: 'WPG Barracks' };
-const TRACKER_CREDIT = '[Data provided by WARDOGS Tracker](<https://wardogs.tools>)';
+const TRACKER_CREDIT = 'Data provided by [wardogs.tools](<https://wardogs.tools>)';
 
 // Everything on the career card for one member.
 async function careerData(u) {
@@ -174,7 +174,7 @@ export async function careerCard(user) {
 
 // ---------- Commands ----------
 // /stats: the WPG career card picture (falls back to a text card if the picture can't be made).
-// Global stats come from WARDOGS Tracker; the sync cache prevents repeat API calls for six hours.
+// Global stats come from wardogs.tools (credited with a link); found players are re-read every six hours.
 const CREDIT = TRACKER_CREDIT;
 async function freshWardogs(user) {
   let ws = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
@@ -191,14 +191,12 @@ async function freshWardogs(user) {
     ws = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
   }
   if (refreshError) return `${CREDIT} · Could not refresh stats: ${refreshError}.`;
-  if (ws?.ranks?.source !== 'wardogs.tools' || !ws.official) return `${CREDIT} · No stats were returned for **${user.persona_name}**.`;
-  return `${CREDIT} · **${user.persona_name}** · ${ws.ranks?.state || 'status unavailable'}.`;
+  if (ws?.ranks?.source !== 'wardogs.tools' || !ws.official) return `${CREDIT} · **${user.persona_name}** isn't on wardogs.tools yet (they link their Wardogs account there).`;
+  if (ws.ranks?.state && ws.ranks.state !== 'active') return `${CREDIT} · wardogs.tools has stopped updating **${user.persona_name}** (${ws.ranks.state}): they link their account there again.`;
+  return CREDIT;
 }
 
 async function cmdStats(data, caller) {
-  if (option(data, 'name')) {
-    return { content: 'WARDOGS stats can only be looked up by a linked account or Discord ID, not by name.' };
-  }
   const f = await findMember(data, caller);
   if (f.error) {
     // A Discord ID is accepted by the stats API; names are never used for a Tracker lookup.
@@ -378,15 +376,13 @@ async function cmdMedals(data, caller) {
       footer,
     }],
   });
-  const result = await asPicture('medals', async (cards) => cards.renderMedalsCard({
+  return asPicture('medals', async (cards) => cards.renderMedalsCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
     frame: f.pub?.frame || null,
     medals: awards,
     achievements: { game: game?.name || '', total: total?.n || 0, earned },
   }), text, profileLink(f.user));
-  result.content = TRACKER_CREDIT;
-  return result;
 }
 
 async function cmdServer(data, caller) {
@@ -589,9 +585,6 @@ async function cmdLive() {
 }
 
 async function cmdProgress(data, caller) {
-  if (option(data, 'name')) {
-    return { content: 'WARDOGS progression can only be shown for a linked account or Discord ID, not by name.' };
-  }
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
   const warning = await freshWardogs(f.user);
@@ -770,8 +763,7 @@ const WHO = [
 function commandDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
-    if (name === 'stats' || name === 'progress') def.options = [WHO[0]];
-    else if (['rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
+    if (['stats', 'rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
     if (name === 'leaderboard') {
       def.options = [{
         type: 3, name: 'board', description: 'Which leaderboard', required: false,
