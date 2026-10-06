@@ -716,8 +716,36 @@ async function settingsTab(body) {
       ${extra.length ? `<div class="panel"><div class="panel-title">Other</div><div class="form-grid">${extra.map((k) => input([k, k])).join('')}</div></div>` : ''}
       <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now (Steam + Wardogs + medals)</button></div>
     </form>
-    <div class="panel" id="discordBot" style="margin-top:16px"><div class="spinner"></div></div>`;
+    <div class="panel" id="discordBot" style="margin-top:16px"><div class="spinner"></div></div>
+    <div class="panel" id="wardogsTest" style="margin-top:16px">
+      <div class="panel-title">${icon('target')} wardogs.tools connection <span class="sub">global Wardogs stats</span></div>
+      <p class="muted small" style="margin:0 0 10px">Asks wardogs.tools right now for the developer's example player and for you, and shows exactly what it answers. Only the key's length and first/last 3 characters are shown.</p>
+      <button type="button" class="btn" id="wtTest">${icon('refresh')} Test the connection</button>
+      <div id="wtOut" style="margin-top:10px"></div>
+    </div>`;
   discordBotPanel(document.getElementById('discordBot'));
+  document.getElementById('wtTest').onclick = async (e) => {
+    const btn = e.currentTarget;
+    const out = document.getElementById('wtOut');
+    btn.disabled = true;
+    out.innerHTML = '<p class="muted small">Asking wardogs.tools…</p>';
+    try {
+      const d = await api('admin/wardogs-test', { method: 'POST', body: {} });
+      const meaning = (r) => (r.error ? `couldn't reach wardogs.tools: ${r.error}`
+        : r.status === 200 ? '✅ worked'
+          : r.status === 401 || r.status === 403 ? '❌ key refused'
+            : r.status === 404 ? 'not found (key accepted)' : `answered ${r.status}`);
+      out.innerHTML = `<p class="small" style="margin:0 0 6px">Running version <b>${esc(d.version)}</b> · Key: ${d.key.set
+        ? `<b>${d.key.length}</b> characters, starts <code>${esc(d.key.starts)}</code>, ends <code>${esc(d.key.ends)}</code>${d.key.tidied ? ' (spaces or quote marks were removed)' : ''}`
+        : '<span style="color:var(--red)">WARDOGS_API_KEY is not set on this server</span>'}</p>
+        ${d.results.map((r) => `<div class="small" style="margin-top:8px"><b>${esc(r.id)}</b>: ${esc(meaning(r))}${r.status ? ` <span class="muted">(${r.status}${r.server ? ` · ${esc(r.server)}` : ''})</span>` : ''}
+          ${r.body ? `<pre class="small" style="white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0;max-height:160px;overflow:auto">${esc(r.body)}</pre>` : ''}</div>`).join('')}`;
+    } catch (x) {
+      out.innerHTML = `<p class="small" style="color:var(--red)">${esc(x.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
   const form = document.getElementById('sform');
   form.onsubmit = async (e) => {
     e.preventDefault();

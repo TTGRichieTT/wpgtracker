@@ -4,6 +4,7 @@ import { q, one, audit, getSettings, clearSettingsCache, setting } from './db.js
 import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
+import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem } from './discordbot.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -506,6 +507,12 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
       ? ` No stats were returned for these accounts: ${tally.missing.slice(0, 12).join(', ')}${tally.missing.length > 12 ? ` and ${tally.missing.length - 12} more` : ''}.` : ''}`,
   });
   await audit(req.user.id, 'sync.all', '', { synced: tally.done, tracker: tally.tracker, missing: tally.missing.length, failed: tally.failed });
+});
+
+// wardogs.tools connection test: the developer's example player (always exists) and my own Steam account.
+admin.post('/wardogs-test', role('admin'), async (req, res) => {
+  const ids = [DEVELOPER_EXAMPLE_ID, ...(/^\d{17}$/.test(req.user.steam_id) ? [req.user.steam_id] : [])];
+  res.json({ version: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7), ...(await testConnection(ids)) });
 });
 
 admin.get('/audit', role('mod'), async (_req, res) => {
