@@ -73,7 +73,7 @@ function palette(faction) {
 const ENEMY = [['infantry', 'Infantry'], ['sniper', 'Sniper'], ['mortar', 'Mortar'], ['artillery', 'Artillery'], ['tank', 'Tank'],
   ['apc', 'Spawn APC'], ['armed', 'Armed vehicle'], ['supply', 'Supply / unarmed'], ['air', 'Air (helicopter)'], ['vehicle', 'Vehicle'], ['armour', 'Armour']];
 const ENEMY_PICK = ENEMY.slice(0, 9);
-const NEEDS = [['ammo', 'Ammo'], ['medic', 'Medic'], ['transport', 'Transport'], ['repair', 'Repair'], ['fire', 'Fire support'], ['backup', 'Backup']];
+const NEEDS = [['ammo', 'Ammo supplies'], ['build', 'Build supplies'], ['fuel', 'Fuel'], ['mech', 'Mechanical supplies'], ['medic', 'Medic'], ['transport', 'Transport'], ['repair', 'Repair'], ['fire', 'Fire support'], ['backup', 'Backup']];
 const DANGER = [['mines', 'Mines'], ['sniper', 'Sniper'], ['other', 'Other']];
 const label = (list, k) => (list.find(([v]) => v === k) || [k, k])[1];
 
@@ -258,6 +258,30 @@ function rangeRings(L, at, gun, color, layer) {
   const r = (m) => toLL({ x: m / 100, y: 0 }).lng - toLL({ x: 0, y: 0 }).lng;
   L.circle(toLL(at), { radius: r(gun.max), color, weight: 2, opacity: 0.85, fill: true, fillOpacity: 0.04, interactive: false }).addTo(layer);
   if (gun.min > 0) L.circle(toLL(at), { radius: r(gun.min), color, weight: 1.5, dashArray: '5 6', fill: false, interactive: false }).addTo(layer);
+}
+
+// Marks in the same spot (or almost) are fanned out beside it at the current zoom, each joined to the real spot by a
+// thin line, so a stack of things in one place can all be seen and tapped. Returns where to draw each mark.
+function stackMarks(L, lmap, list, layer) {
+  const groups = [];
+  for (const it of list) {
+    const ll = toLL(it.data.at);
+    const px = lmap.latLngToLayerPoint(ll);
+    const g = groups.find((x) => x.px.distanceTo(px) < 26);
+    if (g) g.items.push(it); else groups.push({ px, ll, items: [it] });
+  }
+  const where = new Map();
+  for (const g of groups) {
+    if (g.items.length === 1) { where.set(g.items[0], g.ll); continue; }
+    // A column just right of the spot, so each mark's label has its own line.
+    g.items.forEach((it, i) => {
+      const ll = lmap.layerPointToLatLng(g.px.add(L.point(34, (i - (g.items.length - 1) / 2) * 34)));
+      L.polyline([g.ll, ll], { color: '#fff', weight: 1.5, opacity: 0.75, dashArray: '3 3', interactive: false }).addTo(layer);
+      where.set(it, ll);
+    });
+    L.marker(g.ll, { icon: L.divIcon({ className: 'sit-stack', html: `<b>${g.items.length}</b>`, iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false }).addTo(layer);
+  }
+  return where;
 }
 
 // ---------- The list of rooms ----------
@@ -468,18 +492,25 @@ async function viewRoom(main, id, alive) {
     const now = Date.now();
     items = items.filter((it) => !it.expires_at || Date.parse(it.expires_at) > now);
     const ctx = { colors: pal().colors, nameOf, inRange };
-    for (const it of items) {
+    const shown = items.filter((it) => !(it.kind === 'gun' && it.user_id === state.me.id)); // my own gun is drawn below
+    // Drawings first, so marks sit on top of arrows and areas.
+    for (const it of shown.filter((x) => x.kind === 'draw')) {
+      const lay = drawingLayer(L, lmap, it, ctx.colors);
+      lay.on('click', (e) => tapItem(e, it));
+      lay.addTo(layer);
+    }
+    const pins = shown.filter((x) => x.kind !== 'draw');
+    const where = stackMarks(L, lmap, pins, layer);
+    for (const it of pins) {
       let lay;
       if (it.kind === 'gun') {
-        if (it.user_id === state.me.id) continue; // my own is drawn below
         rangeRings(L, it.data.at, gunFor(it), '#f5c542', layer);
-        lay = L.marker(toLL(it.data.at), { icon: L.divIcon({ className: 'sit-pin gunpin', html: `<span class="sit-gun">${svg(TOOL_SVG.gun, false, 18)}</span><span class="t">${esc(nameOf(it.user_id))} · ${esc(it.data.label)}</span>`, iconSize: null, iconAnchor: [15, 15] }) });
-      } else if (it.kind === 'marker') {
-        lay = L.marker(toLL(it.data.at), { icon: markerIcon(L, it, ctx) });
+        lay = L.marker(where.get(it), { icon: L.divIcon({ className: 'sit-pin gunpin', html: `<span class="sit-gun">${svg(TOOL_SVG.gun, false, 18)}</span><span class="t">${esc(nameOf(it.user_id))} · ${esc(it.data.label)}</span>`, iconSize: null, iconAnchor: [15, 15] }) });
       } else {
-        lay = drawingLayer(L, lmap, it, ctx.colors);
+        lay = L.marker(where.get(it), { icon: markerIcon(L, it, ctx) });
       }
-      lay.on('click', (e) => { L.DomEvent.stopPropagation(e); if (!tool) itemMenu(it); });
+      // With a tool picked, tapping a mark adds the new one in the same spot (things stack in one place).
+      lay.on('click', (e) => tapItem(e, it, it.data.at));
       lay.addTo(layer);
     }
     const g = myGun();
@@ -714,35 +745,43 @@ async function viewRoom(main, id, alive) {
   main.querySelector('#srUndoPt').onclick = () => { points.pop(); drawDraft(); };
   main.querySelector('#srCancel').onclick = () => setTool(null);
 
-  function bindMapClicks() {
-    lmap.on('click', async (e) => {
-      if (!tool) return;
-      const p = fromLL(e.latlng);
-      if (p.x < 0 || p.y < 0 || p.x > UNITS || p.y > UNITS) return;
-      if (tool === 'gun') {
-        saveGun(map().id, p, myWeapon()?.id);
-        setTool(null);
-        render();
-        if (sharing()) syncShare();
-        if (pendingFire) { const it = items.find((x) => x.id === pendingFire); pendingFire = null; if (it) fireBox(it); }
+  // A tap on a mark or drawing: its menu, or with a tool picked, the same as tapping the map there.
+  function tapItem(e, it, at) {
+    L.DomEvent.stopPropagation(e);
+    if (!tool) itemMenu(it);
+    else tapMap(at ? { ...at } : fromLL(e.latlng));
+  }
+
+  async function tapMap(p) {
+    if (!tool) return;
+    if (p.x < 0 || p.y < 0 || p.x > UNITS || p.y > UNITS) return;
+    if (tool === 'gun') {
+      saveGun(map().id, p, myWeapon()?.id);
+      setTool(null);
+      render();
+      if (sharing()) syncShare();
+      if (pendingFire) { const it = items.find((x) => x.id === pendingFire); pendingFire = null; if (it) fireBox(it); }
+      return;
+    }
+    if (!d.is_member) return;
+    if (DRAWINGS[tool]) {
+      if (tool === 'label') {
+        const text = await promptText('Label', 'e.g. Wait for smoke');
+        if (text) await send({ kind: 'draw', type: 'label', points: [p], text, color });
         return;
       }
-      if (!d.is_member) return;
-      if (DRAWINGS[tool]) {
-        if (tool === 'label') {
-          const text = await promptText('Label', 'e.g. Wait for smoke');
-          if (text) await send({ kind: 'draw', type: 'label', points: [p], text, color });
-          return;
-        }
-        points.push(p);
-        drawDraft();
-        return;
-      }
-      const opts = await markerOptions(tool);
-      if (opts === null) return;
-      await send({ kind: 'marker', type: tool, at: p, ...opts });
+      points.push(p);
+      drawDraft();
+      return;
+    }
+    const opts = await markerOptions(tool);
+    if (opts === null) return;
+    await send({ kind: 'marker', type: tool, at: p, ...opts });
       if (tool === 'me') setTool(null);
-    });
+  }
+
+  function bindMapClicks() {
+    lmap.on('click', (e) => tapMap(fromLL(e.latlng)));
     // Firing numbers from my gun to wherever I point (PC), or press and hold / right-click (phone and PC).
     const numbers = (p) => {
       const s2 = solution(myGun(), p, myWeapon());
@@ -1033,13 +1072,16 @@ async function viewArchive(main, id, alive) {
   const layer = L.layerGroup().addTo(lmap);
   const draw = () => {
     layer.clearLayers();
-    for (const it of a.items) {
+    const ok = a.items.filter((it) => it.kind === 'draw' || (it.data?.at && Number.isFinite(it.data.at.x) && Number.isFinite(it.data.at.y)));
+    ok.sort((x, y) => (x.kind === 'draw' ? 0 : 1) - (y.kind === 'draw' ? 0 : 1));
+    const where = stackMarks(L, lmap, ok.filter((it) => it.kind !== 'draw'), layer);
+    for (const it of ok) {
       try {
         if (it.kind === 'gun') {
           rangeRings(L, it.data.at, { min: it.data.min, max: it.data.max }, '#f5c542', layer);
-          L.marker(toLL(it.data.at), { icon: L.divIcon({ className: 'sit-pin gunpin', html: `<span class="sit-gun">${svg(TOOL_SVG.gun, false, 18)}</span><span class="t">${esc(nameOf(it.user_id))} · ${esc(it.data.label)}</span>`, iconSize: null, iconAnchor: [15, 15] }), interactive: false }).addTo(layer);
+          L.marker(where.get(it), { icon: L.divIcon({ className: 'sit-pin gunpin', html: `<span class="sit-gun">${svg(TOOL_SVG.gun, false, 18)}</span><span class="t">${esc(nameOf(it.user_id))} · ${esc(it.data.label)}</span>`, iconSize: null, iconAnchor: [15, 15] }), interactive: false }).addTo(layer);
         } else if (it.kind === 'marker') {
-          L.marker(toLL(it.data.at), { icon: markerIcon(L, it, { colors, nameOf }), interactive: false }).addTo(layer);
+          L.marker(where.get(it), { icon: markerIcon(L, it, { colors, nameOf }), interactive: false }).addTo(layer);
         } else {
           drawingLayer(L, lmap, it, colors).addTo(layer);
         }

@@ -139,7 +139,9 @@ PMC guests can't see or use them.
 - **Inside:** a floating icon toolbar on the left of the map holds the marks (my position, FOB, enemy, need,
   objective, danger), the drawings (attack and flank arrows with real arrow heads, defend lines, routes, areas,
   labels), the colours and the gun. Press **?** for a key of every icon and colour. Everyone in the room sees changes
-  straight away. Requests go in the **Needs** list, where anyone can press **I'm on it** and then **Done**.
+  straight away. Requests (ammo, build, fuel or mechanical supplies, medic, transport, repair, fire support, backup) go in the **Needs** list, where anyone can press **I'm on it** and then **Done**.
+- **Stacking:** several things can be marked in one spot. With a tool picked, tapping an existing mark adds the new one
+  in the same place. Marks in one spot show a count there and line up beside it, so each can still be seen and tapped.
 - **Enemies (3 teams):** each room has two enemy colours, the other two factions (a Lonestar room marks Valkyra in red
   and Manticore in green). Enemy marks are icons: infantry, sniper (crosshair), mortar, artillery (cannon), tank,
   spawn APC, armed vehicle, supply/unarmed (truck) and air (helicopter).

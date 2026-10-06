@@ -837,3 +837,5 @@ input[type=datetime-local] { color-scheme: dark; }
 .sit-key .sit-key-row .sit-enemy { width: 28px; height: 28px; }
 .leaflet-popup.sit-popup .leaflet-popup-content-wrapper, .leaflet-popup.sit-popup .leaflet-popup-tip { background: #071422; color: #e6eef7; border: 1px solid var(--line); }
 .sit-key { max-height: 75vh; overflow-y: auto; }
+/* Several marks in one spot: the count on the real spot, the marks fanned out round it */
+.sit-stack{display:flex;align-items:center;justify-content:center;border-radius:50%;background:#0b1420;border:2px solid #fff;color:#fff;font-size:10px;line-height:1;box-shadow:0 0 0 2px rgba(0,0,0,.45)}
