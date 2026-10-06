@@ -23,6 +23,7 @@ import { giveaways, startGiveaways } from './giveaways.js';
 import { framesRouter, startFrames, frameImageRoute } from './frames.js';
 import { cleanup, startCleanup } from './cleanup.js';
 import { streams, startStreamWatch } from './streams.js';
+import { sitrooms, startSitRooms } from './sitrooms.js';
 import { startKeepAwake } from './keepawake.js';
 import { startPlayingWatch } from './playing.js';
 import { discord } from './discord.js';
@@ -234,6 +235,7 @@ app.use('/api', giveaways);
 app.use('/api', framesRouter);
 app.use('/api', cleanup);
 app.use('/api', streams);
+app.use('/api', sitrooms);
 app.use('/api', discord);
 app.use('/api', api);
 app.use('/api', (_req, _res) => {
@@ -287,6 +289,7 @@ startDiscordBot();
 startCheatWatch();
 startCleanup();
 startStreamWatch();
+startSitRooms();
 startKeepAwake();
 setInterval(() => {
   store.prune().catch(() => {});

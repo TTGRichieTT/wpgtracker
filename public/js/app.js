@@ -319,6 +319,7 @@ const NAV = [
   { href: '#/leaderboard', key: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
   { href: '#/giveaways', key: 'giveaways', label: 'Giveaways', icon: 'gift' },
   { href: '#/map', key: 'map', label: 'Arty map', icon: 'target' },
+  { href: '#/sitrooms', key: 'sitrooms', label: 'Situation rooms', icon: 'crosshair', wpg: true },
   { href: '#/progression', key: 'progression', label: 'Progression', icon: 'unlock' },
   { href: '#/ranks', key: 'ranks', label: 'Clan ranks', icon: 'chevrons' },
   { href: '#/command', key: 'command', label: 'Combat Command', icon: 'shield', wpg: true },
@@ -473,6 +474,8 @@ function connectSocket() {
     emitLive('stream:chat', d);
   });
   socket.on('stream:chat:deleted', (d) => emitLive('stream:chat:deleted', d));
+  socket.on('sit', (d) => emitLive('sit', d));
+  socket.on('sitrooms', () => emitLive('sitrooms'));
   socket.on('config:changed', async (name) => {
     if (name === 'settings') state.settings = await api('settings/public').catch(() => state.settings);
     emitLive('config', name);
@@ -511,6 +514,7 @@ async function route() {
     progression: viewTools,
     tools: () => { location.hash = '#/progression'; },
     map: async (m, r, alive) => (await import('./artymap.js')).viewArtyMap(m, r, alive),
+    sitrooms: async (m, r, alive) => (await import('./sitroom.js')).viewSitRooms(m, r, alive),
     ranks: viewRanks,
     command: async (m, r, alive) => (await import('./combat.js')).viewCommand(m, r, alive),
     doctrine: async (m, r, alive) => (await import('./combat.js')).viewDoctrine(m, r, alive),
