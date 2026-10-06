@@ -10,6 +10,7 @@ import { q, one, setting, flag } from './db.js';
 import { bus } from './bus.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
+import { shownFrames } from './frames.js';
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
@@ -270,6 +271,8 @@ const avatarOf = (u) => {
   const a = u.custom_avatar || u.avatar || '';
   return /^https:\/\//.test(a) ? a : '';
 };
+// The profile frame a member shows around their picture (frames.js), for the cards.
+const frameOf = async (u) => (u ? (await shownFrames([u])).get(u.id) || null : null);
 // How a member shows on cards: their name on the WPG server (with the clan tag), else the Steam name.
 async function cardName(u) {
   const r = await one(
@@ -317,6 +320,7 @@ async function cmdRank(data, caller) {
   return asPicture('rank', async (cards) => cards.renderRankCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
+    frame: f.pub?.frame || null,
     wpg: { rank: p?.rank_name || 'RECRUIT I', level: p?.rank_level || 1, xp: p?.xp || 0, position: pos?.n || null, total: total?.n || 0, from: wpgNext?.from || 0, next: wpgNext?.next || null },
     clan: { pmc, rank: cur, xp: Number(f.user.xp) || 0, next, from: cur?.auto ? cur.min_xp : 0 },
   }), text, profileLink(f.user));
@@ -353,6 +357,7 @@ async function cmdMedals(data, caller) {
   return asPicture('medals', async (cards) => cards.renderMedalsCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
+    frame: f.pub?.frame || null,
     medals: awards,
     achievements: { game: game?.name || '', total: total?.n || 0, earned },
   }), text, profileLink(f.user));
@@ -395,6 +400,7 @@ async function cmdServer(data, caller) {
   return asPicture('server', async (cards) => cards.renderServerCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
+    frame: f.pub?.frame || null,
     kills: s.k, deaths: s.d, matches: s.m, wins: s.w, losses: s.l, playtime: s.t, lastSeen: s.seen,
     killsPos: killsPos?.n, playtimePos: playPos?.n, players: players?.n,
     wpgRank: p?.rank_name || 'RECRUIT I', wpgXp: p?.xp || 0,
@@ -593,6 +599,7 @@ async function cmdProgress(data, caller) {
   const out = await asPicture('progress', async (cards) => cards.renderProgressCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
+    frame: f.pub?.frame || null,
     rows,
     readyCount,
     readyCost,
@@ -1029,14 +1036,14 @@ async function announcePicture(kind, text, render, fallback, link) {
 async function promotionPost(u, rank, from) {
   const text = `⬆️ **${u.persona_name}**${mentionFor(u)} has been promoted to **${rank.name}** (${rank.abbr}). Salute!`;
   return announcePicture('promotion', text, async (cards) => cards.renderPromotionCard({
-    name: await cardName(u), avatar: avatarOf(u), rank, from, xp: u.xp,
+    name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), rank, from, xp: u.xp,
   }), () => ({ embeds: [{ color: GOLD, title: '⬆️ Promotion', description: text.replace(/^⬆️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
 }
 async function medalPost(u, names) {
   const text = `🎖️ **${u.persona_name}**${mentionFor(u)} earned ${names.map((n) => `**${n}**`).join(', ')}.`;
   const rows = await q('SELECT DISTINCT ON (name) name, description, colors FROM awards WHERE name = ANY($1) ORDER BY name, id', [names]);
   const medals = names.map((n) => rows.find((m) => m.name === n) || { name: n, description: '', colors: '' });
-  return announcePicture('medal', text, async (cards) => cards.renderMedalAwardCard({ name: await cardName(u), avatar: avatarOf(u), medals }),
+  return announcePicture('medal', text, async (cards) => cards.renderMedalAwardCard({ name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), medals }),
     () => ({ embeds: [{ color: GOLD, title: names.length === 1 ? '🎖️ Medal awarded' : '🎖️ Medals awarded', description: text.replace(/^🎖️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
 }
 // u may be null (a player on the WPG server who isn't in the app); name is then the bot's name for them.
@@ -1047,10 +1054,41 @@ async function wpgRankPost(u, name, rank, xp, level) {
     rankProgress(xp),
   ]);
   return announcePicture('wpgrank', text, async (cards) => cards.renderWpgRankUpCard({
-    name: u ? await cardName(u) : cleanName(name), avatar: u ? avatarOf(u) : '', rank, level, xp, position: pos?.n, total: pos?.total,
+    name: u ? await cardName(u) : cleanName(name), avatar: u ? avatarOf(u) : '', frame: await frameOf(u), rank, level, xp, position: pos?.n, total: pos?.total,
     from: prog?.from || 0, next: prog?.next || null,
   }), () => ({ embeds: [{ color: COLOR, title: '📈 WPG rank up', description: text.replace(/^📈 /, '') }] }), u ? profileLink(u) : null);
 }
+// Profile frames (frames.js): a member unlocked one.
+async function framePost(u, f) {
+  const season = f.category === 'season' ? await one("SELECT name FROM seasons WHERE status='active' ORDER BY number DESC LIMIT 1") : null;
+  const kind = f.category === 'season' ? `${season?.name || 'Season'} frame` : f.category === 'clan' ? 'Clan frame' : 'Permanent frame';
+  const text = `🖼️ **${u.persona_name}**${mentionFor(u)} unlocked the **${f.name}** profile frame.`;
+  const look = { style: f.style, color: f.color, badge: f.badge, label: f.label, crown: f.crown, name: f.name };
+  return announcePicture('frame', text, async (cards) => cards.renderFrameUnlockCard({
+    name: await cardName(u), avatar: avatarOf(u), frame: look, description: f.description, kind,
+  }), () => ({ embeds: [{ color: GOLD, title: '🖼️ Profile frame unlocked', description: `${text.replace(/^🖼️ /, '')}\n${f.description}`, url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
+}
+// A new season (the game wiped), and the last season's results: one post each.
+async function seasonPost(a) {
+  const open = { type: 1, components: [{ type: 2, style: 5, label: 'Open WPG Barracks', url: `${SITE()}/#/leaderboard` }] };
+  if (a.type === 'season') {
+    return { embeds: [{ color: COLOR, title: `🗓️ ${a.name || `Season ${a.number}`} has begun`,
+      description: `The game has wiped. Season frames start again from today, and your WPG XP for the season starts from zero.${a.prev ? ` Season ${a.prev} placings have their permanent frames.` : ''}`,
+      footer }], components: [open] };
+  }
+  const users = await q('SELECT * FROM users WHERE id = ANY($1)', [a.top.map((t) => t.userId)]);
+  const medal = ['🥇', '🥈', '🥉'];
+  const lines = a.top.map((t) => {
+    const u = users.find((x) => x.id === t.userId);
+    if (!u) return null;
+    const who = isWpgMember(u) ? `**${u.persona_name}**${mentionFor(u)}` : `**${u.persona_name}** (PMC)`;
+    return `${medal[t.place - 1] || `**${t.place}.**`} ${who} · ${num(t.gained)} WPG XP`;
+  }).filter(Boolean);
+  return { embeds: [{ color: GOLD, title: `🏆 Season ${a.number} results`,
+    description: `${lines.join('\n')}\n\nThe top 100 earned the Season ${a.number} Top 100 frame, the top 10 the Top 10 frame, and the Champion the Champion frame.`,
+    footer }], components: [open] };
+}
+
 // Giveaways (giveaways.js): one post when it starts, one with the winners.
 async function giveawayPost(a) {
   const button = { type: 1, components: [{ type: 2, style: 5, label: 'Open Giveaways', url: `${SITE()}/#/giveaways` }] };
@@ -1114,6 +1152,11 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'giveaway' && (await flag('discord_post_giveaways'))) {
       const { giveawayChannelKey } = await import('./giveaways.js');
       await postToChannel(await giveawayPost(a), await giveawayChannelKey());
+    } else if (a.type === 'frame' && (await flag('discord_post_frames'))) {
+      const [u, f] = await Promise.all([one('SELECT * FROM users WHERE id=$1', [a.userId]), one('SELECT * FROM frames WHERE id=$1', [a.frameId])]);
+      if (isWpgMember(u) && f) await postToChannel(await framePost(u, f));
+    } else if ((a.type === 'season' || a.type === 'season-results') && (await flag('discord_post_frames'))) {
+      await postToChannel(await seasonPost(a));
     } else if (a.type === 'stream' && (await flag('discord_post_streams'))) {
       const { streamForAnnounce } = await import('./streams.js');
       const d = await streamForAnnounce(a.accountId);

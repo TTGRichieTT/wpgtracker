@@ -1,4 +1,5 @@
 import { q, one, flag, setting } from './db.js';
+import { checkFrames } from './frames.js';
 import { bus } from './bus.js';
 import { syncWardogs } from './wardogs.js';
 import { syncAchievements } from './achievements.js';
@@ -114,6 +115,7 @@ export async function syncUser(userId, opts = {}) {
   await q('UPDATE users SET last_sync=now() WHERE id=$1', [userId]);
   await recalcXp(userId);
   result.autoMedals = await giveAutoMedals(userId).catch(() => []);
+  result.frames = (await checkFrames(userId).catch(() => [])).map((f) => f.name);
   return result;
 }
 

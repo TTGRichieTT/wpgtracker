@@ -25,6 +25,7 @@ const P = {
   swords: '<path d="M4 4l10 10M4 4h4M4 4v4"/><path d="M20 4 10 14M20 4h-4M20 4v4"/><path d="m8 16-3 3M16 16l3 3M7 13l4 4M17 13l-4 4"/>',
   crosshair: '<circle cx="12" cy="12" r="7"/><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/>',
   steam: '<circle cx="15.5" cy="8.5" r="3.5"/><circle cx="8" cy="16" r="2.5"/><path d="M2 13.5 7.5 16M10.3 15l3-3.4"/><circle cx="12" cy="12" r="10"/>',
+  facebook: '<path d="M14 8h3V4h-3a4 4 0 0 0-4 4v3H7v4h3v6h4v-6h3l1-4h-4V8z"/>',
   discord: '<path d="M8 7c-2 .4-3 1-3 1-1.5 2.5-2 5-2 8 1.4 1.3 3 2 4.5 2l1-1.8M16 7c2 .4 3 1 3 1 1.5 2.5 2 5 2 8-1.4 1.3-3 2-4.5 2l-1-1.8"/><path d="M7 16.5c3 1.3 7 1.3 10 0"/><circle cx="9.5" cy="12.5" r="1.2"/><circle cx="14.5" cy="12.5" r="1.2"/>',
   logout: '<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',

@@ -168,6 +168,19 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
 .av-wrap { position: relative; flex: none; }
 .av-wrap .dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--bg); background: #4a5b6d; }
 .av-wrap .dot.on { background: var(--green); }
+/* Profile frames (frames.js): the frame fills the avatar's space and the picture sits in its middle 74%. */
+.av-wrap.framed { display: inline-block; width: 40px; height: 40px; }
+.av-wrap.framed.sm { width: 30px; height: 30px; }
+.av-wrap.framed.lg { width: 136px; height: 136px; }
+.av-wrap.framed > .avatar { position: absolute; left: 13%; top: 13%; width: 74%; height: 74%; border: 0; border-radius: 11%; box-shadow: none; }
+.av-wrap.framed > .frame-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.av-wrap.framed > .dot { z-index: 1; }
+.frame-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.frame-card { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 12px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(6, 16, 28, .6); }
+.frame-card .nm { font: 700 15px var(--head); text-transform: uppercase; margin: 8px 0 2px; }
+.frame-card .xpbar { width: 100%; }
+.frame-card.locked .av-wrap { filter: grayscale(1) brightness(.6); opacity: .7; }
+.frame-card.selected { border-color: var(--accent); box-shadow: 0 0 14px rgba(41, 182, 246, .3); }
 .pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font: 700 12px var(--head); letter-spacing: .6px; text-transform: uppercase; border: 1px solid var(--line2); color: var(--accent2); }
 .pill.admin { color: #ffd479; border-color: #7a5b16; }
 .pill.mod { color: #b0ffcf; border-color: #1f6a44; }
@@ -361,6 +374,9 @@ h1 { font-size: 34px; margin-bottom: 14px; }
 .nav a.active { background: linear-gradient(90deg, rgba(41,182,246,.28), rgba(41,182,246,.02)); box-shadow: inset 3px 0 0 var(--accent), 0 0 18px rgba(41,182,246,.12); }
 .sidebar-art { margin-top: 10px; text-align: center; }
 .sidebar-art .script { font-size: 22px; }
+.social-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 0; }
+.social-row:empty { display: none; }
+.btn.facebook-btn { background: linear-gradient(180deg, #2d88ff, #1659c7); border-color: #5aa2ff; color: #fff; box-shadow: 0 0 16px rgba(24,119,242,.35); }
 
 /* Hero banners */
 .hero {

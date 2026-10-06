@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   dm_friends_only: 'false',
   sync_minutes: '60',
   discord_invite: 'https://discord.gg/wxMWWQNxUJ',
+  facebook_url: 'https://www.facebook.com/wastedprodigygamer',
   discord_server_id: '',
   discord_voice_enabled: 'true',
   accent_color: '#29b6f6',
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS = {
   discord_post_medals: 'true',
   discord_post_wpg_ranks: 'true',
   discord_post_giveaways: 'true',
+  discord_post_frames: 'true', // profile frame unlocks (WPG members) and new seasons (Admin → Frames & seasons)
   discord_giveaway_channel: '', // empty = the channel for the other automatic posts
   // Cheat watch: staff-only alerts (Discord channel ID empty = app alerts only).
   discord_staff_channel: '',

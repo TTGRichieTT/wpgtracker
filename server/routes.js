@@ -10,18 +10,19 @@ import {
   HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, color, safeUrl,
   issueRememberToken,
 } from './util.js';
+import { shownFrames } from './frames.js';
 
 export const api = express.Router();
 
-const PUBLIC_SETTINGS = ['clan_name', 'clan_tag', 'motto', 'welcome_message', 'discord_invite', 'accent_color', 'logo_url', 'require_approval', 'dm_friends_only'];
+const PUBLIC_SETTINGS = ['clan_name', 'clan_tag', 'motto', 'welcome_message', 'discord_invite', 'facebook_url', 'accent_color', 'logo_url', 'require_approval', 'dm_friends_only'];
 
 export async function rankMap() {
   const ranks = await q('SELECT * FROM ranks ORDER BY sort_order');
   return new Map(ranks.map((r) => [r.id, r]));
 }
 export async function usersWithRanks(users) {
-  const ranks = await rankMap();
-  return users.map((u) => publicUser(u, ranks.get(u.rank_id)));
+  const [ranks, frames] = await Promise.all([rankMap(), shownFrames(users)]);
+  return users.map((u) => u && { ...publicUser(u, ranks.get(u.rank_id)), frame: frames.get(u.id) || null });
 }
 async function userOut(u) {
   return (await usersWithRanks([u]))[0];

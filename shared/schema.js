@@ -50,6 +50,7 @@ export const users = pgTable('users', {
   muted_until: timestamp({ withTimezone: true }),
   custom_fields: jsonb().notNull().default({}),
   skills: jsonb().notNull().default([]), // skills the member shows on their profile (from the recruitment roles list)
+  frame_id: integer(), // the profile frame they show around their picture (frames.js)
   steam_private: boolean().notNull().default(false),
   discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),
@@ -424,6 +425,53 @@ export const giveawayWinners = pgTable('giveaway_winners', {
   claimed_at: timestamp({ withTimezone: true }),
   sent_at: timestamp({ withTimezone: true }),
 }, (t) => [index('giveaway_winners_user_idx').on(t.user_id)]);
+
+// ---------- Profile frames (frames.js) ----------
+// Seasons follow the game's wipes. status: scheduled | active | ended.
+export const seasons = pgTable('seasons', {
+  id: serial().primaryKey(),
+  number: integer().notNull(),
+  name: text().notNull().default(''),
+  start_at: timestamp({ withTimezone: true }).notNull(),
+  end_at: timestamp({ withTimezone: true }),
+  status: text().notNull().default('scheduled'),
+});
+// Everyone's WPG XP when a season started (season WPG XP = now minus this).
+export const seasonStartXp = pgTable('season_start_xp', {
+  season_id: integer().notNull(),
+  steam_id: text().notNull(),
+  xp: integer().notNull().default(0),
+}, (t) => [primaryKey({ name: 'season_start_xp_pkey', columns: [t.season_id, t.steam_id] })]);
+// category: permanent (kept forever) | clan (WPG members, while it applies) | season (earned again each season).
+// metric + target: what earns it (frames.js METRICS); 'manual' = given by hand, 'placement' = a season placing.
+export const frames = pgTable('frames', {
+  id: serial().primaryKey(),
+  key: text().notNull().default(''),
+  name: text().notNull(),
+  description: text().notNull().default(''),
+  category: text().notNull().default('permanent'),
+  style: text().notNull().default('metal-gold'),
+  color: text().notNull().default(''),
+  badge: text().notNull().default(''),
+  label: text().notNull().default(''),
+  crown: boolean().notNull().default(false),
+  metric: text().notNull().default('manual'),
+  target: numeric().notNull().default('0'),
+  season_id: integer(), // placings: the season they're for
+  sort_order: integer().notNull().default(0),
+  enabled: boolean().notNull().default(true),
+  swept: boolean().notNull().default(false), // first check of everyone done (quietly, so a new frame doesn't flood Discord)
+  created_at: now(),
+});
+// Frames members have earned. season_id: the season a season frame was earned in (0 for permanent ones).
+export const userFrames = pgTable('user_frames', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  frame_id: integer().notNull().references(() => frames.id, { onDelete: 'cascade' }),
+  season_id: integer().notNull().default(0),
+  given_by: integer(),
+  unlocked_at: now(),
+}, (t) => [uniqueIndex('user_frames_once').on(t.user_id, t.frame_id, t.season_id)]);
 
 export const sessions = pgTable('sessions', {
   sid: text().primaryKey(),

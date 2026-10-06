@@ -21,6 +21,7 @@ const TABS = [
   { key: 'unlocks', label: 'Unlocks', group: 'Game' },
   { key: 'artillery', label: 'Artillery', group: 'Game' },
   { key: 'wpgxp', label: 'WPG XP', group: 'Game' },
+  { key: 'frames', label: 'Frames & seasons', group: 'Game' },
   { key: 'settings', label: 'Settings', group: 'App' },
   { key: 'channels', label: 'Chat channels', group: 'App' },
   { key: 'profile-fields', label: 'Profile fields', group: 'App' },
@@ -208,6 +209,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
   if (tab.key === 'wpgxp') return (await import('./wpgxp.js')).wpgXpAdminTab(body);
   if (tab.key === 'giveaways') return (await import('./giveaways.js')).giveawaysAdminTab(body);
+  if (tab.key === 'frames') return (await import('./frames.js')).framesAdminTab(body);
   return resourceTab(body, tab.key);
 }
 
@@ -580,6 +582,7 @@ const SETTINGS = [
     ['logo_url', 'Logo picture link (https or /img/…)'],
     ['accent_color', 'Accent colour', 'color'],
     ['discord_invite', 'Discord invite link'],
+    ['facebook_url', 'Facebook page link'],
   ]],
   ['Discord voice', [
     ['discord_voice_enabled', 'Show who is in the Discord voice channels (HQ + Comms)', 'check'],
@@ -698,7 +701,7 @@ async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
   // Settings with their own page aren't repeated here (saving them from a one-line box would lose their line breaks).
-  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways']); // Admin → Recruitment / Giveaways
+  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames']); // Admin → Recruitment / Giveaways / Frames
   const extra = Object.keys(s).filter((k) => !known.has(k) && !ELSEWHERE.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';

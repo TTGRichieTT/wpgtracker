@@ -253,6 +253,28 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   Admin → Giveaways (empty = the channel for the other automatic posts). **Draw someone else** / **Give to the next
   player** hands an unclaimed prize on. Members see everything on the **Giveaways** page.
 
+### Profile frames and seasons (Admin → Frames & seasons)
+
+- **Frames** are borders around a member's picture, earned from what they do. Each member picks one unlocked frame
+  on their profile (**Use this frame**); it shows around their picture across the app and on their Discord cards.
+  Their profile shows every frame with progress towards the ones still locked.
+- **Permanent:** kept forever (Founding Member, Sharpshooter, Long Shot, Specialist, Lucky, Old Guard, and the season
+  placings below). **Clan:** WPG members only, while it applies (Clan Colours, Unit Colours in their Combat Command
+  unit's colour, Officer). PMCs can earn permanent and season frames.
+- **Seasons follow the game's wipes.** Each season has its own set of season frames (Centurion, Marksman, Ironman,
+  Victor, Millionaire, Tycoon, Battle-Hardened), in its own looks with its season number on them (S1, S2…). They can
+  only be earned while that season runs; members keep the ones they earned for good. Season 2 starts with the first
+  wipe on **15 October 2026**.
+- When a season starts (by itself at the date set, or **Start new season now** if the game wipes early): the last
+  season's top 100, top 10 and Champion by WPG XP earned in it get permanent placing frames (one Discord post with the
+  results), and the new season gets last season's challenges in new looks, unless you made its set first with
+  **Make Season N's frames now** (then change their looks before the wipe). Staff are warned if several members'
+  Wardog levels drop at once (the game probably wiped).
+- **Add frame** / **Edit:** look, colour, corner badge, what unlocks it and the target. A new frame's first check is
+  quiet, so members who already qualify get it without a flood of posts; after that each unlock gets an app
+  notification and, for WPG members, a Discord post (switch off on the same page). **Give** hands a frame to a member
+  by hand; **Who has it** lists holders and can take it away.
+
 ### Progression page and artillery data
 
 - **Unlocks** (Admin → Unlocks): the full Wardogs progression — 197 unlocks with levels, costs and pictures.

@@ -8,6 +8,7 @@
 // It only knows players who have signed in on WARDOGS Tracker and synced their stats there. Private profiles
 // and hidden players are never returned; cash and gold are null for players who hide them.
 import { q, one } from './db.js';
+import { noteLevelDrop } from './frames.js';
 
 export const TRACKER = { name: 'WARDOGS Tracker', url: 'https://wardogstracker.gg' };
 const API = 'https://wardogstracker.gg/api/v1';
@@ -59,6 +60,17 @@ async function readBoards() {
     ranks[sort] = map;
   }
   boards = { at: Date.now(), total, ranks };
+  await fillSavedRanks();
+}
+// Members' saved stats get the fresh world ranks straight away, not only at their next sync (a sync that ran
+// before the leaderboards were read, e.g. just after a restart, saved none).
+async function fillSavedRanks() {
+  const rows = await q(`SELECT w.user_id, u.steam_id FROM wardogs_stats w JOIN users u ON u.id = w.user_id
+                         WHERE w.official IS NOT NULL AND w.ranks->>'source' = 'wardogstracker'`);
+  for (const r of rows) {
+    const add = { total: boards.total, ...Object.fromEntries(BOARDS.map((b) => [b, boards.ranks[b]?.get(r.steam_id) || null])) };
+    await q('UPDATE wardogs_stats SET ranks = ranks || $2::jsonb WHERE user_id=$1', [r.user_id, JSON.stringify(add)]);
+  }
 }
 // Starts a refresh in the background when the last one is over an hour old (members' syncs never wait for it).
 function boardRanks(steamId) {
@@ -105,6 +117,9 @@ export async function syncRanks(user) {
   }
   const { official, ranks } = shape(p);
   Object.assign(ranks, boardRanks(user.steam_id));
+  // Wardog level halved or worse since last time: maybe the game wiped (several at once warns staff; frames.js).
+  const before = (await one("SELECT (official->>'wardogLevel')::int AS lvl FROM wardogs_stats WHERE user_id=$1 AND official ? 'syncedAt'", [user.id]))?.lvl || 0;
+  if (before >= 10 && official.wardogLevel <= before / 2) noteLevelDrop(user.id);
   await q(
     `INSERT INTO wardogs_stats (user_id, official, official_synced, ranks, ranks_synced) VALUES ($1,$2,now(),$3,now())
      ON CONFLICT (user_id) DO UPDATE SET official=EXCLUDED.official, official_synced=now(), ranks=EXCLUDED.ranks, ranks_synced=now()`,

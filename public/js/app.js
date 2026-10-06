@@ -1,4 +1,5 @@
 import { icon } from './icons.js';
+import { frameSVG } from './frameart.js';
 import { rankBadge, insigniaSVG, wpgBadge, wpgTierOf } from './insignia.js';
 
 // ---------- Shared helpers ----------
@@ -108,7 +109,9 @@ export const flag = (c) => FLAGS[c] || '';
 const FALLBACK_AVATAR = '/img/icon-192.png';
 export function avatar(u, cls = '') {
   const on = state.online.has(u?.id);
-  return `<span class="av-wrap"><img class="avatar ${cls}" src="${esc(u?.avatar || FALLBACK_AVATAR)}" alt="" loading="lazy" referrerpolicy="no-referrer"><span class="dot ${on ? 'on' : ''}" data-online="${u?.id}"></span></span>`;
+  // In their profile frame (frames.js), if they show one: same space, the picture sits inside the frame.
+  const framed = u?.frame ? ` framed ${cls}" title="${esc(u.frame.name)} frame` : '';
+  return `<span class="av-wrap${framed}"><img class="avatar ${cls}" src="${esc(u?.avatar || FALLBACK_AVATAR)}" alt="" loading="lazy" referrerpolicy="no-referrer">${u?.frame ? frameSVG(u.frame) : ''}<span class="dot ${on ? 'on' : ''}" data-online="${u?.id}"></span></span>`;
 }
 export function rolePill(u) {
   const dev = (u.developer ? ' <span class="pill dev">Developer</span>' : '') + (u.membership === 'pmc' ? ' <span class="pill pmc">PMC</span>' : '');
@@ -267,6 +270,7 @@ async function renderLogin(reason = '') {
             <button class="btn">Test login</button></form>
             <p class="small muted">Test login is on (DEV_LOGIN). Turn it off before going live.</p>` : ''}
       </div>
+      <div class="social-row" style="margin-top:16px">${socialLinks('btn')}</div>
       <div class="scripts"><span class="script">More than a game</span><span class="script">Play harder together</span></div>
     </div></div>`;
   document.getElementById('dev')?.addEventListener('submit', async (e) => {
@@ -332,6 +336,16 @@ function navLink(n) {
   return `<a href="${href}" data-nav="${n.key}">${icon(n.icon)}<span>${n.label}</span>${c ? `<span class="badge-count">${c}</span>` : ''}</a>`;
 }
 
+// The clan's Discord and Facebook (Admin → Settings), as small buttons.
+function socialLinks(cls = 'btn small') {
+  const s = state.settings;
+  const ok = (u) => /^https:\/\//.test(u || '');
+  return [
+    ok(s.discord_invite) ? `<a class="${cls} discord-join" href="${esc(s.discord_invite)}" target="_blank" rel="noopener">${icon('discord')} Discord</a>` : '',
+    ok(s.facebook_url) ? `<a class="${cls} facebook-btn" href="${esc(s.facebook_url)}" target="_blank" rel="noopener">${icon('facebook')} Facebook</a>` : '',
+  ].join('');
+}
+
 function renderShell() {
   const s = state.settings;
   document.getElementById('app').innerHTML = `
@@ -340,6 +354,7 @@ function renderShell() {
         <div class="brand"><img class="brand-logo" src="${esc(brandLogo())}" alt="${esc(s.clan_name || 'WPG')}"><div class="tag">Barracks</div></div>
         <nav class="nav" id="nav"></nav>
         <div class="sidebar-art"><span class="script">More than a game</span></div>
+        <div class="social-row">${socialLinks()}</div>
         <div class="me-card" id="mecard"></div>
       </aside>
       <div style="min-width:0">
@@ -765,10 +780,10 @@ async function viewProfile(main, [id]) {
   // World ranks among everyone on WARDOGS Tracker (level from their profile; XP and cash from its leaderboards).
   const wr = p.wardogs.ranks;
   const of = (n) => (n ? `#${fmtNum(n)}${wr?.total ? ` of ${fmtNum(wr.total)}` : ''}` : '—');
-  const worldRanksHtml = wr?.level || wr?.xp || wr?.cash ? `<div class="tiles" style="margin-bottom:12px">
-      ${tile('trophy', 'World rank (level)', of(wr.level))}
-      ${tile('xp', 'XP rank', of(wr.xp))}
-      ${tile('coins', 'Cash rank', of(wr.cash))}
+  // Only the ranks WARDOGS Tracker has for them (cash is hidden for players who hide it there).
+  const rankTiles = [['trophy', 'World rank (level)', wr?.level], ['xp', 'XP rank', wr?.xp], ['coins', 'Cash rank', wr?.cash]].filter(([, , n]) => n);
+  const worldRanksHtml = rankTiles.length ? `<div class="tiles" style="margin-bottom:12px">
+      ${rankTiles.map(([ic, label, n]) => tile(ic, label, of(n))).join('')}
     </div>` : '';
   const rankHint = '';
 
@@ -797,7 +812,7 @@ async function viewProfile(main, [id]) {
   } else {
     officialHtml = worldRanksHtml + (mine && state.realSteam
       ? `<p class="muted" style="margin-top:0">No global Wardogs stats yet.</p>${trackerCardHtml()}`
-      : '<p class="muted">No global Wardogs stats yet. They show once this player adds their in-game name (Name#1234).</p>');
+      : '<p class="muted">No global Wardogs stats yet. They show once this player signs in on WARDOGS Tracker with Steam and syncs their stats there.</p>');
   }
 
   const games = p.games.map((g) => {
@@ -819,7 +834,7 @@ async function viewProfile(main, [id]) {
       <div class="panel glow">
         <div class="banner" style="background:linear-gradient(90deg, ${esc(u.banner_color)}, transparent)"></div>
         <div class="profile-head">
-          <img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">
+          ${u.frame ? `<span class="av-wrap framed lg" title="${esc(u.frame.name)} frame"><img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">${frameSVG(u.frame)}</span>` : `<img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">`}
           <div class="who">
             <div class="pname">${esc(u.name)} ${flag(u.country)}</div>
             ${u.callsign ? `<div class="accent">“${esc(u.callsign)}”</div>` : ''}
@@ -905,6 +920,7 @@ async function viewProfile(main, [id]) {
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>
+      <div id="framesBox"></div>
     </div>`;
 
   document.getElementById('syncBtn')?.addEventListener('click', syncMine);
@@ -917,6 +933,11 @@ async function viewProfile(main, [id]) {
     };
   });
   onLive('me', () => { if (mine) route(); });
+  // Profile frames: what they've unlocked, progress on the rest, and (on your own) which one to show.
+  import('./frames.js').then((m) => {
+    const box = document.getElementById('framesBox');
+    if (box) m.profileFramesPanel(box, u);
+  }).catch(() => {});
   // Combat Command posting and roles (the server only sends them to WPG members and staff).
   if (p.combat) {
     import('./combat.js').then((m) => {

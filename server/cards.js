@@ -9,6 +9,7 @@ import {
   W, FOOT_SRC, FOOT, MID_X, BAND_BG, BOX_FILL, WHITE, CYAN, GREEN, AMBER, VALUE_FONT, LABEL_FONT,
 } from './careercard.js';
 import { rankBadge, wpgBadge } from '../public/js/insignia.js';
+import { frameSVG } from '../public/js/frameart.js';
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const HEAD_H = 246; // the design's header art (logo, WARDOGS, soldier, slogans)
@@ -121,17 +122,36 @@ async function frame(heading, contentH, draw) {
   return canvas.encode('jpeg', 90);
 }
 
-// The member's name (and Steam picture) across the top of the content.
-async function playerStrip(g, top, name, avatarUrl) {
+// A member's picture in their profile frame (frames.js): the picture fills the frame's middle 74%.
+// x, y, size: where the whole frame goes. Without a picture the middle is left dark.
+async function framedPicture(g, img, x, y, size, frame) {
+  const pic = size * 0.74;
+  const px = x + (size - pic) / 2;
+  const py = y + (size - pic) / 2;
+  g.save();
+  roundRect(g, px, py, pic, pic, pic * 0.11);
+  g.clip();
+  if (img) g.drawImage(img, px, py, pic, pic);
+  else { g.fillStyle = '#0b1520'; g.fillRect(px, py, pic, pic); }
+  g.restore();
+  const art = await loadImage(Buffer.from(frameSVG(frame, Math.round(size * 2)))).catch(() => null);
+  if (art) g.drawImage(art, x, y, size, size);
+}
+
+// The member's name (and Steam picture, in their profile frame if they show one) across the top of the content.
+async function playerStrip(g, top, name, avatarUrl, frame = null) {
   const img = await icon(avatarUrl);
   g.font = `800 38px ${VALUE_FONT}`;
   let size = 38;
   while (size > 20 && g.measureText(name).width > 1100) { size -= 2; g.font = `800 ${size}px ${VALUE_FONT}`; }
   const tw = g.measureText(name).width;
-  const total = tw + (img ? 64 : 0);
+  const total = tw + (frame ? 76 : img ? 64 : 0);
   let x = W / 2 - total / 2;
   const cy = top + 32;
-  if (img) {
+  if (frame) {
+    await framedPicture(g, img, x, cy - 31, 62, frame);
+    x += 76;
+  } else if (img) {
     g.save();
     g.beginPath(); g.arc(x + 25, cy, 25, 0, Math.PI * 2); g.clip();
     g.drawImage(img, x, cy - 25, 50, 50);
@@ -225,7 +245,7 @@ function skull(g, cx, cy) {
 // d: { name, avatar, wpg{rank,level,xp,position,total,from,next{name,xp}}, clan{pmc,rank,xp,next{name,min_xp},from} }
 export function renderRankCard(d) {
   return frame('RANK REPORT', 76 + 300 + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     // WPG server rank (WPG XP earned on the WPG server).
     panel(g, 28, y + 6, 794, 290);
     chevrons(g, 64, y + 42, 0.8);
@@ -281,7 +301,7 @@ export function renderRankCard(d) {
 // d: { name, avatar, kills, deaths, matches, wins, losses, playtime, lastSeen, killsPos, playtimePos, players, wpgRank, wpgXp }
 export function renderServerCard(d) {
   return frame('WPG SERVER STATS', 76 + 380 + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     panel(g, 28, y + 6, 1480, 370);
     skull(g, 66, y + 42);
     title(g, 100, y + 42, 'WPG SERVER STATS', '(ALL TIME)');
@@ -312,7 +332,7 @@ export function renderMedalsCard(d) {
   const rightH = 110 + aRows * 54 + 20;
   const bodyH = Math.max(300, leftH, rightH);
   return frame('MEDAL RACK', 76 + bodyH + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     // Medals, two columns.
     panel(g, 28, y + 6, 794, bodyH);
     medalIcon(g, 66, y + 42);
@@ -378,7 +398,7 @@ export function renderProgressCard(d) {
   const rows = d.rows || [];
   const bodyH = 84 + rows.length * 66 + 70;
   return frame('PROGRESSION', 76 + bodyH + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     panel(g, 28, y + 6, 1480, bodyH);
     chevrons(g, 64, y + 42, 0.8);
     title(g, 100, y + 42, 'UNLOCK PROGRESS', '(EVERY CLASS)');
@@ -860,7 +880,7 @@ function hangingMedal(g, cx, top, colors, s = 1) {
 // d: { name, avatar, rank{name,abbr,color,insignia}, from{name}, xp }
 export function renderPromotionCard(d) {
   return frame('PROMOTION', 76 + 300 + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     panel(g, 28, y + 6, 1480, 290);
     const badge = await loadImage(Buffer.from(rankBadge(d.rank, 240))).catch(() => null);
     if (badge) g.drawImage(badge, 70, y + 30, 240, 240);
@@ -880,7 +900,7 @@ export function renderMedalAwardCard(d) {
   const each = 250;
   const bodyH = list.length * each + (more > 0 ? 40 : 0);
   return frame(list.length > 1 ? 'MEDALS AWARDED' : 'MEDAL AWARDED', 76 + bodyH + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     list.forEach((m, i) => {
       const py = y + 6 + i * each;
       panel(g, 28, py, 1480, each - 14);
@@ -900,7 +920,7 @@ export function renderMedalAwardCard(d) {
 // d: { name, avatar, rank, level, xp, position, total, from, next{name,xp} }
 export function renderWpgRankUpCard(d) {
   return frame('WPG RANK UP', 76 + 300 + 20, async (g, top) => {
-    const y = await playerStrip(g, top, d.name, d.avatar);
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     panel(g, 28, y + 6, 1480, 290);
     const wb = await loadImage(Buffer.from(wpgBadge(d.level, 250, d.rank))).catch(() => null);
     if (wb) g.drawImage(wb, 48, y + 26, 250, 250);
@@ -922,6 +942,24 @@ export function renderWpgRankUpCard(d) {
       bar(g, 322, y + 250, 1148, 12, pct);
       label(g, `${(pct * 100).toFixed(pct < 0.01 ? 2 : 1)}% OF THE WAY TO WARDOG X (650,000 WPG XP)`, 322, y + 276, { size: 17, color: MUTED });
     }
+  });
+}
+
+// ---------- Profile frame unlocked (frames.js) ----------
+// d: { name, avatar, frame{style,color,badge,label,crown,name}, description, kind }  kind: e.g. "PERMANENT FRAME"
+export function renderFrameUnlockCard(d) {
+  return frame('FRAME UNLOCKED', 76 + 300 + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar);
+    panel(g, 28, y + 6, 1480, 290);
+    await framedPicture(g, await icon(d.avatar), 60, y + 26, 250, d.frame);
+    label(g, 'UNLOCKED THE', 350, y + 60, { size: 26 });
+    bigValue(g, upper(d.frame?.name), 350, y + 128, 1120, { size: 80, color: CYAN, font: LABEL_FONT, weight: 700 });
+    if (d.kind) label(g, upper(d.kind), 350, y + 184, { size: 26, color: AMBER });
+    g.font = `600 24px ${VALUE_FONT}`;
+    g.fillStyle = MUTED;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    wrapLines(g, d.description, 1120, 2).forEach((line, k) => g.fillText(line, 350, y + 230 + k * 32));
   });
 }
 
