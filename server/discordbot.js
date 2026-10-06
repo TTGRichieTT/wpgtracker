@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import { q, one, setting, flag } from './db.js';
 import { bus } from './bus.js';
 import { guildId } from './discord.js';
-import { usersWithRanks, topTierOnly } from './routes.js';
+import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
@@ -118,7 +118,7 @@ const footer = { text: 'WPG Barracks' };
 // Everything on the career card for one member.
 async function careerData(u) {
   const [ws, prog, srv, awards, game] = await Promise.all([
-    one('SELECT official, ranks FROM wardogs_stats WHERE user_id=$1', [u.id]),
+    one(`SELECT ws.official, ws.ranks, CASE WHEN ws.official IS NULL THEN NULL ELSE ${ACCOUNT_WORTH_SQL} END AS worth FROM wardogs_stats ws WHERE ws.user_id=$1`, [u.id]),
     one('SELECT xp, rank_name, bot_name FROM server_progress WHERE steam_id=$1', [u.steam_id]),
     one(
       `SELECT COALESCE(SUM(kills),0)::int kills, COALESCE(SUM(deaths),0)::int deaths, COALESCE(SUM(matches),0)::int matches,
@@ -152,7 +152,7 @@ async function careerData(u) {
     // The name used on the WPG server (with the clan tag), else the Steam name.
     // (No Steam ID or Discord name: cards are posted in Discord, so they stay private.)
     name: cleanName(prog?.bot_name || srv?.name, '') || cleanName(u.persona_name),
-    official: ws?.official || null,
+    official: ws?.official ? { ...ws.official, worth: ws.worth === null ? null : Number(ws.worth) } : null,
     worldRank: ws?.ranks?.level || null,
     wpg: { rank: prog?.rank_name || 'RECRUIT I', xp: prog?.xp || 0, position: pos?.n || null },
     server: srv || {},
@@ -170,16 +170,46 @@ export async function careerCard(user) {
 
 // ---------- Commands ----------
 // /stats: the WPG career card picture (falls back to a text card if the picture can't be made).
-// Wardogs stats are saved snapshots; external tracker syncing is disabled.
+// Global stats come from WARDOGS Tracker (credited under the card); re-read first if over 10 minutes old.
+const CREDIT = 'Global Wardogs stats: [WARDOGS Tracker](<https://wardogstracker.gg>)';
 async function freshWardogs(user) {
-  const ws = await one('SELECT ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
-  if (!ws?.ranks && !ws?.ranks_synced) return '';
-  return `ℹ️ **${user.persona_name}**'s Wardogs stats are saved snapshots; external tracker syncing is disabled.`;
+  let ws = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
+  if (!ws?.ranks_synced || Date.now() - new Date(ws.ranks_synced).getTime() > 10 * 60 * 1000) {
+    const { syncWardogs } = await import('./wardogs.js');
+    await syncWardogs(user).catch((e) => problem('Refreshing Wardogs stats', e.message));
+    ws = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
+  }
+  if (!ws?.official) return `${CREDIT} · **${user.persona_name}** isn't on it yet (sign in there once with Steam and sync).`;
+  if (ws.ranks?.state === 'old') return `${CREDIT} · **${user.persona_name}** last synced there ${new Date(ws.ranks.polled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`;
+  return CREDIT;
 }
 
 async function cmdStats(data, caller) {
   const f = await findMember(data, caller);
-  if (f.error) return { content: f.error };
+  if (f.error) {
+    // Not in the app: show their WARDOGS Tracker stats if they linked this Discord account there.
+    const mention = option(data, 'member');
+    const { trackerByDiscord } = await import('./ranking.js');
+    const t = mention ? await trackerByDiscord(String(mention)).catch(() => null) : null;
+    if (!t) return { content: f.error };
+    const o = t.official;
+    return {
+      embeds: [{
+        title: `${t.name} · Wardogs stats`, url: t.ranks.profile_url, color: COLOR,
+        description: `<@${mention}> isn't in WPG Barracks, so these are their global stats from WARDOGS Tracker.`,
+        fields: [
+          { name: 'Wardog level', value: num(o.wardogLevel), inline: true },
+          { name: 'Career XP', value: o.careerXp ? num(o.careerXp) : '—', inline: true },
+          { name: 'World rank', value: t.ranks.level ? `#${num(t.ranks.level)}` : '—', inline: true },
+          { name: 'Cash', value: o.cash === null ? 'hidden' : money(o.cash), inline: true },
+          { name: 'Unlocks', value: o.unlocks ? num(o.unlocks) : '—', inline: true },
+          { name: 'Classes', value: ROLES.map(([k, l]) => `${l} **${num(o.roles?.[k]?.level ?? 0)}**`).join(' · ') },
+        ],
+        footer: { text: 'Global stats: WARDOGS Tracker (wardogstracker.gg)' },
+        timestamp: o.syncedAt || undefined,
+      }],
+    };
+  }
   const warning = await freshWardogs(f.user);
   try {
     const card = await careerCard(f.user);
@@ -197,7 +227,7 @@ async function cmdStats(data, caller) {
 async function statsEmbed(f) {
   const ws = await one('SELECT official, ranks, official_synced FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
   const o = ws?.official;
-  if (!o) return { content: `**${f.user.persona_name}** has no Wardogs stats yet. They add their in-game name (Name#1234) on HQ in the app.` };
+  if (!o) return { content: `**${f.user.persona_name}** has no global Wardogs stats yet: they sign in once on WARDOGS Tracker (wardogstracker.gg) with Steam and sync.` };
   const r = ws.ranks || {};
   const of = r.total ? ` of ${num(r.total)}` : '';
   return {
@@ -208,15 +238,15 @@ async function statsEmbed(f) {
       fields: [
         { name: 'Wardog level', value: num(o.wardogLevel), inline: true },
         { name: 'Cash', value: money(o.cash), inline: true },
-        { name: 'Account worth', value: o.worth ? money(o.worth) : '—', inline: true },
+        { name: 'Achievements', value: o.achievements !== null && o.achievements !== undefined ? num(o.achievements) : '—', inline: true },
         { name: 'Total XP', value: o.careerXp ? num(o.careerXp) : '—', inline: true },
         { name: 'Unlocks', value: o.unlocks ? num(o.unlocks) : '—', inline: true },
         { name: 'Gold', value: num(o.gold), inline: true },
         { name: 'Classes', value: ROLES.map(([k, l]) => `${l} **${num(o.roles?.[k]?.level ?? o.roles?.[k] ?? 0)}**`).join(' · ') },
-        { name: 'World rank', value: [r.level && `Level #${num(r.level)}${of}`, r.worth && `Worth #${num(r.worth)}`, r.cash && `Cash #${num(r.cash)}`].filter(Boolean).join(' · ') || '—' },
+        { name: 'World rank', value: [r.level && `Level #${num(r.level)}${of}`, r.xp && `XP #${num(r.xp)}`, r.cash && `Cash #${num(r.cash)}`].filter(Boolean).join(' · ') || '—' },
       ],
-      footer,
-      timestamp: ws.official_synced || undefined,
+      footer: { text: 'Global stats: WARDOGS Tracker (wardogstracker.gg) · WPG Barracks' },
+      timestamp: o.syncedAt || ws.official_synced || undefined,
     }],
   };
 }
@@ -393,8 +423,8 @@ const BOARDS = {
   },
   worth: {
     title: 'Account worth',
-    sql: `SELECT u.persona_name AS name, (ws.official->>'worth')::bigint AS v FROM users u JOIN wardogs_stats ws ON ws.user_id=u.id
-           WHERE u.status='active' AND ws.official->>'worth' IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
+    sql: `SELECT u.persona_name AS name, ${ACCOUNT_WORTH_SQL} AS v FROM users u JOIN wardogs_stats ws ON ws.user_id=u.id
+           WHERE u.status='active' AND ws.official IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
     show: (r) => `**${money(r.v)}**`,
     value: (r) => money(r.v),
   },
@@ -530,7 +560,7 @@ async function cmdProgress(data, caller) {
   const warning = await freshWardogs(f.user);
   const ws = await one('SELECT official FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
   const o = ws?.official;
-  if (!o) return { content: `**${f.user.persona_name}** has no Wardogs stats yet. They add their in-game name (Name#1234) on HQ in the app.` };
+  if (!o) return { content: `**${f.user.persona_name}** has no global Wardogs stats yet: they sign in once on WARDOGS Tracker (wardogstracker.gg) with Steam and sync.` };
   const unlocks = await q('SELECT role, level, name, cost, image FROM unlocks ORDER BY level, name');
   const bought = new Set((await q('SELECT role, name FROM user_unlocks WHERE user_id=$1', [f.user.id])).map((r) => `${r.role}|${r.name}`));
   const levelOf = (role) => (role === 'career' ? Number(o.wardogLevel) || 0 : Number(o.roles?.[role]?.level ?? o.roles?.[role]) || 0);

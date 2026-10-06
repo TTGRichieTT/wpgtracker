@@ -3,6 +3,7 @@ import { q, one, getSettings, flag } from './db.js';
 import { bus } from './bus.js';
 import { syncUser, recalcXp } from './steam.js';
 import { combatFor, isWpg, specialties } from './combat.js';
+import { syncWardogs } from './wardogs.js';
 import { rankProgress } from './wpgxp.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
@@ -47,7 +48,7 @@ api.get('/me', signedIn, async (req, res) => {
     unread_dms: unread.n,
     friend_requests: requests.n,
     tracker_linked: !!tracker?.linked,
-    // How the source is reading my account (paused = my link expired and my stats stopped updating).
+    // WARDOGS Tracker: syncing · old (not synced there for a week) · missing (not on it) · unsynced (signed in, never synced).
     tracker_state: tracker?.state || null,
     tracker_polled_at: tracker?.polled_at || null,
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', ...(await rankProgress(prog?.xp)) },
@@ -79,9 +80,15 @@ api.delete('/me/discord-link', member, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Keep the old endpoint explicit for clients that still call it; it never reads or stores tracker data.
-api.post('/me/tracker-check', member, (_req, res) => {
-  res.json({ linked: false, reason: 'Wardogs Tracker sync is disabled; saved stats will not be refreshed' });
+// Looks up my global stats on WARDOGS Tracker now (after I've signed in and synced there).
+const trackerChecks = new Map();
+api.post('/me/tracker-check', member, async (req, res) => {
+  const last = trackerChecks.get(req.user.id) || 0;
+  if (Date.now() - last < 10 * 1000) throw new HttpError(429, 'Checking too often.');
+  trackerChecks.set(req.user.id, Date.now());
+  const r = await syncWardogs(req.user).catch((e) => ({ ok: false, reason: e.message }));
+  if (r.official) await recalcXp(req.user.id);
+  res.json({ linked: !!r.official, state: r.state || null, reason: r.ok ? '' : r.reason });
 });
 
 // ---------- Profile ----------
@@ -275,7 +282,7 @@ export function topTierOnly(awards) {
 
 // Account worth: the real figure from the global stats (cash + gold + bought unlocks + vault) when
 // there is one, otherwise cash + cost of every unlock reached by level. Needs "ws" = wardogs_stats.
-const ACCOUNT_WORTH_SQL = `COALESCE((ws.official->>'worth')::bigint, COALESCE((ws.official->>'cash')::bigint, 0) + COALESCE((
+export const ACCOUNT_WORTH_SQL = `COALESCE((ws.official->>'worth')::bigint, COALESCE((ws.official->>'cash')::bigint, 0) + COALESCE((
     SELECT SUM(ul.cost) FROM unlocks ul
      WHERE ul.level <= CASE WHEN ul.role = 'career' THEN (ws.official->>'wardogLevel')::int
                             ELSE (ws.official->'roles'->ul.role->>'level')::int END), 0))::bigint`;
@@ -303,6 +310,13 @@ api.get('/leaderboard', member, async (req, res) => {
   } else if (by === 'worth') {
     rows = await q(
       `SELECT u.*, CASE WHEN ws.official IS NULL THEN 0 ELSE ${ACCOUNT_WORTH_SQL} END AS score FROM users u
+         LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
+        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+    );
+  } else if (by === 'careerxp' || by === 'gold' || by === 'unlocks') {
+    const key = { careerxp: 'careerXp', gold: 'gold', unlocks: 'unlocks' }[by];
+    rows = await q(
+      `SELECT u.*, COALESCE((ws.official->>'${key}')::bigint, 0) AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
         WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
     );

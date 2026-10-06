@@ -484,12 +484,16 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
   const users = await q("SELECT id, persona_name FROM users WHERE status='active' AND steam_id ~ '^[0-9]{17}$'");
   res.json({ ok: true, queued: users.length });
   syncAllRunning = true;
-  const tally = { done: 0, failed: 0 };
+  const tally = { done: 0, failed: 0, tracker: 0, notOnTracker: [] };
   try {
     for (const u of users) {
       const r = await syncUser(u.id).catch(() => null);
       if (!r) tally.failed++;
-      else tally.done++;
+      else {
+        tally.done++;
+        if (r.wardogs?.official) tally.tracker++;
+        else tally.notOnTracker.push(u.persona_name);
+      }
       await new Promise((ok) => setTimeout(ok, 1500));
     }
   } finally {
@@ -497,9 +501,10 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
   }
   bus.emit('notify', req.user.id, {
     title: 'Full sync finished',
-    body: `${tally.done} members synced${tally.failed ? ` · ${tally.failed} failed` : ''}. Wardogs stats are not refreshed because external syncing is disabled.`,
+    body: `${tally.done} members synced · ${tally.tracker} with global stats from WARDOGS Tracker${tally.failed ? ` · ${tally.failed} failed` : ''}.${tally.notOnTracker.length
+      ? ` Not on WARDOGS Tracker yet (they sign in there once with Steam and sync): ${tally.notOnTracker.slice(0, 12).join(', ')}${tally.notOnTracker.length > 12 ? ` and ${tally.notOnTracker.length - 12} more` : ''}.` : ''}`,
   });
-  await audit(req.user.id, 'sync.all', '', { synced: tally.done, failed: tally.failed });
+  await audit(req.user.id, 'sync.all', '', { synced: tally.done, tracker: tally.tracker, notOnTracker: tally.notOnTracker.length, failed: tally.failed });
 });
 
 admin.get('/audit', role('mod'), async (_req, res) => {

@@ -1,5 +1,5 @@
-// Global Wardogs stats for a member (levels, cash, classes and world ranks). They come from the
-// worldwide rankings in ranking.js; Steam hours and achievements are synced separately in steam.js.
+// Global Wardogs stats for a member (levels, cash, classes and world ranks), from WARDOGS Tracker's public
+// stats API (ranking.js). Steam hours and achievements are synced separately in steam.js.
 import { flag } from './db.js';
 import { syncRanks } from './ranking.js';
 

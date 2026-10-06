@@ -596,7 +596,7 @@ const SETTINGS = [
     ['xp_event_message', 'XP event banner on the Ranks page (e.g. "Kill XP is 10 this weekend!") — leave empty when no event'],
   ]],
   ['Stats syncing', [
-    ['tracker_enabled', 'Get global Wardogs stats (level, cash, classes, world ranks)', 'check'],
+    ['tracker_enabled', 'Get global Wardogs stats from WARDOGS Tracker (level, XP, cash, gold, unlocks, classes, world ranks)', 'check'],
     ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
   ]],
   ['Discord bot (automatic posts)', [

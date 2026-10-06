@@ -127,26 +127,20 @@ on the **Streams** tab with the stream's player, the platform's own chat box, an
 
 ## 5. How stats and XP work
 
-- **Global Wardogs stats** (level, XP, cash, role levels) are saved snapshots from the external WARDOGS Tracker.
-  External syncing is disabled; existing saved values remain visible but will not refresh.
-- **WPG server kills and deaths** also come from WARDOGS Tracker.
-  Put the WPG server's name in Admin → Settings → *WPG server name on WARDOGS Tracker*.
+- **Global Wardogs stats** (Wardog level, career XP, cash, gold, unlocks, achievements, each class's level and XP, and
+  world ranks by level, XP and cash) come from **[WARDOGS Tracker](https://wardogstracker.gg)**'s free public stats API,
+  by Steam account. Each member signs in there once with Steam and presses **Sync**; HQ shows how, with a **Check now**
+  button. The app re-reads them with every stats sync (gently: one request at a time, under its rate limit) and its
+  leaderboards once an hour. Its terms allow this for clan sites as long as it's credited with a link wherever the
+  stats show (the app does: profiles, leaderboards, Discord) and not presented as official. Members not on it show
+  the sign-in card; old figures from the previous source are cleared then.
+- **Account worth** is worked out by the app: cash + the cost of the unlocks the member's levels open up.
+- **Discord /stats** for someone not in the app shows their WARDOGS Tracker stats if they linked that Discord there.
+- **WPG server kills, deaths and matches** come from our own server (RCON and the game's kill feed).
 - **Steam playtime and achievements** come from Steam. The member's Steam "Game details" must be set to Public.
-- **WPG XP** = Steam hours + achievements + WPG server kills + server stats + bonus XP.
+- **Clan XP** = Steam hours + achievements + WPG server kills + server stats + bonus XP.
   You can change every XP value in Admin (Games, Stats, Settings).
-- Steam playtime and achievements sync automatically and when a member presses **Sync stats**. Wardogs stats are not refreshed.
-
-### Wardogs Tracker requests (disabled)
-
-The app no longer makes requests to `wardogs.tools`. Before disabling this integration, it fetched:
-
-- `GET /api/leaderboards?by=level&dir=desc` to read the total ranked-player count.
-- `GET /api/leaderboards/locate?by=level&dir=desc&q=<name>` to resolve a public player by display name and discriminator. The name was the member's entered in-game name, or their Steam persona name if none was entered; the response's player ID was then used in the rank and status lookups.
-- `GET /api/leaderboards/locate?by=<level|worth|cash>&dir=desc&socialId=<id>` to read the player's rank in each of those three boards; the level response also supplied their row offset.
-- `GET /api/leaderboards?by=level&dir=desc&block=<n>` to read a 1,000-player level-board block. From matching rows, the app read the player ID, global level, cash, gold, six role levels, account worth, unlock count and career XP.
-- `GET /player/<socialId>` to read the player's last-polled timestamp and tracker-link state.
-
-The sync and relink controls are disabled. No new Wardogs Tracker data is fetched; existing saved values are retained as snapshots.
+- Stats update by themselves on a timer (Admin → Settings), and when a member presses **Sync stats**.
 
 ## 6. Discord bot stats (optional, for whoever runs the bot)
 
@@ -179,7 +173,7 @@ With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no St
   If the publish screen shows a red **DROP TABLE** or "delete" warning, press **Cancel**, restart the workspace app and try again.
 
 - **Site down:** Replit → Deployments → check the logs → press **Redeploy**.
-- **Stats not updating:** Wardogs global stats are saved snapshots and do not refresh. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
+- **Stats not updating:** global Wardogs stats need the member to be signed in and synced on WARDOGS Tracker. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
 - **Locked out of admin:** another admin can fix your role in Admin → Members.
 - **Android app says "Can't reach HQ":** the website is down or the phone is offline.
 

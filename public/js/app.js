@@ -614,7 +614,8 @@ async function syncMine(e) {
     const notes = [];
     if (r.steam && !r.steam.ok) notes.push(`Steam: ${r.steam.reason}`);
     if (r.steam?.private) notes.push('Steam: your game details are private, so playtime cannot be read.');
-    if (r.wardogs && !r.wardogs.ok) notes.push(`Wardogs: ${r.wardogs.reason}`);
+    if (r.wardogs && !r.wardogs.ok) notes.push(`Wardogs: ${r.wardogs.reason}.`);
+    else if (r.wardogs?.state === 'old') notes.push('Wardogs: your stats on WARDOGS Tracker are over a week old — sync there to update them.');
     toast('Stats synced', notes.join(' ') || 'All up to date.');
     await refreshMe();
     route();
@@ -625,31 +626,65 @@ async function syncMine(e) {
   }
 }
 
-// ---------- Wardogs stats ----------
-// Keep legacy tracker state recognizable while showing only that the saved snapshot is no longer refreshed.
+// ---------- Wardogs stats (from WARDOGS Tracker) ----------
+// Global stats come from WARDOGS Tracker (wardogstracker.gg), by Steam account: members sign in there once with Steam
+// and sync, and the app reads them from then on. Always shown with the "Global stats by WARDOGS Tracker" credit.
+const TRACKER_URL = 'https://wardogstracker.gg';
+export const trackerCredit = (extra = '') => `<p class="muted small" style="margin:10px 0 0">Global stats by <a href="${TRACKER_URL}" target="_blank" rel="noopener">WARDOGS Tracker</a>, a fan site (not official)${extra}.</p>`;
 const needsTracker = () => state.realSteam && !state.trackerLinked;
-// Preserve a visible notice for older saved tracker states that had already stopped updating.
-const STALE_STATES = new Set(['paused', 'stalled', 'unavailable']);
-const staleLink = () => state.trackerLinked && STALE_STATES.has(state.trackerState);
+// Linked, but they haven't synced on WARDOGS Tracker for over a week, so the numbers are getting old.
+const staleLink = () => state.trackerLinked && state.trackerState === 'old';
 function staleCardHtml() {
   const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
   return `<div class="panel glow tracker-card" style="border-color:#f5a524">
-    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Wardogs stats are a saved snapshot${since}</div>
-    <p style="margin:0">External Wardogs Tracker syncing is disabled. Any level, cash and class levels shown here are the last saved values and will not refresh.</p>
+    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Your Wardogs stats were last synced${since}</div>
+    <p style="margin:0 0 10px">Open WARDOGS Tracker, sign in with Steam and press <b>Sync</b> on your profile. Then press <b>Check now</b> here.</p>
+    <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open WARDOGS Tracker</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
   </div>`;
 }
 
 function trackerCardHtml() {
+  const why = { missing: "We couldn't find you on WARDOGS Tracker yet.", unsynced: "You're signed in on WARDOGS Tracker, but haven't synced your stats there yet." }[state.trackerState] || '';
   return `<div class="panel glow tracker-card" data-tracker-card>
     <div class="row" style="align-items:flex-start;gap:16px">
       <img src="/img/brand/wolf-emblem.webp" alt="" style="width:74px;border-radius:6px">
       <div class="grow" style="min-width:220px">
-        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Wardogs stats sync is disabled</div>
-        <p style="margin:0">External Wardogs Tracker requests are turned off. Previously saved level, XP, cash and class levels remain available as snapshots and will not refresh.</p>
+        <div class="panel-title" style="margin-bottom:8px">${icon('target')} Show your <span class="sub">Wardogs stats</span></div>
+        <p style="margin:0 0 10px">Your Wardog level, XP, cash, gold, unlocks, class levels and world rank come from <b>WARDOGS Tracker</b>, a free fan site. One time only, about a minute:</p>
+        <p style="margin:0 0 6px"><b>1.</b> Open WARDOGS Tracker, <b>sign in through Steam</b> and press <b>Sync</b> to load your stats.</p>
+        <p style="margin:0 0 10px"><b>2.</b> Come back and press <b>Check now</b>. After that they update by themselves.</p>
+        ${why ? `<p class="small" style="margin:0 0 10px;color:#f5a524">${why}</p>` : ''}
+        <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
+        <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open WARDOGS Tracker</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
       </div>
     </div>
   </div>`;
 }
+
+// One listener for every "Check now" button, wherever it appears.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-tracker-check]');
+  if (!btn) return;
+  const status = btn.closest('.tracker-card')?.querySelector('[data-tracker-status]');
+  btn.disabled = true;
+  if (status) status.textContent = 'Looking…';
+  try {
+    const r = await api('me/tracker-check', { method: 'POST', body: {} });
+    if (r.linked) {
+      toast('Wardogs stats found!', 'Your global stats are on your career profile now.', { link: `#/u/${state.me.id}` });
+      await refreshMe();
+      route();
+      return;
+    }
+    if (status) status.textContent = `${r.reason || 'Not found yet'}. If you've only just synced there, give it a minute and try again.`;
+    else toast('Not found yet', r.reason || '');
+  } catch (x) {
+    if (status) status.textContent = x.status === 429 ? 'Wait a few seconds, then try again.' : x.message;
+    else fail(x);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------- Unlocks (admin-maintained list) ----------
 export function lastNextUnlock(list, role, level) {
@@ -727,17 +762,15 @@ async function viewProfile(main, [id]) {
     friends: `<button class="btn ghost" data-friend="remove">Friends ✓ · Remove</button>`,
   }[p.friend];
 
-  // Worldwide ranks (out of every ranked Wardogs player).
+  // World ranks among everyone on WARDOGS Tracker (level from their profile; XP and cash from its leaderboards).
   const wr = p.wardogs.ranks;
   const of = (n) => (n ? `#${fmtNum(n)}${wr?.total ? ` of ${fmtNum(wr.total)}` : ''}` : '—');
-  const worldRanksHtml = wr?.level ? `<div class="tiles" style="margin-bottom:12px">
-      ${tile('trophy', 'World rank', of(wr.level))}
-      ${tile('growth', 'Worth rank', of(wr.worth))}
+  const worldRanksHtml = wr?.level || wr?.xp || wr?.cash ? `<div class="tiles" style="margin-bottom:12px">
+      ${tile('trophy', 'World rank (level)', of(wr.level))}
+      ${tile('xp', 'XP rank', of(wr.xp))}
       ${tile('coins', 'Cash rank', of(wr.cash))}
     </div>` : '';
-  const rankHint = !wr?.level && mine && state.realSteam
-    ? '<p class="muted small" style="margin:0 0 10px">No world rank found yet. If your in-game name is different from your Steam name, add it in <a href="#/profile/edit">Edit profile</a> as Name#1234, then press Sync stats.</p>'
-    : '';
+  const rankHint = '';
 
   let officialHtml;
   if (off) {
@@ -749,15 +782,16 @@ async function viewProfile(main, [id]) {
         ${tile('xp', 'Total XP', fmtNum(off.careerXp))}
         ${tile('coins', 'Cash on hand', fmtMoney(off.cash))}
         ${off.accountWorth !== undefined ? tile('growth', 'Account worth', fmtMoney(off.accountWorth)) : ''}
-        ${tile('gold', 'Gold', fmtNum(off.gold))}
+        ${tile('gold', 'Gold', off.gold === null ? 'Hidden' : fmtNum(off.gold))}
         ${tile('unlock', 'Unlocks', fmtNum(off.unlocks))}
+        ${off.achievements !== null && off.achievements !== undefined ? tile('medal', 'Achievements', fmtNum(off.achievements)) : ''}
       </div>
       ${roles.length ? `<h4 style="margin:18px 0 10px" class="row">${icon('chevrons', 'width="18" height="18" style="color:var(--gold)"')} Official role progression</h4>
       <div class="roles">${roles.map(([name, r]) => {
         const [c, ic, art] = ROLE_STYLE[name.toLowerCase()] || ['#29b6f6', 'star', ''];
         const pic = art ? `<img class="art" src="/img/brand/roles/${art}.webp" alt="" loading="lazy">` : `<div style="padding-top:10px">${icon(ic)}</div>`;
         const lvl = Number(r?.level ?? r) || 0;
-        return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(lvl)}</div>${unlockLinesHtml(unlockList, name.toLowerCase(), lvl)}</div>`;
+        return `<div class="role-card" style="--rc:${c}">${pic}<div class="rn">${esc(name)}</div><div class="rl">${fmtNum(lvl)}</div>${r?.xp ? `<div class="muted small">${fmtNum(r.xp)} XP</div>` : ''}${unlockLinesHtml(unlockList, name.toLowerCase(), lvl)}</div>`;
       }).join('')}</div>` : ''}
       ${careerUnlockHtml(unlockList, Number(off.wardogLevel) || 0)}`;
   } else {
@@ -823,9 +857,10 @@ async function viewProfile(main, [id]) {
 
       <div class="grid two">
         <div class="panel">
-          <div class="panel-title">${icon('target')} Wardogs <span class="sub">(saved snapshot)</span></div>
-          ${off && p.wardogs.ranks?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:var(--muted)">Last saved ${esc(fmtDate(p.wardogs.ranks.polled_at))} ${esc(new Date(p.wardogs.ranks.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))} · external syncing is disabled</p>` : ''}
+          <div class="panel-title">${icon('target')} Official Wardogs <span class="sub">(global stats)</span></div>
+          ${off && wr?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${wr.state === 'old' ? '#f5a524' : 'var(--muted)'}">Synced on WARDOGS Tracker ${esc(fmtDate(wr.polled_at))} ${esc(new Date(wr.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${wr.state === 'old' ? ' — over a week ago' : ''}</p>` : ''}
           ${officialHtml}
+          ${off ? trackerCredit(`${wr?.profile_url ? ` · <a href="${esc(wr.profile_url)}" target="_blank" rel="noopener">Their WARDOGS Tracker profile</a>` : ''}${wr?.twitch ? ` · <a href="${esc(wr.twitch)}" target="_blank" rel="noopener">Twitch</a>` : ''}`) : ''}
         </div>
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
@@ -941,7 +976,7 @@ async function viewEditProfile(main) {
         ${fields.map((f) => `<label class="field"><span>${esc(f.label)}</span>${f.type === 'select'
           ? `<select name="cf_${esc(f.key)}"><option value="">—</option>${f.options.split(',').map((o) => o.trim()).filter(Boolean).map((o) => `<option ${u.custom_fields?.[f.key] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
           : `<input type="text" name="cf_${esc(f.key)}" maxlength="200" value="${esc(u.custom_fields?.[f.key] || '')}"${f.key === 'wardogs_name' ? ' placeholder="Name#1234"' : ''}>`}${f.key === 'wardogs_name'
-          ? `<small class="muted">This in-game name was used for external Wardogs stats matching. External syncing is disabled, so changing it will not refresh those stats.</small>` : ''}</label>`).join('')}
+          ? `<small class="muted">Not needed for global stats: they come from WARDOGS Tracker by your Steam account.</small>` : ''}</label>`).join('')}
       </div>
       <label class="field"><span>About me</span><textarea name="bio" maxlength="1000">${esc(u.bio)}</textarea></label>
       ${skillList.length ? `<div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">My skills <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— shown on your profile (tick any)</span></span>
@@ -1784,7 +1819,7 @@ async function serverBoardHtml(sort, serverId) {
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'wpg';
   const tag = state.settings.clan_tag || 'WPG';
-  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['careerxp', 'Career XP'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
   // WPG rank: everyone's WPG XP and rank (from the Discord bot, or the app once switched over in Admin → WPG XP).
   if (by === 'wpg') {
     const d = await api('wpg-ranking');
@@ -1847,10 +1882,10 @@ async function viewLeaderboard(main) {
     return;
   }
   const list = await api(`leaderboard?by=${by}`);
-  const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h' }[by] || '';
+  const unit = { xp: 'XP', careerxp: 'XP', level: 'LVL', kills: 'kills', hours: 'h', gold: 'gold', unlocks: 'unlocks' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
-    ${by === 'worth' ? '<p class="muted small" style="margin:-4px 0 12px">Account worth = cash + gold + bought unlocks + vault.</p>' : ''}${by === 'worth' || by === 'cash' || by === 'level' ? '<p class="muted small" style="margin:-4px 0 12px">Members show $0 / 0 until they add their in-game name on HQ.</p>' : ''}
+    ${by === 'worth' ? '<p class="muted small" style="margin:-4px 0 12px">Account worth = cash + the cost of the unlocks your levels open up.</p>' : ''}${['worth', 'cash', 'level', 'careerxp', 'gold', 'unlocks'].includes(by) ? `<p class="muted small" style="margin:-4px 0 12px">Global stats by <a href="${TRACKER_URL}" target="_blank" rel="noopener">WARDOGS Tracker</a>. Members show 0 until they sign in there once with Steam and sync (HQ shows how).</p>` : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">
         <b style="font:700 22px var(--head);width:42px;text-align:center;color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">#${i + 1}</b>
