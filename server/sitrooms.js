@@ -43,7 +43,7 @@ const MARKERS = {
 // vehicle / armour are older types, kept so marks made before still show.
 const ENEMY = { infantry: 3, sniper: 3, mortar: 5, artillery: 5, tank: 5, apc: 0, armed: 5, supply: 5, air: 3, vehicle: 5, armour: 5 };
 const enemyTtl = (what) => (ENEMY[what] ? ENEMY[what] * 60 * 1000 : null);
-const NEEDS = ['ammo', 'medic', 'transport', 'repair', 'fire', 'backup'];
+const NEEDS = ['ammo', 'fob', 'fuel', 'mech', 'medic', 'transport', 'repair', 'fire', 'backup'];
 const DRAWINGS = ['attack', 'flank', 'defend', 'route', 'area', 'label'];
 // Drawing colours: "us" (the room's faction), each faction (the enemy factions' movement) and yellow (caution).
 // blue / red / green are older colours, kept so drawings made before still show.
