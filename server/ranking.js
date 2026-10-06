@@ -26,9 +26,11 @@ function playerId(value) {
   return /^\d{15,22}$/.test(id) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
+// Spaces, line breaks or quote marks pasted in with the key would make wardogs.tools refuse it.
+const apiKey = () => String(process.env.WARDOGS_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
+
 function scheduleRequest(id) {
-  // Spaces, line breaks or quote marks pasted in with the key would make wardogs.tools refuse it.
-  const key = String(process.env.WARDOGS_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  const key = apiKey();
   if (!key) throw new Error('Global Wardogs stats aren\'t set up yet (staff: add WARDOGS_API_KEY in Render)');
   const url = new URL(`${API}/${encodeURIComponent(id)}`);
   url.searchParams.set('key', key);
@@ -240,4 +242,29 @@ export async function trackerByDiscord(discordId) {
   if (!data?.player || !data?.stats) return null;
   const { official, ranks } = shape(data);
   return { name: data.player.displayName || 'WARDOGS player', steamId: '', official, ranks };
+}
+
+// Staff connection test (Command panel → Settings): asks wardogs.tools straight away, skipping the saved answers,
+// and reports exactly what came back. Shows only the key's length and first/last 3 characters, never the key.
+export const DEVELOPER_EXAMPLE_ID = '70749c39-a85d-44c4-b4cb-16ea4ee7a5ab'; // from the developer's own example
+export async function testConnection(ids) {
+  const raw = String(process.env.WARDOGS_API_KEY || '');
+  const key = apiKey();
+  const out = {
+    key: { set: !!raw, length: key.length, starts: key.slice(0, 3), ends: key.slice(-3), tidied: raw.length !== key.length },
+    results: [],
+  };
+  if (!key) return out;
+  for (const id of ids) {
+    const url = new URL(`${API}/${encodeURIComponent(id)}`);
+    url.searchParams.set('key', key);
+    try {
+      const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20000) });
+      const body = (await res.text()).split(key).join('[key]').slice(0, 600);
+      out.results.push({ id, status: res.status, type: res.headers.get('content-type') || '', server: res.headers.get('server') || '', body });
+    } catch (e) {
+      out.results.push({ id, error: e.message });
+    }
+  }
+  return out;
 }
