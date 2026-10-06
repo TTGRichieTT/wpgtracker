@@ -1,6 +1,11 @@
 // Profile frames, drawn as SVG around a member's picture (used by the app and the Discord cards).
-// A frame is { style, color?, badge?, label?, crown?, season? } (season: the season number it's from, shown as S1, S2…). The picture sits in the middle 74% of the square (13–87 of 0–100);
+// A frame is { style, color?, badge?, label?, crown?, season?, season_tag?, image?, rank? }:
+//  season: the season number it's from (shown as S1, S2… unless season_tag is false);
+//  image: an uploaded frame picture (style 'image', 512 x 512 with a transparent middle);
+//  badge 'rank': the member's clan rank badge in the corner (rank: their rank's name, abbr, colour, insignia). The picture sits in the middle 74% of the square (13–87 of 0–100);
 // the frame is drawn around it, with a small badge in the corner that says what kind of frame it is.
+
+import { rankBadge } from './insignia.js';
 
 let uid = 0;
 const METALS = {
@@ -39,7 +44,12 @@ const GLYPHS = {
 function metalGrad(id, m) {
   return `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${m[0]}"/><stop offset=".5" stop-color="${m[1]}"/><stop offset="1" stop-color="${m[2]}"/></linearGradient>`;
 }
-function badge(name, color, defs) {
+function badge(name, color, rank) {
+  // The member's clan rank badge, a little bigger than the glyphs (falls back to the shield without a rank).
+  if (name === 'rank') {
+    if (!rank) return badge('shield', color);
+    return rankBadge(rank, 28).replace(/^<svg class="insignia" /, '<svg x="72" y="70" ');
+  }
   if (!name || !GLYPHS[name]) return '';
   return `<g transform="translate(77 77)"><circle cx="10" cy="10" r="10.5" fill="#0b1520" stroke="${color}" stroke-width="2"/><g transform="translate(2.5 2.5) scale(.75)">${GLYPHS[name]}</g></g>`;
 }
@@ -64,7 +74,8 @@ function laurel(fill, dark) {
 }
 
 // The frame as an SVG overlay (transparent in the middle, where the picture shows through).
-export function frameSVG(frame, size = 100) {
+// overlayOnly: just the corner badge and season tag (the Discord cards draw an uploaded picture themselves).
+export function frameSVG(frame, size = 100, { overlayOnly = false } = {}) {
   const f = frame || {};
   const id = `fr${++uid}`;
   const color = okColor(f.color, '#29b6f6');
@@ -72,7 +83,9 @@ export function frameSVG(frame, size = 100) {
   let body = '';
   let badgeColor = color;
   const style = String(f.style || 'metal-gold');
-  if (style.startsWith('metal-')) {
+  if (style === 'image') {
+    body = f.image && !overlayOnly ? `<image href="${esc(f.image)}" x="0" y="0" width="100" height="100" preserveAspectRatio="none"/>` : '';
+  } else if (style.startsWith('metal-')) {
     const m = METALS[style.slice(6)] || METALS.gold;
     defs += metalGrad(`${id}m`, m);
     body = `<path d="${RING}" fill="url(#${id}m)" fill-rule="evenodd" stroke="${m[2]}" stroke-width="1"/>`;
@@ -118,7 +131,7 @@ export function frameSVG(frame, size = 100) {
   } else {
     body = `<path d="${RING}" fill="${color}" fill-rule="evenodd"/>`;
   }
-  return `<svg class="frame-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><defs>${defs}</defs>${body}${badge(f.badge, badgeColor)}${seasonTag(f.season, badgeColor)}</svg>`;
+  return `<svg class="frame-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><defs>${defs}</defs>${overlayOnly ? '' : body}${badge(f.badge, badgeColor, f.rank)}${f.season_tag === false ? '' : seasonTag(f.season, badgeColor)}</svg>`;
 }
 
 // The look presets admins can pick (key → label).
@@ -127,14 +140,16 @@ export const FRAME_STYLES = {
   'camo-woodland': 'Woodland camo', 'camo-desert': 'Desert camo', hazard: 'Hazard stripes', rangefinder: 'Rangefinder',
   'laurel-bronze': 'Bronze laurel', 'laurel-silver': 'Silver laurel', 'laurel-gold': 'Gold laurel',
   glow: 'Glow (pick a colour)', unit: 'Solid colour (pick a colour)', clan: 'Clan colours (pick a colour)',
+  image: 'Uploaded picture',
 };
-export const FRAME_BADGES = Object.keys(GLYPHS);
+export const FRAME_BADGES = Object.keys(GLYPHS); // plus 'rank': the member's clan rank badge
 
 // A new season's frames are last season's challenges in new looks: each style moves on along this list
 // (glow / solid colours change colour), so no two seasons' sets look the same. Admins can change any of them.
 const ROTATE = ['metal-silver', 'rangefinder', 'metal-steel', 'glow', 'camo-woodland', 'metal-gold', 'camo-desert', 'hazard', 'metal-bronze', 'unit'];
 const PALETTE = ['#e53935', '#f5a524', '#2ecc71', '#29b6f6', '#b84dff', '#ff6ec7', '#c9a227', '#00e5c0'];
 export function nextSeasonLook(f, seasonNumber) {
+  if (f.style === 'image') return { style: 'image', color: '' }; // same picture until an admin uploads the new season's
   const at = ROTATE.indexOf(f.style);
   const style = ROTATE[((at < 0 ? 0 : at) + 3) % ROTATE.length];
   const ci = PALETTE.indexOf(String(f.color || '').toLowerCase());

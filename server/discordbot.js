@@ -10,7 +10,7 @@ import { q, one, setting, flag } from './db.js';
 import { bus } from './bus.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
-import { shownFrames } from './frames.js';
+import { shownFrames, frameLookFor } from './frames.js';
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
@@ -1063,7 +1063,7 @@ async function framePost(u, f) {
   const season = f.category === 'season' ? await one("SELECT name FROM seasons WHERE status='active' ORDER BY number DESC LIMIT 1") : null;
   const kind = f.category === 'season' ? `${season?.name || 'Season'} frame` : f.category === 'clan' ? 'Clan frame' : 'Permanent frame';
   const text = `🖼️ **${u.persona_name}**${mentionFor(u)} unlocked the **${f.name}** profile frame.`;
-  const look = { style: f.style, color: f.color, badge: f.badge, label: f.label, crown: f.crown, name: f.name };
+  const look = await frameLookFor(u, f);
   return announcePicture('frame', text, async (cards) => cards.renderFrameUnlockCard({
     name: await cardName(u), avatar: avatarOf(u), frame: look, description: f.description, kind,
   }), () => ({ embeds: [{ color: GOLD, title: '🖼️ Profile frame unlocked', description: `${text.replace(/^🖼️ /, '')}\n${f.description}`, url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));

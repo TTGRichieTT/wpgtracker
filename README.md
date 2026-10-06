@@ -274,6 +274,12 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   quiet, so members who already qualify get it without a flood of posts; after that each unlock gets an app
   notification and, for WPG members, a Discord post (switch off on the same page). **Give** hands a frame to a member
   by hand; **Who has it** lists holders and can take it away.
+- **Your own frame art:** pick the look **Uploaded picture**, press **Download the template**, draw over it and upload:
+  512 x 512 px PNG, WebP or GIF (animated is fine), up to 1 MB, with the middle (378 x 378 px, from 67 to 445 px)
+  transparent so the member's picture shows through. The app refuses the wrong shape, a covered middle or a JPEG, and
+  makes bigger squares 512 x 512. The editor previews it at every size members see it (lists, Discord cards, profile).
+- **Corner badge "Their clan rank badge"** shows each member's own clan rank in the bottom-right corner (Clan Colours
+  uses it). Season frames show their season (S1, S2…) bottom left; untick **Season tag** if the art already has it.
 
 ### Progression page and artillery data
 

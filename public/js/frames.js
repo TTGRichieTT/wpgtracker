@@ -11,6 +11,7 @@ const CATS = [
 ];
 const PROFILE_GROUPS = [...CATS, ['past', 'Earlier seasons', 'Kept for good; these can\'t be earned any more.']];
 const seasonName = (s) => (s ? s.name || `Season ${s.number}` : '');
+const badgeName = (b) => (b === 'rank' ? "Their clan rank badge" : b[0].toUpperCase() + b.slice(1));
 const when = (d) => `${fmtDate(d)} ${new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 
 // A picture in a frame (for previews): size in px.
@@ -103,10 +104,11 @@ export async function framesAdminTab(body) {
     });
   const nextHas = next && d.frames.some((f) => f.category === 'season' && f.season_id === next.id);
   const row = (f) => `<div class="item">
-      ${framedPreview({ ...f, season: f.category === 'season' ? f.season_number : null }, state.me.avatar, 52)}
+      ${framedPreview({ ...f, season: f.category === 'season' ? f.season_number : null, rank: state.me.rank }, state.me.avatar, 52)}
       <div class="grow"><b>${esc(f.name)}</b>${f.enabled ? '' : ' <span class="pill banned">Off</span>'}
         <div class="muted small">${esc(f.description)}</div>
-        <div class="muted small">${esc(d.metrics[f.metric]?.label || f.metric)}${['manual', 'placement', 'founding', 'clan_member', 'unit'].includes(f.metric) ? '' : ` · ${f.metric === 'officer' ? 'rank order' : 'target'} ${fmtNum(f.target)}`}${f.category === 'clan' ? '' : ` · ${fmtNum(f.holders)} unlocked`}${f.swept ? '' : ' · first check (quiet) at the next hourly run'}</div></div>
+        <div class="muted small">${esc(d.metrics[f.metric]?.label || f.metric)}${['manual', 'placement', 'founding', 'clan_member', 'unit'].includes(f.metric) ? '' : ` · ${f.metric === 'officer' ? 'rank order' : 'target'} ${fmtNum(f.target)}`}${f.category === 'clan' ? '' : ` · ${fmtNum(f.holders)} unlocked`}${f.swept ? '' : ' · first check (quiet) at the next hourly run'}</div>
+        ${f.image_id && d.frames.some((o) => o.id !== f.id && o.image_id === f.image_id && o.season_id !== f.season_id && f.category === 'season') ? '<div class="small" style="color:#f5a524">Same picture as another season: upload this season\'s own.</div>' : ''}</div>
       ${f.category === 'clan' ? '' : `<button class="btn small ghost" data-holders="${f.id}">${icon('users')} Who has it</button>`}
       <button class="btn small" data-edit-frame="${f.id}">${icon('edit')} Edit</button></div>`;
   body.innerHTML = `
@@ -184,6 +186,7 @@ function frameEditor(d, f, done) {
   const ended = v.category === 'season' && d.seasons.find((x) => x.id === v.season_id)?.status === 'ended';
   const openSeasons = d.seasons.filter((x) => x.status !== 'ended');
   const metrics = Object.entries(d.metrics).filter(([k]) => k !== 'placement');
+  let image = { id: v.image_id || null, url: v.image || '' };
   const m = modal(`<form class="stack" id="frameForm">
     <h3 style="margin:0">${f ? 'Edit frame' : 'New frame'}</h3>
     <div class="row" style="gap:16px;align-items:flex-start">
@@ -196,8 +199,24 @@ function frameEditor(d, f, done) {
     <div class="row">
       <label class="field grow"><span>Look</span><select name="style">${Object.entries(FRAME_STYLES).map(([k, l]) => `<option value="${k}" ${v.style === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
       <label class="field"><span>Colour</span><input type="color" name="color" value="${esc(/^#[0-9a-f]{6}$/i.test(v.color) ? v.color : '#29b6f6')}"></label>
-      <label class="field"><span>Corner badge</span><select name="badge"><option value="">None</option>${FRAME_BADGES.map((b) => `<option value="${b}" ${v.badge === b ? 'selected' : ''}>${b}</option>`).join('')}</select></label>
+      <label class="field"><span>Corner badge</span><select name="badge"><option value="">None</option>${['rank', ...FRAME_BADGES].map((b) => `<option value="${b}" ${v.badge === b ? 'selected' : ''}>${badgeName(b)}</option>`).join('')}</select></label>
     </div>
+    <div class="frame-upload" id="uploadBox">
+      <b>Frame picture</b>
+      <ul class="small">
+        <li><b>${512} x ${512} px</b>, square: PNG, WebP or GIF (animated is fine), up to 1 MB.</li>
+        <li>The <b>middle must be transparent</b>: the member's picture shows through it, <b>378 x 378 px from 67 to 445 px</b>, with rounded corners.</li>
+        <li>The frame art goes in the <b>outer 67 px</b> all round (it can overlap the picture's edge a little).</li>
+        <li>Bottom right: the corner badge or clan rank (pick None above to keep that corner clear). Bottom left: the season tag on season frames.</li>
+        <li>Bigger squares (up to 4 MB) are made 512 x 512 for you, except animated GIFs.</li>
+      </ul>
+      <div class="row">
+        <a class="btn small" href="/api/admin/frames/template.png" download="wpg-frame-template-512.png">${icon('back', 'style="transform:rotate(-90deg)"')} Download the template</a>
+        <label class="btn small primary" style="cursor:pointer">${icon('plus')} ${image.id ? 'Upload a new picture' : 'Upload the picture'}<input type="file" id="frameFile" accept="image/png,image/webp,image/gif" hidden></label>
+      </div>
+      <p class="small" id="uploadStatus" style="margin:8px 0 0">${image.id ? 'Picture uploaded.' : ''}</p>
+    </div>
+    <div class="frame-sizes" id="frameSizes"></div>
     <div class="row">
       <label class="field"><span>Plaque text (laurel / clan)</span><input type="text" name="label" maxlength="6" value="${esc(v.label)}"></label>
       <label class="row small" style="gap:6px"><input type="checkbox" name="crown" ${v.crown ? 'checked' : ''}> Crown (laurel)</label>
@@ -212,6 +231,7 @@ function frameEditor(d, f, done) {
       <label class="field" id="seasonField"><span>Season</span><select name="season_id">${openSeasons.map((x) => `<option value="${x.id}" ${v.season_id === x.id ? 'selected' : ''}>${esc(seasonName(x))}${x.status === 'scheduled' ? ' (next)' : ''}</option>`).join('')}</select></label>
       <label class="field"><span>Order</span><input type="number" name="sort_order" value="${esc(v.sort_order)}"></label>
       <label class="row small" style="gap:6px"><input type="checkbox" name="enabled" ${v.enabled ? 'checked' : ''}> On</label>
+      <label class="row small" style="gap:6px" id="tagField"><input type="checkbox" name="season_tag" ${v.season_tag !== false ? 'checked' : ''}> Season tag (S1, S2…)</label>
     </div>
     <p class="muted small" id="metricHelp"></p>`}
     ${f && f.category !== 'clan' ? `<div class="row"><input type="text" name="giveTo" list="frameMembers" placeholder="Give it to a member…" class="grow"><datalist id="frameMembers"></datalist><button type="button" class="btn" id="giveBtn">${icon('plus')} Give</button></div>` : ''}
@@ -227,7 +247,18 @@ function frameEditor(d, f, done) {
     const seasonNo = cat === 'season' ? d.seasons.find((x) => x.id === sid)?.number : null;
     const sf = m.el.querySelector('#seasonField');
     if (sf) sf.style.display = cat === 'season' ? '' : 'none';
-    m.el.querySelector('#framePrev').innerHTML = framedPreview({ style: form.style.value, color: form.color.value, badge: form.badge.value, label: form.label.value, crown: form.crown.checked, season: seasonNo }, state.me.avatar, 110);
+    const tf = m.el.querySelector('#tagField');
+    if (tf) tf.style.display = cat === 'season' ? '' : 'none';
+    const isImage = form.style.value === 'image';
+    m.el.querySelector('#uploadBox').style.display = isImage ? '' : 'none';
+    const look = {
+      style: form.style.value, color: form.color.value, badge: form.badge.value, label: form.label.value, crown: form.crown.checked,
+      season: seasonNo, season_tag: form.season_tag ? form.season_tag.checked : v.season_tag !== false, image: isImage ? image.url : '', rank: state.me.rank,
+    };
+    m.el.querySelector('#framePrev').innerHTML = framedPreview(look, state.me.avatar, 110);
+    // How it looks where members see it (with your picture and clan rank).
+    m.el.querySelector('#frameSizes').innerHTML = [[30, 'Chat & lists'], [40, 'Members'], [62, 'Discord cards'], [136, 'Profile']]
+      .map(([px, what]) => `<div class="fs">${framedPreview(look, state.me.avatar, px)}<span>${what}<br>${px} px</span></div>`).join('');
     const help = m.el.querySelector('#metricHelp');
     if (help && form.metric) {
       const x = d.metrics[form.metric.value] || {};
@@ -239,6 +270,30 @@ function frameEditor(d, f, done) {
   form.addEventListener('change', prev);
   prev();
   m.el.querySelector('[data-close]').onclick = m.close;
+  // Upload: checked here for type and size, then properly by the server (size, square, transparent middle).
+  m.el.querySelector('#frameFile').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    const status = m.el.querySelector('#uploadStatus');
+    if (!file) return;
+    if (!['image/png', 'image/webp', 'image/gif'].includes(file.type)) { status.innerHTML = '<span style="color:var(--red)">Frames must be PNG, WebP or GIF (JPEG has no transparency).</span>'; return; }
+    if (file.size > 4 * 1024 * 1024) { status.innerHTML = `<span style="color:var(--red)">That file is ${Math.round(file.size / 1024)} KB: the most is 4 MB.</span>`; return; }
+    status.textContent = 'Checking…';
+    try {
+      const data = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(new Error("Couldn't read that file."));
+        r.readAsDataURL(file);
+      });
+      const r = await api('admin/frame-images', { method: 'POST', body: { data } });
+      image = { id: r.id, url: r.url };
+      status.innerHTML = `<span style="color:var(--green)">✓ Uploaded (${Math.round(r.bytes / 1024)} KB).</span>${r.notes.map((n) => ` <span style="color:#f5a524">${esc(n)}</span>`).join('')} Check the previews, then Save.`;
+      prev();
+    } catch (x) {
+      status.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`;
+    }
+  };
   form.onsubmit = async (e) => {
     e.preventDefault();
     const b = {
@@ -248,7 +303,10 @@ function frameEditor(d, f, done) {
       category: form.category?.value || v.category, sort_order: form.sort_order ? Number(form.sort_order.value) : v.sort_order,
       enabled: form.enabled ? form.enabled.checked : v.enabled,
       season_id: form.season_id ? Number(form.season_id.value) : v.season_id,
+      image_id: form.style.value === 'image' ? image.id : null,
+      season_tag: form.season_tag ? form.season_tag.checked : v.season_tag !== false,
     };
+    if (b.style === 'image' && !b.image_id) return toast('Upload the frame picture first', '', { error: true });
     try {
       await api(f ? `admin/frames/${f.id}` : 'admin/frames', { method: f ? 'PUT' : 'POST', body: b });
       toast(f ? 'Frame saved' : 'Frame added', f ? '' : 'Members who already qualify get it quietly at the next hourly check.');

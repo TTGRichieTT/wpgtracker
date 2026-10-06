@@ -20,7 +20,7 @@ import { killFeed, cheat, startCheatWatch } from './cheatwatch.js';
 import { combat } from './combat.js';
 import { wpgxp, startWpgXp } from './wpgxp.js';
 import { giveaways, startGiveaways } from './giveaways.js';
-import { framesRouter, startFrames } from './frames.js';
+import { framesRouter, startFrames, frameImageRoute } from './frames.js';
 import { cleanup, startCleanup } from './cleanup.js';
 import { streams, startStreamWatch } from './streams.js';
 import { startKeepAwake } from './keepawake.js';
@@ -87,6 +87,7 @@ app.use((_req, res, next) => {
 // Discord bot commands: before the JSON parser, because the signature check needs the raw body.
 app.use(discordBot);
 app.use(killFeed); // game server kill feed: also reads the raw body (any format)
+app.use('/api/admin/frame-images', express.json({ limit: '6mb' })); // uploaded frame pictures (frames.js)
 app.use(express.json({ limit: '200kb' }));
 app.use(sessionMiddleware);
 
@@ -250,6 +251,7 @@ app.get('/healthz', async (req, res) => {
 // Map pictures, unlock pictures and artwork never change, so browsers keep them for 30 days
 // (saves bandwidth on free hosting). Everything else is re-checked every time so updates show straight away.
 const LONG_CACHE = /^\/(maps|img\/unlocks|img\/brand|vendor)\//;
+app.get('/frame-img/:id', frameImageRoute); // uploaded frame pictures (frames.js)
 app.use(express.static(PUBLIC_DIR, {
   index: 'index.html',
   setHeaders: (res, filePath) => {

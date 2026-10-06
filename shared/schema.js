@@ -442,6 +442,18 @@ export const seasonStartXp = pgTable('season_start_xp', {
   steam_id: text().notNull(),
   xp: integer().notNull().default(0),
 }, (t) => [primaryKey({ name: 'season_start_xp_pkey', columns: [t.season_id, t.steam_id] })]);
+// Frame pictures admins upload (512 x 512, transparent middle), kept in the database because the host's disk is
+// wiped on every deploy. data: the file, base64. Served at /frame-img/{id} (frames.js).
+export const frameImages = pgTable('frame_images', {
+  id: serial().primaryKey(),
+  mime: text().notNull().default('image/png'),
+  data: text().notNull(),
+  width: integer().notNull().default(512),
+  height: integer().notNull().default(512),
+  bytes: integer().notNull().default(0),
+  created_by: integer(),
+  created_at: now(),
+});
 // category: permanent (kept forever) | clan (WPG members, while it applies) | season (earned again each season).
 // metric + target: what earns it (frames.js METRICS); 'manual' = given by hand, 'placement' = a season placing.
 export const frames = pgTable('frames', {
@@ -457,7 +469,9 @@ export const frames = pgTable('frames', {
   crown: boolean().notNull().default(false),
   metric: text().notNull().default('manual'),
   target: numeric().notNull().default('0'),
-  season_id: integer(), // placings: the season they're for
+  season_id: integer(), // season frames and placings: the season they're from
+  image_id: integer(), // style 'image': an uploaded picture (frame_images)
+  season_tag: boolean().notNull().default(true), // season frames: show S1, S2… in the bottom-left corner
   sort_order: integer().notNull().default(0),
   enabled: boolean().notNull().default(true),
   swept: boolean().notNull().default(false), // first check of everyone done (quietly, so a new frame doesn't flood Discord)

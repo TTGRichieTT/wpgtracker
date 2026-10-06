@@ -7,7 +7,9 @@
 // Seasons follow the game's wipes: the next wipe date is set in Admin → Frames (Season 2: 15 October 2026), and the
 // app also warns staff if it looks like the game wiped (most members' Wardog levels dropping at once).
 // When a season ends, its Top 100 / Top 10 / Champion (by WPG XP earned that season) get permanent frames.
+// Admins can also upload their own frame pictures (512 x 512 PNG / WebP / GIF with a transparent middle).
 import express from 'express';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { q, one, audit, flag } from './db.js';
 import { bus } from './bus.js';
 import { HttpError, member, role, str, int, bool, color } from './util.js';
@@ -64,10 +66,28 @@ async function allFrames() {
   return framesCache;
 }
 const clearFrames = () => { framesCache = null; };
+const imageUrl = (id) => (id ? `/frame-img/${id}` : '');
 const lookOf = (f, extra = {}) => ({
   id: f.id, name: f.name, style: f.style, color: f.color, badge: f.badge, label: f.label, crown: f.crown,
-  season: f.category === 'season' ? f.season_number || null : null, ...extra,
+  season: f.category === 'season' ? f.season_number || null : null, season_tag: f.season_tag !== false,
+  image: f.style === 'image' ? imageUrl(f.image_id) : '', ...extra,
 });
+// The clan rank badge a frame with badge 'rank' shows (WPG members with a rank only).
+const RANK_COLS = 'id, name, abbr, color, insignia';
+async function rankOf(user) {
+  return isWpgMember(user) && user.rank_id ? one(`SELECT ${RANK_COLS} FROM ranks WHERE id=$1`, [user.rank_id]) : null;
+}
+// A member's look for one frame (unit colour, clan rank badge), e.g. for the Discord unlock post.
+export async function frameLookFor(user, f) {
+  const extra = {};
+  if (f.metric === 'unit') {
+    const unit = await one('SELECT cu.name, cu.color FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id WHERE cp.user_id=$1', [user.id]);
+    if (unit) Object.assign(extra, { color: unit.color, name: `${unit.name} unit` });
+  }
+  if (f.badge === 'rank') extra.rank = await rankOf(user);
+  const row = (await allFrames()).find((x) => x.id === f.id) || f;
+  return lookOf(row, extra);
+}
 
 // ---------- What a member has done ----------
 async function metricsFor(user, season) {
@@ -166,6 +186,8 @@ async function sweep() {
   }
   // Selected frames that no longer apply (a season ended, left a unit, became a PMC…) are taken off.
   await clearInvalidSelections();
+  // Uploaded pictures no frame uses (replaced, or uploaded and never saved) go after a day.
+  await q("DELETE FROM frame_images i WHERE i.created_at < now() - interval '1 day' AND NOT EXISTS (SELECT 1 FROM frames f WHERE f.image_id = i.id)");
 }
 
 async function clearInvalidSelections() {
@@ -195,16 +217,19 @@ export async function shownFrames(users) {
   const units = needUnit
     ? new Map((await q('SELECT cp.user_id, cu.name, cu.color FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id WHERE cp.user_id = ANY($1)', [ids])).map((r) => [r.user_id, r]))
     : new Map();
+  const rankIds = [...new Set(users.filter((u) => u?.rank_id && byId.get(u.frame_id)?.badge === 'rank').map((u) => u.rank_id))];
+  const ranks = rankIds.length ? new Map((await q(`SELECT ${RANK_COLS} FROM ranks WHERE id = ANY($1)`, [rankIds])).map((r) => [r.id, r])) : new Map();
   const out = new Map();
   for (const u of users) {
     const f = byId.get(u.frame_id);
     if (!f || !f.enabled) continue;
     if (f.category === 'clan' && !isWpgMember(u)) continue;
+    const extra = f.badge === 'rank' ? { rank: isWpgMember(u) ? ranks.get(u.rank_id) || null : null } : {};
     if (f.metric === 'unit') {
       const unit = units.get(u.id);
       if (!unit) continue;
-      out.set(u.id, lookOf(f, { color: unit.color, name: `${unit.name} unit` }));
-    } else out.set(u.id, lookOf(f));
+      out.set(u.id, lookOf(f, { ...extra, color: unit.color, name: `${unit.name} unit` }));
+    } else out.set(u.id, lookOf(f, extra));
   }
   return out;
 }
@@ -237,9 +262,10 @@ export async function copySeasonFrames(from, to) {
   for (const f of old) {
     const look = nextSeasonLook(f, to.number);
     await q(
-      `INSERT INTO frames (key, name, description, category, style, color, badge, label, crown, metric, target, season_id, sort_order, enabled)
-       VALUES ($1,$2,$3,'season',$4,$5,$6,$7,$8,$9,$10,$11,$12,true)`,
-      [f.key ? `${f.key}-s${to.number}` : '', f.name, f.description, look.style, look.color, f.badge, f.label, f.crown, f.metric, f.target, to.id, f.sort_order],
+      `INSERT INTO frames (key, name, description, category, style, color, badge, label, crown, metric, target, season_id, sort_order, enabled, image_id, season_tag)
+       VALUES ($1,$2,$3,'season',$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14)`,
+      [f.key ? `${f.key}-s${to.number}` : '', f.name, f.description, look.style, look.color, f.badge, f.label, f.crown, f.metric, f.target, to.id, f.sort_order,
+        look.style === 'image' ? f.image_id : null, f.season_tag],
     );
   }
   clearFrames();
@@ -324,7 +350,7 @@ const STARTERS = [
   ['specialist', 'Specialist', 'Get a class to level 100', 'permanent', 'hazard', '', 'gear', 'max_class_level', 100],
   ['lucky', 'Lucky', 'Win a giveaway', 'permanent', 'glow', '#2ecc71', 'clover', 'giveaway_wins', 1],
   ['oldguard', 'Old Guard', 'A year in WPG Barracks', 'permanent', 'metal-bronze', '', 'clock', 'days_in_wpg', 365],
-  ['clan', 'Clan Colours', 'Be a WPG member', 'clan', 'clan', '#29b6f6', 'shield', 'clan_member', 0],
+  ['clan', 'Clan Colours', 'Be a WPG member (shows your clan rank badge)', 'clan', 'clan', '#29b6f6', 'rank', 'clan_member', 0],
   ['unit', 'Unit Colours', 'Be posted to a Combat Command unit (shows in its colour)', 'clan', 'unit', '', 'flag', 'unit', 0],
   ['officer', 'Officer', 'Hold the clan rank of Sergeant or higher', 'clan', 'glow', '#c9a227', 'chevrons', 'officer', 0],
   ['centurion', 'Centurion', 'Reach Wardog level 100 in the season', 'season', 'metal-silver', '', 'chevrons', 'wardog_level', 100],
@@ -356,6 +382,12 @@ async function seedFrames() {
     await q("INSERT INTO settings (key, value) VALUES ('_frames_seeded', 'true') ON CONFLICT DO NOTHING");
     clearFrames();
   }
+  // Once: Clan Colours shows the member's clan rank badge in the corner (it had a shield).
+  if (!(await one("SELECT value FROM settings WHERE key='_frames_rank_badge'"))) {
+    await q("UPDATE frames SET badge='rank', description='Be a WPG member (shows your clan rank badge)' WHERE key='clan' AND badge='shield'");
+    await q("INSERT INTO settings (key, value) VALUES ('_frames_rank_badge', 'true') ON CONFLICT DO NOTHING");
+    clearFrames();
+  }
   seeded = true;
 }
 
@@ -368,6 +400,7 @@ framesRouter.get('/users/:id/frames', member, async (req, res) => {
   const next = await nextSeason();
   const m = await metricsFor(user, season);
   const owned = await q('SELECT frame_id, unlocked_at FROM user_frames WHERE user_id=$1', [user.id]);
+  const myRank = await rankOf(user);
   const list = (await allFrames()).filter((f) => f.enabled);
   // past: frames from earlier seasons they earned (kept for good, can't be earned any more).
   const out = { permanent: [], clan: [], season: [], past: [] };
@@ -382,7 +415,8 @@ framesRouter.get('/users/:id/frames', member, async (req, res) => {
       group = 'past';
     }
     const def = METRICS[f.metric] || {};
-    const look = f.metric === 'unit' && m.unitInfo ? lookOf(f, { color: m.unitInfo.color, name: `${m.unitInfo.name} unit` }) : lookOf(f);
+    const extra = f.badge === 'rank' ? { rank: myRank } : {};
+    const look = f.metric === 'unit' && m.unitInfo ? lookOf(f, { ...extra, color: m.unitInfo.color, name: `${m.unitInfo.name} unit` }) : lookOf(f, extra);
     if (f.metric === 'unit' && !m.unitInfo) look.color = '#5d7a94';
     out[group]?.push({
       ...look, description: f.description, category: f.category, unlocked, unlocked_at: own?.unlocked_at || null,
@@ -415,7 +449,7 @@ framesRouter.get('/admin/frames', role('admin'), async (_req, res) => {
     q('SELECT frame_id, COUNT(*)::int n FROM user_frames GROUP BY frame_id'),
   ]);
   const n = new Map(counts.map((c) => [c.frame_id, c.n]));
-  res.json({ frames: list.map((f) => ({ ...f, target: Number(f.target), holders: n.get(f.id) || 0 })), seasons, metrics: METRICS, posting: await flag('discord_post_frames') });
+  res.json({ frames: list.map((f) => ({ ...f, target: Number(f.target), holders: n.get(f.id) || 0, image: imageUrl(f.image_id) })), seasons, metrics: METRICS, posting: await flag('discord_post_frames') });
 });
 
 function readFrame(b) {
@@ -432,14 +466,20 @@ function readFrame(b) {
     target: Math.max(0, Number(b.target) || 0),
     sort_order: int(b.sort_order, 500),
     enabled: b.enabled === undefined ? true : bool(b.enabled),
+    image_id: b.style === 'image' ? int(b.image_id) || null : null,
+    season_tag: b.season_tag === undefined ? true : bool(b.season_tag),
   };
   if (!f.name) throw new HttpError(400, 'Give the frame a name.');
+  if (f.style === 'image' && !f.image_id) throw new HttpError(400, 'Upload the frame picture first.');
   if (f.metric === 'placement') throw new HttpError(400, 'Season placing frames are made by the app when a season ends.');
   const scope = METRICS[f.metric].scope;
   if (scope === 'clan' && f.category !== 'clan') f.category = 'clan';
   if (scope === 'season' && f.category === 'permanent') f.category = 'season';
   f.season_id = f.category === 'season' ? int(b.season_id) || null : null;
   return f;
+}
+async function checkImage(f) {
+  if (f.image_id && !(await one('SELECT 1 FROM frame_images WHERE id=$1', [f.image_id]))) throw new HttpError(400, 'That picture is gone: upload it again.');
 }
 // A season frame goes in the running season or the next one (earlier seasons' sets are closed).
 async function checkSeason(f, keep = null) {
@@ -449,9 +489,10 @@ async function checkSeason(f, keep = null) {
   if (!ok) f.season_id = (await currentSeason())?.id || null;
   if (!f.season_id) throw new HttpError(400, 'There is no season running to add it to.');
 }
-const FRAME_COLS = ['name', 'description', 'category', 'style', 'color', 'badge', 'label', 'crown', 'metric', 'target', 'sort_order', 'enabled', 'season_id'];
+const FRAME_COLS = ['name', 'description', 'category', 'style', 'color', 'badge', 'label', 'crown', 'metric', 'target', 'sort_order', 'enabled', 'season_id', 'image_id', 'season_tag'];
 framesRouter.post('/admin/frames', role('admin'), async (req, res) => {
   const f = readFrame(req.body || {});
+  await checkImage(f);
   await checkSeason(f);
   const row = await one(`INSERT INTO frames (key, ${FRAME_COLS.join(', ')}) VALUES ('', ${FRAME_COLS.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, FRAME_COLS.map((c) => f[c]));
   clearFrames();
@@ -468,6 +509,7 @@ framesRouter.put('/admin/frames/:id', role('admin'), async (req, res) => {
   if (old.category === 'season' && (await one("SELECT 1 FROM seasons WHERE id=$1 AND status='ended'", [old.season_id]))) {
     Object.assign(f, { category: 'season', season_id: old.season_id, metric: old.metric, target: Number(old.target) });
   } else await checkSeason(f, old.category === 'season' ? old.season_id : null);
+  await checkImage(f);
   await q(`UPDATE frames SET ${FRAME_COLS.map((c, i) => `${c}=$${i + 2}`).join(', ')} WHERE id=$1`, [old.id, ...FRAME_COLS.map((c) => f[c])]);
   clearFrames();
   await audit(req.user.id, 'frame.edit', f.name);
@@ -475,8 +517,9 @@ framesRouter.put('/admin/frames/:id', role('admin'), async (req, res) => {
   res.json({ ok: true });
 });
 framesRouter.delete('/admin/frames/:id', role('admin'), async (req, res) => {
-  const f = await one('DELETE FROM frames WHERE id=$1 RETURNING name', [int(req.params.id)]);
+  const f = await one('DELETE FROM frames WHERE id=$1 RETURNING name, image_id', [int(req.params.id)]);
   await q('UPDATE users SET frame_id=NULL WHERE frame_id=$1', [int(req.params.id)]);
+  if (f?.image_id) await q('DELETE FROM frame_images WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM frames WHERE image_id=$1)', [f.image_id]);
   clearFrames();
   if (f) await audit(req.user.id, 'frame.delete', f.name);
   changed();
@@ -546,4 +589,151 @@ framesRouter.put('/admin/frames-discord', role('admin'), async (req, res) => {
   const { clearSettingsCache } = await import('./db.js');
   clearSettingsCache();
   res.json({ ok: true });
+});
+
+// ---------- Uploaded frame pictures ----------
+// The guide admins see (Admin → Frames & seasons, and the template): 512 x 512, the member's picture shows through
+// the transparent middle 378 x 378 (67–445 px), the frame art goes in the 67 px border.
+export const FRAME_SIZE = 512;
+const PIC_FROM = 67;
+const PIC_TO = 445;
+const MAX_IN = 4 * 1024 * 1024; // what can be sent (bigger squares are made 512 x 512)
+const MAX_SAVED = 1024 * 1024;
+const TYPES = { png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+function sniff(buf) {
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (buf.subarray(0, 6).toString('latin1') === 'GIF87a' || buf.subarray(0, 6).toString('latin1') === 'GIF89a') return 'gif';
+  if (buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp';
+  return null;
+}
+const kb = (n) => `${Math.round(n / 1024)} KB`;
+
+framesRouter.post('/admin/frame-images', role('admin'), async (req, res) => {
+  const m = /^data:[\w/+.-]*;base64,([A-Za-z0-9+/=\s]+)$/.exec(String(req.body?.data || ''));
+  if (!m) throw new HttpError(400, 'Pick a PNG, WebP or GIF file.');
+  const buf = Buffer.from(m[1], 'base64');
+  if (buf.length > MAX_IN) throw new HttpError(400, `That file is ${kb(buf.length)}: the most is ${kb(MAX_IN)} (and ${kb(MAX_SAVED)} once it's 512 x 512).`);
+  const kind = sniff(buf);
+  if (!kind) throw new HttpError(400, 'Frames must be PNG, WebP or GIF (with a transparent middle). JPEG has no transparency.');
+  const img = await loadImage(buf).catch(() => null);
+  if (!img) throw new HttpError(400, "That picture couldn't be read. Save it again as PNG and try once more.");
+  const { width: w, height: h } = img;
+  if (w !== h) throw new HttpError(400, `It's ${w} x ${h} px: frames must be square, ${FRAME_SIZE} x ${FRAME_SIZE} px.`);
+  if (w < 256) throw new HttpError(400, `It's ${w} x ${h} px: too small. Make it ${FRAME_SIZE} x ${FRAME_SIZE} px.`);
+  const notes = [];
+  let out = buf;
+  let mime = TYPES[kind];
+  if (w !== FRAME_SIZE) {
+    // Animated GIFs would lose their animation if resized, so they must already be the right size.
+    if (kind === 'gif') throw new HttpError(400, `It's ${w} x ${h} px: animated GIFs must be exactly ${FRAME_SIZE} x ${FRAME_SIZE} px.`);
+    const c = createCanvas(FRAME_SIZE, FRAME_SIZE);
+    c.getContext('2d').drawImage(img, 0, 0, FRAME_SIZE, FRAME_SIZE);
+    out = await c.encode('png');
+    mime = TYPES.png;
+    notes.push(`Resized from ${w} x ${h} to ${FRAME_SIZE} x ${FRAME_SIZE} px.`);
+  }
+  if (out.length > MAX_SAVED) throw new HttpError(400, `At ${FRAME_SIZE} x ${FRAME_SIZE} it's ${kb(out.length)}: the most is ${kb(MAX_SAVED)}. Export with fewer colours (PNG-8) or as WebP.`);
+  // The member's picture has to show through: the middle must be (nearly all) see-through.
+  const c = createCanvas(FRAME_SIZE, FRAME_SIZE);
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0, FRAME_SIZE, FRAME_SIZE);
+  const inner = g.getImageData(PIC_FROM + 30, PIC_FROM + 30, PIC_TO - PIC_FROM - 60, PIC_TO - PIC_FROM - 60).data;
+  let solid = 0;
+  for (let i = 3; i < inner.length; i += 4) if (inner[i] > 40) solid++;
+  const solidPct = (solid / (inner.length / 4)) * 100;
+  if (solidPct > 15) throw new HttpError(400, `The middle isn't transparent (${Math.round(solidPct)}% of it is covered), so members' pictures wouldn't show. Keep the area from ${PIC_FROM} to ${PIC_TO} px clear: see the template.`);
+  if (solidPct > 3) notes.push(`A little of the middle is covered (${Math.round(solidPct)}%): check the preview.`);
+  const all = g.getImageData(0, 0, FRAME_SIZE, FRAME_SIZE).data;
+  let border = 0;
+  let borderPx = 0;
+  for (let y = 0; y < FRAME_SIZE; y += 2) {
+    for (let x = 0; x < FRAME_SIZE; x += 2) {
+      if (x >= PIC_FROM && x < PIC_TO && y >= PIC_FROM && y < PIC_TO) continue;
+      borderPx++;
+      if (all[(y * FRAME_SIZE + x) * 4 + 3] > 40) border++;
+    }
+  }
+  if (border / borderPx < 0.05) notes.push('The border looks empty: the frame art goes in the outer 67 px.');
+  const row = await one('INSERT INTO frame_images (mime, data, width, height, bytes, created_by) VALUES ($1,$2,$3,$3,$4,$5) RETURNING id',
+    [mime, out.toString('base64'), FRAME_SIZE, out.length, req.user.id]);
+  res.json({ ok: true, id: row.id, url: imageUrl(row.id), bytes: out.length, type: mime, notes });
+});
+
+// The pictures themselves (public, like the rest of the artwork). A new upload is a new id, so they never change.
+const imageCache = new Map();
+async function frameImage(id) {
+  if (imageCache.has(id)) return imageCache.get(id);
+  const r = await one('SELECT mime, data FROM frame_images WHERE id=$1', [id]);
+  const img = r ? { mime: r.mime, buf: Buffer.from(r.data, 'base64') } : null;
+  if (img) {
+    if (imageCache.size > 100) imageCache.clear();
+    imageCache.set(id, img);
+  }
+  return img;
+}
+export async function frameImageRoute(req, res) {
+  const img = await frameImage(int(req.params.id));
+  if (!img) throw new HttpError(404, 'Not found');
+  res.setHeader('Content-Type', img.mime);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(img.buf);
+}
+// For the Discord cards: the picture behind a look's image link.
+export async function frameImageBuffer(url) {
+  const id = Number(/^\/frame-img\/(\d+)$/.exec(url || '')?.[1]);
+  return id ? (await frameImage(id))?.buf || null : null;
+}
+
+// A 512 x 512 template to draw over: the picture area (keep transparent), the border, and the corners the
+// app can draw over (clan rank / badge bottom right, season tag bottom left).
+framesRouter.get('/admin/frames/template.png', role('admin'), async (_req, res) => {
+  const S = FRAME_SIZE;
+  const c = createCanvas(S, S);
+  const g = c.getContext('2d');
+  const round = (x, y, w, h, r) => {
+    g.beginPath();
+    g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  };
+  // Border zone (blue): where the frame art goes. Picture area (grey): keep it transparent in the real frame.
+  g.fillStyle = 'rgba(60,70,80,0.55)';
+  round(PIC_FROM, PIC_FROM, PIC_TO - PIC_FROM, PIC_TO - PIC_FROM, 42);
+  g.fill();
+  g.fillStyle = 'rgba(41,182,246,0.45)';
+  round(PIC_FROM, PIC_FROM, PIC_TO - PIC_FROM, PIC_TO - PIC_FROM, 42);
+  g.rect(0, 0, S, S);
+  g.fill('evenodd');
+  // Picture area outline.
+  g.setLineDash([10, 8]);
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = 3;
+  round(PIC_FROM, PIC_FROM, PIC_TO - PIC_FROM, PIC_TO - PIC_FROM, 42);
+  g.stroke();
+  g.setLineDash([]);
+  // Corners the app may draw over.
+  for (const [cx, label] of [[S - 52, 'BADGE / RANK'], [52, 'SEASON TAG']]) {
+    g.fillStyle = 'rgba(245,165,36,0.45)';
+    g.beginPath(); g.arc(cx, S - 52, 50, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffffff';
+    g.font = 'bold 13px sans-serif';
+    g.textAlign = 'center';
+    g.fillText(label, cx, S - 48);
+  }
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.shadowColor = 'rgba(0,0,0,0.8)';
+  g.shadowBlur = 4;
+  g.font = 'bold 22px sans-serif';
+  g.fillText('FRAME ART: OUTER 67 px', S / 2, 42);
+  g.font = 'bold 20px sans-serif';
+  g.fillText("MEMBER'S PICTURE", S / 2, S / 2 - 40);
+  g.font = '16px sans-serif';
+  g.fillText(`${PIC_TO - PIC_FROM} x ${PIC_TO - PIC_FROM} px, from ${PIC_FROM} to ${PIC_TO} px`, S / 2, S / 2 - 12);
+  g.fillText('keep this area transparent', S / 2, S / 2 + 12);
+  g.font = '14px sans-serif';
+  g.fillText(`Whole frame: ${S} x ${S} px`, S / 2, S / 2 + 50);
+  g.fillText('PNG, WebP or GIF, up to 1 MB', S / 2, S / 2 + 70);
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Content-Disposition', 'attachment; filename="wpg-frame-template-512.png"');
+  res.send(await c.encode('png'));
 });

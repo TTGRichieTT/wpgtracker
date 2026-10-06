@@ -10,6 +10,7 @@ import {
 } from './careercard.js';
 import { rankBadge, wpgBadge } from '../public/js/insignia.js';
 import { frameSVG } from '../public/js/frameart.js';
+import { frameImageBuffer } from './frames.js';
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const HEAD_H = 246; // the design's header art (logo, WARDOGS, soldier, slogans)
@@ -134,7 +135,13 @@ async function framedPicture(g, img, x, y, size, frame) {
   if (img) g.drawImage(img, px, py, pic, pic);
   else { g.fillStyle = '#0b1520'; g.fillRect(px, py, pic, pic); }
   g.restore();
-  const art = await loadImage(Buffer.from(frameSVG(frame, Math.round(size * 2)))).catch(() => null);
+  // An uploaded frame picture is drawn from its file, then the corner badge / season tag on top.
+  if (frame?.image) {
+    const buf = await frameImageBuffer(frame.image).catch(() => null);
+    const pic = buf ? await loadImage(buf).catch(() => null) : null;
+    if (pic) g.drawImage(pic, x, y, size, size);
+  }
+  const art = await loadImage(Buffer.from(frameSVG(frame, Math.round(size * 2), { overlayOnly: !!frame?.image }))).catch(() => null);
   if (art) g.drawImage(art, x, y, size, size);
 }
 
