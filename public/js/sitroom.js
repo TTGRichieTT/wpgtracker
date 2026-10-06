@@ -436,7 +436,8 @@ async function viewRoom(main, id, alive) {
       <div class="sit-side">
         <div class="panel"><div class="panel-title" style="margin-bottom:8px">🔫 Artillery</div>
           <div class="row" style="gap:6px;flex-wrap:nowrap"><select id="srGunPick" class="grow">${guns.map((g) => `<option value="${esc(g.id)}">${esc(g.label)}</option>`).join('') || '<option value="">No gun tables</option>'}</select>
-            <button type="button" class="btn small" id="srGunPlace">Place gun</button></div>
+            <button type="button" class="btn small" id="srGunPlace">Place gun</button>
+            <button type="button" class="btn small ghost" id="srGunRemove" title="Take your gun off the map" hidden>Remove</button></div>
           <label class="check small" style="margin-top:8px"><input type="checkbox" id="srShare"> Share my gun with the room</label>
           <div class="small" id="srReadout" style="margin-top:6px"></div>
           <div class="small" id="srShared" style="margin-top:6px"></div>
@@ -516,7 +517,8 @@ async function viewRoom(main, id, alive) {
     const g = myGun();
     if (g) {
       rangeRings(L, g, myWeapon(), '#29b6f6', layer);
-      L.marker(toLL(g), { icon: L.divIcon({ className: 'arty-pin gun', html: icon('crosshair'), iconSize: [30, 30], iconAnchor: [15, 15] }), interactive: false })
+      L.marker(toLL(g), { icon: L.divIcon({ className: 'arty-pin gun', html: icon('crosshair'), iconSize: [30, 30], iconAnchor: [15, 15] }) })
+        .on('click', (e) => { if (tool) return tapItem(e, null, g); L.DomEvent.stopPropagation(e); myGunMenu(); })
         .bindTooltip(`Your gun${myWeapon() ? ` · ${myWeapon().label}` : ''}${sharing() ? ' (shared)' : ''}`, { className: 'arty-label' }).addTo(layer);
     }
     renderNeeds();
@@ -529,6 +531,7 @@ async function viewRoom(main, id, alive) {
     if (w && pick.value !== w.id) pick.value = w.id;
     main.querySelector('#srShare').checked = sharing();
     main.querySelector('#srGunPlace').textContent = myGun() ? 'Move gun' : 'Place gun';
+    main.querySelector('#srGunRemove').hidden = !myGun();
     const enemies = items.filter((x) => x.type === 'enemy');
     const reach = enemies.filter((x) => inRange(x) === true).length;
     main.querySelector('#srReadout').innerHTML = !myGun()
@@ -544,6 +547,13 @@ async function viewRoom(main, id, alive) {
     if (sharing() && g) syncShare();
   };
   main.querySelector('#srGunPlace').onclick = () => { tool = 'gun'; applyTool(); };
+  // Take my gun off the map (here and on the Arty map, which keeps the same saved position), and stop sharing it.
+  function removeGun() {
+    saveGun(map().id, null);
+    render();
+    syncShare();
+  }
+  main.querySelector('#srGunRemove').onclick = removeGun;
   main.querySelector('#srShare').onchange = (e) => {
     try { localStorage.setItem(SHARE_KEY, e.target.checked ? 'on' : 'off'); } catch { /* storage blocked */ }
     if (e.target.checked && !myGun()) toast('Place your gun', 'Tap Place gun, then tap where it is. It\'s shared once placed.');
@@ -844,6 +854,17 @@ async function viewRoom(main, id, alive) {
       m.el.querySelector('[data-cancel]').onclick = () => { m.close(); resolve(''); };
       m.el.querySelector('#srTxt').onsubmit = (e) => { e.preventDefault(); const v = e.target.t.value.trim(); m.close(); resolve(v); };
     });
+  }
+
+  // Tap my own gun: move it or take it off the map.
+  function myGunMenu() {
+    const w = myWeapon();
+    const m = modal(`<h3 style="margin-top:0">🔫 Your gun${w ? ` — ${esc(w.label)}` : ''}</h3>
+      <p class="muted small">${sharing() ? 'Shared with the room.' : 'Only you can see it.'} Removing it here also removes it from the Arty map.</p>
+      <div class="row" style="gap:6px;justify-content:flex-end"><button class="btn" data-a="move">Move</button><button class="btn danger" data-a="remove">Remove</button><button class="btn ghost" data-a="close">Close</button></div>`);
+    m.el.querySelector('[data-a="close"]').onclick = m.close;
+    m.el.querySelector('[data-a="move"]').onclick = () => { m.close(); tool = 'gun'; applyTool(); };
+    m.el.querySelector('[data-a="remove"]').onclick = () => { m.close(); removeGun(); };
   }
 
   // Tap a mark: who placed it, when, and what you can do with it.

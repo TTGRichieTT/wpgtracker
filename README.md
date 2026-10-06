@@ -151,7 +151,8 @@ PMC guests can't see or use them.
 - **Artillery:** pick your gun and place it in the side panel; its min/max range rings show on the map, enemy marks out
   of range are faded and in-range ones are tagged. Hover (or right-click / long-press) anywhere for elevation, bearing
   and distance. **Share my gun** (optional, per person) shows your gun and its rings to the room so others can see who
-  can hit what.
+  can hit what. Tap your gun on the map (or **Remove** in the panel) to move it or take it off the map; this also
+  removes it from the Arty map and stops sharing it.
 - **Fire mission:** tap an enemy, danger or objective mark → **Fire mission** shows elevation, bearing and distance
   from your gun (the same saved position as the Arty map) and which shared guns are in range. **I'm firing on it**
   shows "💥 Name firing" on the mark for everyone; **Open in Arty map** adds it as a target there.
