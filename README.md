@@ -136,15 +136,23 @@ PMC guests can't see or use them.
 - **Getting in:** the room's creator invites people from the members list, or members press **Ask to join** and the
   creator lets them in. Admins can also look into any room, join it, or close it. A member is in one room at a time.
 - **Outside a room** members only see its name and who's in it, never its map.
-- **Inside:** everyone marks the map (my position, FOB, enemy, need, objective, danger) and draws (attack and flank
-  arrows, defend lines, routes, areas, labels) in four colours; everyone in the room sees it straight away. Requests
-  go in the **Needs** list, where anyone can press **I'm on it** and then **Done**.
-- Positions fade after 2 minutes and enemy spots after 3–5 minutes unless refreshed. The creator (or an admin) can
-  change the map or press **New match / clear board**, both of which clear the board. A room nobody uses for
-  30 minutes closes by itself; if the creator leaves, the longest-serving member takes over.
+- **Inside:** a floating icon toolbar on the left of the map holds the marks (my position, FOB, enemy, need,
+  objective, danger), the drawings (attack and flank arrows with real arrow heads, defend lines, routes, areas,
+  labels), the colours and the gun. Press **?** for a key of every icon and colour. Everyone in the room sees changes
+  straight away. Requests go in the **Needs** list, where anyone can press **I'm on it** and then **Done**.
+- **Enemies (3 teams):** each room has two enemy colours, the other two factions (a Lonestar room marks Valkyra in red
+  and Manticore in green). Enemy marks are icons: infantry, sniper (crosshair), mortar, artillery (cannon), tank,
+  spawn APC, armed vehicle, supply/unarmed (truck) and air (helicopter).
+- Positions fade after 2 minutes and enemy spots after 3–5 minutes unless refreshed; a spawn APC stays until removed.
+  The creator (or an admin) can change the map or press **New match / clear board**, both of which clear the board. A
+  room nobody uses for 30 minutes closes by itself; if the creator leaves, the longest-serving member takes over.
+- **Artillery:** pick your gun and place it in the side panel; its min/max range rings show on the map, enemy marks out
+  of range are faded and in-range ones are tagged. Hover (or right-click / long-press) anywhere for elevation, bearing
+  and distance. **Share my gun** (optional, per person) shows your gun and its rings to the room so others can see who
+  can hit what.
 - **Fire mission:** tap an enemy, danger or objective mark → **Fire mission** shows elevation, bearing and distance
-  from your gun (set with **🔫 My gun**; it's the same saved position as the Arty map, only you see it). **I'm firing on
-  it** shows "💥 Name firing" on the mark for everyone; **Open in Arty map** adds it as a target there.
+  from your gun (the same saved position as the Arty map) and which shared guns are in range. **I'm firing on it**
+  shows "💥 Name firing" on the mark for everyone; **Open in Arty map** adds it as a target there.
 - **Room chat:** a small text box for quick messages (kept until the room closes).
 - **Alerts:** a beep (and a buzz on phones) for new needs, enemy spots, messages and, for the room's creator, join
   requests. Each member can switch them off with **🔔 Alerts on / off**.

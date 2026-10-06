@@ -39,10 +39,17 @@ const MARKERS = {
   objective: {},
   danger: {},
 };
-const ENEMY = { infantry: 3, vehicle: 5, armour: 5, air: 3, artillery: 5 }; // minutes
+// Enemy types and minutes before a sighting fades (0 = stays until removed: a spawn APC is a spawn point).
+// vehicle / armour are older types, kept so marks made before still show.
+const ENEMY = { infantry: 3, sniper: 3, mortar: 5, artillery: 5, tank: 5, apc: 0, armed: 5, supply: 5, air: 3, vehicle: 5, armour: 5 };
+const enemyTtl = (what) => (ENEMY[what] ? ENEMY[what] * 60 * 1000 : null);
 const NEEDS = ['ammo', 'medic', 'transport', 'repair', 'fire', 'backup'];
 const DRAWINGS = ['attack', 'flank', 'defend', 'route', 'area', 'label'];
-const COLORS = ['blue', 'red', 'yellow', 'green'];
+// Drawing colours: "us" (the room's faction), each faction (the enemy factions' movement) and yellow (caution).
+// blue / red / green are older colours, kept so drawings made before still show.
+const COLORS = ['us', 'yellow', 'lonestar', 'valkyra', 'manticore', 'blue', 'red', 'green'];
+// The two factions the room is fighting (3 teams, each against the other two).
+const enemiesOf = (room) => FACTION_IDS.filter((f) => f !== room?.faction);
 
 const MAP_IDS = (() => {
   try {
@@ -314,7 +321,7 @@ sitrooms.post('/sitrooms/:id/join', member, wpgOnly, async (req, res) => {
 sitrooms.post('/sitrooms/:id/leave', member, wpgOnly, async (req, res) => {
   const room = await roomParam(req);
   await q('DELETE FROM sit_members WHERE room_id=$1 AND user_id=$2', [room.id, req.user.id]);
-  await q("DELETE FROM sit_items WHERE room_id=$1 AND user_id=$2 AND type='me'", [room.id, req.user.id]);
+  await q("DELETE FROM sit_items WHERE room_id=$1 AND user_id=$2 AND type IN ('me','gun')", [room.id, req.user.id]);
   await afterLeaving(room, req.user.id);
   res.json({ ok: true });
 });
@@ -324,7 +331,7 @@ sitrooms.post('/sitrooms/:id/remove/:userId', member, wpgOnly, async (req, res) 
   manager(room, req.user);
   const userId = int(req.params.userId);
   await q('DELETE FROM sit_members WHERE room_id=$1 AND user_id=$2', [room.id, userId]);
-  await q("DELETE FROM sit_items WHERE room_id=$1 AND user_id=$2 AND type='me'", [room.id, userId]);
+  await q("DELETE FROM sit_items WHERE room_id=$1 AND user_id=$2 AND type IN ('me','gun')", [room.id, userId]);
   notify(userId, 'Removed from situation room', `You were removed from "${room.name}".`, '#/sitrooms');
   roomEvent(room.id, 'removed', { user_id: userId });
   await afterLeaving(room, userId);
@@ -340,7 +347,7 @@ const clampPoint = (p) => {
 };
 
 // Cleans what a member sent into what we store. Returns { data, ttl }.
-function cleanItem(kind, type, body) {
+function cleanItem(kind, type, body, room) {
   if (kind === 'marker') {
     if (!MARKERS[type]) throw new HttpError(400, 'Unknown marker.');
     const data = { at: clampPoint(body.at), note: str(body.note, 80) };
@@ -348,7 +355,8 @@ function cleanItem(kind, type, body) {
     if (type === 'enemy') {
       data.what = Object.keys(ENEMY).includes(body.what) ? body.what : 'infantry';
       data.count = Math.max(1, Math.min(50, int(body.count, 1)));
-      ttl = ENEMY[data.what] * 60 * 1000;
+      data.side = enemiesOf(room).includes(body.side) ? body.side : enemiesOf(room)[0];
+      ttl = enemyTtl(data.what);
     }
     if (type === 'need') data.need = NEEDS.includes(body.need) ? body.need : 'ammo';
     if (type === 'fob') data.name = str(body.name, 30);
@@ -361,7 +369,7 @@ function cleanItem(kind, type, body) {
     const pts = (Array.isArray(body.points) ? body.points : []).slice(0, 40).map(clampPoint);
     const need = type === 'label' ? 1 : type === 'area' ? 3 : 2;
     if (pts.length < need) throw new HttpError(400, type === 'area' ? 'Tap at least 3 corners.' : 'Tap at least 2 points.');
-    const data = { points: pts, color: COLORS.includes(body.color) ? body.color : type === 'flank' || type === 'attack' ? 'blue' : 'yellow' };
+    const data = { points: pts, color: COLORS.includes(body.color) ? body.color : type === 'flank' || type === 'attack' ? 'us' : 'yellow' };
     if (type === 'label') {
       data.text = str(body.text, 40);
       if (!data.text) throw new HttpError(400, 'Type the label.');
@@ -390,7 +398,19 @@ sitrooms.post('/sitrooms/:id/items', member, wpgOnly, async (req, res) => {
   rateLimit(req.user.id);
   const kind = str(req.body?.kind, 10);
   const type = str(req.body?.type, 20);
-  const { data, ttl } = cleanItem(kind, type, req.body || {});
+  // A shared gun: one per member, with its range from the gun tables, so the room sees who can reach what.
+  if (kind === 'gun') {
+    const gun = await one('SELECT id, label, min_m, max_m FROM artillery WHERE id=$1', [str(req.body?.weapon, 60)]);
+    if (!gun) throw new HttpError(400, 'Pick your gun.');
+    const data = { at: clampPoint(req.body?.at), weapon: gun.id, label: gun.label, min: gun.min_m, max: gun.max_m };
+    const gone = await q("DELETE FROM sit_items WHERE room_id=$1 AND user_id=$2 AND kind='gun' RETURNING id", [room.id, req.user.id]);
+    for (const g of gone) roomEvent(room.id, 'item:removed', { id: g.id });
+    const item = await one("INSERT INTO sit_items (room_id, user_id, kind, type, data) VALUES ($1,$2,'gun','gun',$3) RETURNING *", [room.id, req.user.id, JSON.stringify(data)]);
+    await touch(room.id, req.user.id);
+    roomEvent(room.id, 'item', { item: itemOut(item) });
+    return res.json(itemOut(item));
+  }
+  const { data, ttl } = cleanItem(kind, type, req.body || {}, room);
   const count = await one('SELECT COUNT(*)::int AS n FROM sit_items WHERE room_id=$1', [room.id]);
   if (count.n >= MAX_ITEMS) throw new HttpError(400, 'The board is full: clear some marks first.');
   // "My position": one each, so placing it again moves it.
@@ -418,7 +438,7 @@ sitrooms.patch('/sitrooms/:id/items/:itemId', member, wpgOnly, async (req, res) 
   let data = item.data;
   let expires = item.expires_at;
   if (action === 'refresh') {
-    const ttl = item.type === 'me' ? MARKERS.me.ttl : item.type === 'enemy' ? ENEMY[data.what] * 60 * 1000 : null;
+    const ttl = item.type === 'me' ? MARKERS.me.ttl : item.type === 'enemy' ? enemyTtl(data.what) : null;
     if (!ttl) throw new HttpError(400, 'That mark doesn\'t expire.');
     expires = new Date(Date.now() + ttl);
   } else if (action === 'firing' || action === 'ceasefire') {
@@ -439,7 +459,7 @@ sitrooms.patch('/sitrooms/:id/items/:itemId', member, wpgOnly, async (req, res) 
       }
     } else {
       data = {
-        ...cleanItem(item.kind, item.type, { ...data, ...req.body }).data,
+        ...cleanItem(item.kind, item.type, { ...data, ...req.body }, room).data,
         ...(item.kind === 'marker' ? { at: data.at } : { points: data.points }),
         claimed_by: data.claimed_by || null, firing_by: data.firing_by || null,
       };
