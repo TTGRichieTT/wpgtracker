@@ -25,7 +25,7 @@ export const METRICS = {
   founding: { label: 'Joined in Season 1', scope: 'all', yesno: true },
   headshots: { label: 'Headshots on the WPG server', scope: 'all' },
   longest_kill: { label: 'Longest kill on the WPG server (m)', scope: 'all', unit: 'm' },
-  max_class_level: { label: 'Highest class level (WARDOGS Tracker)', scope: 'all' },
+  max_class_level: { label: 'Highest class level (wardogs.tools)', scope: 'all' },
   giveaway_wins: { label: 'Giveaways won', scope: 'all' },
   days_in_wpg: { label: 'Days in WPG Barracks', scope: 'all', unit: 'days' },
   kills: { label: 'Kills on the WPG server (all time)', scope: 'all' },
@@ -39,8 +39,8 @@ export const METRICS = {
   season_wins: { label: 'Wins on the WPG server this season', scope: 'season' },
   season_finished: { label: 'Matches finished (not left early) this season', scope: 'season' },
   season_wpg_xp: { label: 'WPG XP earned this season', scope: 'season' },
-  wardog_level: { label: 'Wardog level (WARDOGS Tracker)', scope: 'season' },
-  cash: { label: 'Cash held (WARDOGS Tracker)', scope: 'season', unit: '$' },
+  wardog_level: { label: 'Wardog level (wardogs.tools)', scope: 'season' },
+  cash: { label: 'Cash held (wardogs.tools)', scope: 'season', unit: '$' },
   clan_member: { label: 'WPG member', scope: 'clan', yesno: true },
   unit: { label: 'Posted to a Combat Command unit (its colour)', scope: 'clan', yesno: true },
   officer: { label: 'Clan rank of at least the target rank order', scope: 'clan', yesno: true },
@@ -300,7 +300,7 @@ async function awardPlacings(season) {
   bus.emit('announce', { type: 'season-results', number: season.number, top: rows.slice(0, 10).map((r, i) => ({ place: i + 1, userId: r.id, gained: Number(r.gained) })) });
 }
 
-// The wipe check: Wardog levels from WARDOGS Tracker dropping hard for several members within a day = the game wiped.
+// The wipe check: Wardog levels from wardogs.tools dropping hard for several members within a day = the game wiped.
 const drops = [];
 export function noteLevelDrop(userId) {
   const now = Date.now();

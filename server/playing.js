@@ -9,15 +9,22 @@ import { steamGet } from './steam.js';
 const playing = new Map(); // userId -> { game, appId }
 export const playingNow = () => Object.fromEntries(playing);
 
+// Wardogs (by name, or its Steam app id).
+const isWardogs = (p) => !!p && (/wardogs/i.test(p.game || '') || String(p.appId) === '1867240');
+
 let changed = false;
 function setPlaying(userId, game, appId) {
   const old = playing.get(userId);
-  if (!game) {
+  const now = game ? { game: String(game).slice(0, 80), appId: String(appId || '') } : null;
+  // Tell the stats sync when a member starts or stops playing Wardogs (steam.js re-reads their stats after).
+  if (isWardogs(old) && !isWardogs(now)) bus.emit('wardogs:closed', userId);
+  else if (!isWardogs(old) && isWardogs(now)) bus.emit('wardogs:started', userId);
+  if (!now) {
     if (old) { playing.delete(userId); changed = true; }
     return;
   }
-  if (old?.game === game && old?.appId === appId) return;
-  playing.set(userId, { game: String(game).slice(0, 80), appId: String(appId || '') });
+  if (old?.game === now.game && old?.appId === now.appId) return;
+  playing.set(userId, now);
   changed = true;
 }
 function flush() {

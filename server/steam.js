@@ -267,6 +267,23 @@ export async function announceRankChange(user, from, to) {
 }
 
 let timer;
+
+// Wardogs stats only change once the game is closed (wardogs.tools reads the account then), so each member is
+// re-synced 30 minutes after they stop playing Wardogs: stats, Steam hours and medals, without them pressing anything.
+// Starting the game again before then cancels it (the next time they close it starts a new wait).
+const AFTER_GAME_MS = 30 * 60 * 1000;
+const afterGame = new Map(); // userId -> timer
+bus.on('wardogs:started', (userId) => {
+  clearTimeout(afterGame.get(userId));
+  afterGame.delete(userId);
+});
+bus.on('wardogs:closed', (userId) => {
+  clearTimeout(afterGame.get(userId));
+  afterGame.set(userId, setTimeout(() => {
+    afterGame.delete(userId);
+    syncUser(userId, { force: true }).catch((e) => console.warn('[sync] after game', userId, e.message));
+  }, AFTER_GAME_MS));
+});
 export function startSyncLoop() {
   const run = async () => {
     try {

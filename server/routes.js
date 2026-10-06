@@ -87,13 +87,13 @@ api.delete('/me/discord-link', member, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Checks my global stats directly by my Steam ID.
+// Looks up my global stats on wardogs.tools now (e.g. just after I've linked my account there).
 const trackerChecks = new Map();
 api.post('/me/tracker-check', member, async (req, res) => {
   const last = trackerChecks.get(req.user.id) || 0;
   if (Date.now() - last < 10 * 1000) throw new HttpError(429, 'Checking too often.');
   trackerChecks.set(req.user.id, Date.now());
-  const r = await syncWardogs(req.user).catch((e) => ({ ok: false, reason: e.message }));
+  const r = await syncWardogs(req.user, { force: true }).catch((e) => ({ ok: false, reason: e.message }));
   if (r.official && !r.cached) await recalcXp(req.user.id);
   res.json({ linked: !!r.official, state: r.state || null, reason: r.ok ? '' : r.reason });
 });

@@ -1,10 +1,17 @@
-// Wardogs stats are fetched only from the owner's keyed stats API, by Steam, social, or Discord ID.
+// Global Wardogs stats from wardogs.tools, with the key its developer gave us (WARDOGS_API_KEY, kept in the host's
+// environment). As the developer asked: players are looked up by Steam ID, Discord ID or their wardogs.tools
+// "social id" (remembered after the first find), the name search is only a last resort for members who typed
+// their in-game name (Name#1234), every request sends our User-Agent, and the data is shown with
+// "Data provided by wardogs.tools" and a link.
 import { flag, q, one } from './db.js';
 import { noteLevelDrop } from './frames.js';
 
 const API = 'https://wardogs.tools/api/player/stats';
+const LOCATE = 'https://wardogs.tools/api/leaderboards/locate';
 const HEADERS = { Accept: 'application/json', 'User-Agent': 'WPG-Barracks/1.0 (WPG clan app; https://wpg-barracks.onrender.com)' };
 const CACHE_MS = 6 * 60 * 60 * 1000;
+const NOT_FOUND_MS = 30 * 60 * 1000; // "not found" is only remembered this long (they may link their account any minute)
+const FRESH_MS = 60 * 1000; // "Check now" asks again if the last answer is older than this
 const REQUEST_GAP_MS = 10 * 1000;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -20,14 +27,19 @@ function playerId(value) {
 }
 
 function scheduleRequest(id) {
+  const key = process.env.WARDOGS_API_KEY;
+  if (!key) throw new Error('WARDOGS_API_KEY is not configured');
+  const url = new URL(`${API}/${encodeURIComponent(id)}`);
+  url.searchParams.set('key', key);
+  return scheduleFetch(url);
+}
+
+// Every wardogs.tools request goes through here: one at a time, spaced out, and paused when it says so.
+function scheduleFetch(url) {
   const run = async () => {
-    const key = process.env.WARDOGS_API_KEY;
-    if (!key) throw new Error('WARDOGS_API_KEY is not configured');
     const waitUntil = Math.max(lastRequestAt + REQUEST_GAP_MS, retryAfterAt);
     if (waitUntil > Date.now()) await pause(waitUntil - Date.now());
     lastRequestAt = Date.now();
-    const url = new URL(`${API}/${encodeURIComponent(id)}`);
-    url.searchParams.set('key', key);
     const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20000) });
     if (response.status === 429) {
       const header = response.headers.get('retry-after');
@@ -45,14 +57,17 @@ function scheduleRequest(id) {
   return request;
 }
 
-async function statsForId(id) {
+// How long an answer is kept: 6 hours, or 30 minutes for "not found"; when the member presses Check now, 1 minute.
+const keepFor = (data, fresh) => (fresh ? FRESH_MS : data === null ? NOT_FOUND_MS : CACHE_MS);
+
+async function statsForId(id, { fresh = false } = {}) {
   if (!playerId(id)) throw new Error('Invalid WARDOGS player ID');
   const cached = responseCache.get(id);
-  if (cached && Date.now() - cached.at < CACHE_MS) return cached.data;
+  if (cached && Date.now() - cached.at < keepFor(cached.data, fresh)) return cached.data;
   if (inFlight.has(id)) return inFlight.get(id);
   const pending = (async () => {
     const saved = await one('SELECT response, fetched_at FROM wardogs_api_cache WHERE player_id=$1', [id]);
-    if (saved?.fetched_at && Date.now() - new Date(saved.fetched_at).getTime() < CACHE_MS) {
+    if (saved?.fetched_at && Date.now() - new Date(saved.fetched_at).getTime() < keepFor(saved.response, fresh)) {
       if (responseCache.size > 5000) responseCache.clear();
       const item = { at: new Date(saved.fetched_at).getTime(), data: saved.response };
       responseCache.set(id, item);
@@ -150,25 +165,53 @@ async function saveMissing(userId, state) {
   );
 }
 
-// Member responses, including "not found", are cached in the database for six hours.
-export async function syncRanks(user) {
+const NOT_FOUND_REASON = 'Not found on wardogs.tools yet: sign in there and link your Wardogs account, or add your in-game name (Name#1234) in Edit profile';
+const NO_STATS_REASON = 'Found on wardogs.tools, but it has no stats for you yet';
+
+// "Name#1234" → { name, tag }
+function parseName(value) {
+  const m = /^\s*(.+?)\s*#\s*(\d{3,6})\s*$/.exec(String(value || ''));
+  return m ? { name: m[1], tag: m[2] } : null;
+}
+// The name search (the developer's /api/leaderboards/locate): only for a member who typed their in-game name and
+// wasn't found by Steam ID. Returns their wardogs.tools social id, which is then remembered.
+async function socialIdByName(typed) {
+  const url = new URL(LOCATE);
+  url.searchParams.set('q', typed.name);
+  const data = await scheduleFetch(url);
+  const list = Array.isArray(data?.candidates) ? data.candidates : [];
+  const hit = list.find((c) => String(c.displayName || '').toLowerCase() === typed.name.toLowerCase() && String(c.discriminator) === typed.tag);
+  return playerId(hit?.socialId) ? String(hit.socialId) : null;
+}
+
+// Found players are re-read every six hours; "not found" is asked again after 30 minutes, or at once
+// (well, after a minute) when the member presses Check now (force).
+export async function syncRanks(user, { force = false } = {}) {
   if (!/^\d{17}$/.test(user.steam_id || '')) return { ok: false, reason: 'Test account (not a real Steam ID)' };
   const saved = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
   const savedAt = saved?.ranks_synced ? new Date(saved.ranks_synced).getTime() : 0;
-  if (saved?.ranks?.source === 'wardogs.tools' && Date.now() - savedAt < CACHE_MS) {
+  const savedFor = saved?.official ? CACHE_MS : NOT_FOUND_MS;
+  if (!force && saved?.ranks?.source === 'wardogs.tools' && Date.now() - savedAt < savedFor) {
     const state = saved.ranks.state;
     const reason = saved.official ? '' : state === 'missing'
-      ? 'No WARDOGS stats found for this Steam ID'
-      : 'WARDOGS returned no stats for this account yet';
+      ? NOT_FOUND_REASON
+      : NO_STATS_REASON;
     return { ok: !!saved.official, official: !!saved.official, cached: true, state, reason };
   }
 
-  const id = playerId(saved?.ranks?.socialId) ? saved.ranks.socialId : user.steam_id;
-  const data = await statsForId(id);
+  // The remembered social id first, then the Steam ID, then (last resort) the in-game name they typed.
+  let data = null;
+  if (playerId(saved?.ranks?.socialId)) data = await statsForId(saved.ranks.socialId, { fresh: force });
+  if (!data?.stats) data = await statsForId(user.steam_id, { fresh: force });
+  const typed = parseName(user.custom_fields?.wardogs_name);
+  if (!data?.stats && typed) {
+    const socialId = await socialIdByName(typed);
+    if (socialId) data = await statsForId(socialId, { fresh: force });
+  }
   if (!data?.player || !data?.stats) {
     const state = data?.player ? 'unsynced' : 'missing';
     await saveMissing(user.id, state);
-    return { ok: false, state, reason: state === 'missing' ? 'No WARDOGS stats found for this Steam ID' : 'WARDOGS returned no stats for this account yet' };
+    return { ok: false, state, reason: state === 'missing' ? NOT_FOUND_REASON : NO_STATS_REASON };
   }
 
   const { official, ranks } = shape(data);
