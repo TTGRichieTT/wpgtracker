@@ -27,8 +27,9 @@ function playerId(value) {
 }
 
 function scheduleRequest(id) {
-  const key = process.env.WARDOGS_API_KEY;
-  if (!key) throw new Error('WARDOGS_API_KEY is not configured');
+  // Spaces, line breaks or quote marks pasted in with the key would make wardogs.tools refuse it.
+  const key = String(process.env.WARDOGS_API_KEY || '').trim().replace(/^["']+|["']+$/g, '').trim();
+  if (!key) throw new Error('Global Wardogs stats aren\'t set up yet (staff: add WARDOGS_API_KEY in Render)');
   const url = new URL(`${API}/${encodeURIComponent(id)}`);
   url.searchParams.set('key', key);
   return scheduleFetch(url);
@@ -49,7 +50,10 @@ function scheduleFetch(url) {
       throw new Error('WARDOGS stats API is rate-limiting requests; try again later');
     }
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`WARDOGS stats API returned ${response.status}`);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('wardogs.tools didn\'t accept the app\'s key (staff: check WARDOGS_API_KEY in Render matches the key exactly)');
+    }
+    if (!response.ok) throw new Error(`wardogs.tools answered ${response.status}; try again later`);
     return response.json();
   };
   const request = requestChain.then(run, run);
