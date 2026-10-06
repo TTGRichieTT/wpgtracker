@@ -247,6 +247,10 @@ function frameEditor(d, f, done) {
     const seasonNo = cat === 'season' ? d.seasons.find((x) => x.id === sid)?.number : null;
     const sf = m.el.querySelector('#seasonField');
     if (sf) sf.style.display = cat === 'season' ? '' : 'none';
+    // Clan frames always show the member's clan rank badge in the corner.
+    if (cat === 'clan') form.badge.value = 'rank';
+    form.badge.disabled = cat === 'clan';
+    form.badge.title = cat === 'clan' ? "Clan frames always show the member's clan rank badge" : '';
     const tf = m.el.querySelector('#tagField');
     if (tf) tf.style.display = cat === 'season' ? '' : 'none';
     const isImage = form.style.value === 'image';

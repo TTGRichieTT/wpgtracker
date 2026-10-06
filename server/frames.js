@@ -351,8 +351,8 @@ const STARTERS = [
   ['lucky', 'Lucky', 'Win a giveaway', 'permanent', 'glow', '#2ecc71', 'clover', 'giveaway_wins', 1],
   ['oldguard', 'Old Guard', 'A year in WPG Barracks', 'permanent', 'metal-bronze', '', 'clock', 'days_in_wpg', 365],
   ['clan', 'Clan Colours', 'Be a WPG member (shows your clan rank badge)', 'clan', 'clan', '#29b6f6', 'rank', 'clan_member', 0],
-  ['unit', 'Unit Colours', 'Be posted to a Combat Command unit (shows in its colour)', 'clan', 'unit', '', 'flag', 'unit', 0],
-  ['officer', 'Officer', 'Hold the clan rank of Sergeant or higher', 'clan', 'glow', '#c9a227', 'chevrons', 'officer', 0],
+  ['unit', 'Unit Colours', 'Be posted to a Combat Command unit (shows in its colour)', 'clan', 'unit', '', 'rank', 'unit', 0],
+  ['officer', 'Officer', 'Hold the clan rank of Sergeant or higher', 'clan', 'glow', '#c9a227', 'rank', 'officer', 0],
   ['centurion', 'Centurion', 'Reach Wardog level 100 in the season', 'season', 'metal-silver', '', 'chevrons', 'wardog_level', 100],
   ['marksman', 'Marksman', '1,000 kills on the WPG server in the season', 'season', 'rangefinder', '', 'crosshair', 'season_kills', 1000],
   ['ironman', 'Ironman', '50 hours on the WPG server in the season', 'season', 'metal-steel', '', 'clock', 'season_hours', 50],
@@ -386,6 +386,12 @@ async function seedFrames() {
   if (!(await one("SELECT value FROM settings WHERE key='_frames_rank_badge'"))) {
     await q("UPDATE frames SET badge='rank', description='Be a WPG member (shows your clan rank badge)' WHERE key='clan' AND badge='shield'");
     await q("INSERT INTO settings (key, value) VALUES ('_frames_rank_badge', 'true') ON CONFLICT DO NOTHING");
+    clearFrames();
+  }
+  // Once: every clan frame shows the member's clan rank badge (Unit Colours had a flag, Officer chevrons).
+  if (!(await one("SELECT value FROM settings WHERE key='_frames_clan_rank'"))) {
+    await q("UPDATE frames SET badge='rank' WHERE category='clan'");
+    await q("INSERT INTO settings (key, value) VALUES ('_frames_clan_rank', 'true') ON CONFLICT DO NOTHING");
     clearFrames();
   }
   seeded = true;
@@ -474,6 +480,7 @@ function readFrame(b) {
   if (f.metric === 'placement') throw new HttpError(400, 'Season placing frames are made by the app when a season ends.');
   const scope = METRICS[f.metric].scope;
   if (scope === 'clan' && f.category !== 'clan') f.category = 'clan';
+  if (f.category === 'clan') f.badge = 'rank'; // clan frames always show the member's clan rank badge
   if (scope === 'season' && f.category === 'permanent') f.category = 'season';
   f.season_id = f.category === 'season' ? int(b.season_id) || null : null;
   return f;
