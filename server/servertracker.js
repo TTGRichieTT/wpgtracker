@@ -26,6 +26,17 @@ const MEMBER_PUSH_MS = 5 * 60 * 1000;
 const totalScore = (st) => (st?.factionScores || []).reduce((n, f) => n + (Number(f.score) || 0), 0);
 const matchKey = (st) => `${st?.map || ''}|${(st?.experiences || []).join('+')}`;
 
+// The match clock from the kill feed (the game's own event clock), for the server the feed comes from. Only a kill
+// newer than the last one seen counts, so a quiet spell doesn't look like the clock stopping.
+async function feedClock(serverId, state) {
+  const feedServer = await one("SELECT id FROM game_servers WHERE enabled = true AND rcon_url <> '' AND rcon_password <> '' ORDER BY sort_order, id LIMIT 1");
+  if (feedServer?.id !== serverId) return NaN;
+  const k = await one("SELECT id, (raw->>'eventTime')::float AS t FROM kill_events WHERE raw ? 'eventTime' ORDER BY id DESC LIMIT 1").catch(() => null);
+  if (!k || !Number.isFinite(k.t) || k.id === state.feedKill) return NaN;
+  state.feedKill = k.id;
+  return k.t;
+}
+
 // Ends the match in `state`: hands out wins and losses (none for an empty or tied match), keeps
 // one row per player of how their match went (for cheat watch) and works out WPG XP.
 async function finishMatch(server, state) {
@@ -36,8 +47,9 @@ async function finishMatch(server, state) {
   const winner = best > 0 && winners.length === 1 ? winners[0].name : null;
   // How long it ran (the server's match clock at the last check, or our own count) and whether a team won it.
   const seconds = Number.isFinite(state.ms) ? state.ms : Math.round(((state.at || Date.now()) - (state.started || state.at || Date.now())) / 1000);
-  const finished = best > 0 && best >= (state.cap || 100) * FINISH_SHARE;
-  state.result = { at: Date.now(), seconds, finished, winner, best, cap: state.cap || 100 };
+  // Live builds don't report the score target over RCON: then it's unknown (null) whether a team won or staff stopped it.
+  const finished = state.cap > 0 ? best > 0 && best >= state.cap * FINISH_SHARE : null;
+  state.result = { at: Date.now(), seconds, finished, winner, best, cap: state.cap || null };
   const played = [];
   for (const [sid, p] of Object.entries(state.players || {})) {
     const stayed = p.faction && Date.now() - (p.seen || 0) <= RECENT_MS;
@@ -90,7 +102,9 @@ export async function pollServer(server) {
   const now = Date.now();
   const before = state.players || {}; // who was on at the last check (for cheat watch's join alerts)
   // The match clock going back (by more than a minute) = a new match, even on the same map with the same mode.
-  const clock = Number(status?.matchSeconds);
+  // Live builds don't send matchSeconds over RCON, so the kill feed's clock (eventTime of the latest kill) stands in.
+  let clock = Number(status?.matchSeconds);
+  if (!Number.isFinite(clock)) clock = await feedClock(server.id, state);
   const clockReset = Number.isFinite(clock) && Number.isFinite(state.ms) && clock + 60 < state.ms;
   const newMatch = state.key !== matchKey(status) || totalScore(status) + 5 < (state.total || 0) || clockReset;
   // A queued map has started (or it's been hours): put the server's normal rotation back.

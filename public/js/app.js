@@ -439,6 +439,7 @@ function connectSocket() {
     emitLive('dm:new', d);
   });
   socket.on('counts', refreshMe);
+  socket.on('killfeed', (evs) => emitLive('killfeed', evs));
   socket.on('notify', (n) => {
     toast(n.title, n.body, { link: n.link });
     refreshMe();
@@ -1491,6 +1492,7 @@ async function viewServers(main, _r, alive) {
           <code style="background:#06101c;border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;overflow-wrap:anywhere">${esc(s.join_code)}</code>
           <button class="btn small" data-copy="${esc(s.join_code)}">${icon('copy')} Copy</button>
         </div>
+        ${s.has_rcon && staff ? `<div data-killfeed="${s.id}" hidden></div>` : ''}
         ${s.has_rcon ? `<div style="margin-top:18px"><h4 class="row" style="margin:0 0 8px">${icon('users', 'width="18" height="18"')} On the server now</h4><div class="list" data-players="${s.id}"><div class="spinner" style="margin:10px auto"></div></div></div>` : ''}
         ${admin ? controlsHtml(s) : ''}
       </div>`;
@@ -1509,7 +1511,7 @@ async function viewServers(main, _r, alive) {
         <div class="row between"><h4 class="row" style="margin:0">${icon('shield', 'width="18" height="18" style="color:var(--gold)"')} Server controls</h4>
           ${admin ? `<button class="btn small" data-settings="${s.id}">${icon('settings')} Server settings</button>` : ''}</div>
         ${admin ? `<div class="small muted" data-tools="${s.id}">Checking the server…</div>` : ''}
-        <form class="row" data-broadcast="${s.id}"><input type="text" name="message" class="grow" maxlength="300" placeholder="Message everyone on the server" style="min-width:180px"><button class="btn">${icon('megaphone')} Broadcast</button></form>
+        <form class="row" data-broadcast="${s.id}"><input type="text" name="message" class="grow" maxlength="256" placeholder="Message everyone on the server" style="min-width:180px"><button class="btn">${icon('megaphone')} Broadcast</button></form>
         ${admin ? `
         <div class="row">
           <button class="btn" data-act="map" data-sid="${s.id}">${icon('target')} Override map</button>
@@ -1586,9 +1588,10 @@ async function viewServers(main, _r, alive) {
           </div>`).join('')}</div>` : ''}
         ${m.next ? `<p class="muted small row" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}${m.next.zone ? ` · ${esc(m.next.zone)}` : ''}${m.queued ? ' <span class="accent">(queued)</span>' : ''}
           ${m.queued && admin ? `<button class="btn small ghost" data-act="unqueue" data-sid="${s.id}">Cancel queue</button>` : ''}</p>` : ''}
-        ${m.last ? `<p class="muted small" style="margin:6px 0 0">Last match: ${m.last.finished
+        ${m.last ? `<p class="muted small" style="margin:6px 0 0">Last match: ${m.last.finished === true
           ? `<b style="color:var(--text)">${esc(m.last.winner || 'a team')}</b> won (${fmtNum(m.last.best)} of ${fmtNum(m.last.cap)})`
-          : 'ended early (stopped, restarted or skipped by staff)'}${m.last.seconds ? ` · ${Math.round(m.last.seconds / 60)} min` : ''} · ${esc(timeAgo(m.last.at))}</p>` : ''}`;
+          : m.last.finished === false ? 'ended early (stopped, restarted or skipped by staff)'
+            : m.last.winner ? `<b style="color:var(--text)">${esc(m.last.winner)}</b> had the top score (${fmtNum(m.last.best)})` : 'no winner'}${m.last.seconds ? ` · ${Math.round(m.last.seconds / 60)} min` : ''} · ${esc(timeAgo(m.last.at))}</p>` : ''}`;
     } catch (e) {
       box.innerHTML = staff ? `<p class="muted small">Live match unavailable: ${esc(e.message)}</p>` : '';
     }
@@ -1618,6 +1621,28 @@ async function viewServers(main, _r, alive) {
     }
   }
   if (admin) servers.filter((s) => s.has_rcon).forEach(loadTools);
+
+  // Staff: the live kill feed from the game server (who killed whom, weapon, distance, headshot), updating as kills arrive.
+  if (staff) {
+    const killLine = (k) => `<div class="kf-line"><span class="muted">${esc(new Date(k.at).toLocaleTimeString('en-GB'))}</span>
+      <b class="kf-name">${k.killer.user ? `<a href="#/u/${k.killer.user}">${esc(k.killer.name)}</a>` : esc(k.killer.name)}</b>
+      <span class="kf-how">${esc(k.weapon || '?')}${k.distance !== null ? ` · ${fmtNum(k.distance)} m` : ''}${k.headshot ? ' · <span class="kf-hs">headshot</span>' : ''}</span>
+      <span class="muted">→</span> <span class="kf-name">${k.victim.user ? `<a href="#/u/${k.victim.user}">${esc(k.victim.name)}</a>` : esc(k.victim.name)}</span></div>`;
+    api('admin/cheat/killfeed?limit=40').then((f) => {
+      if (!alive()) return;
+      const box = main.querySelector(`[data-killfeed="${f.server_id}"]`);
+      if (!box) return;
+      box.hidden = false;
+      box.innerHTML = `<div style="margin-top:18px"><h4 class="row" style="margin:0 0 8px">${icon('crosshair', 'width="18" height="18"')} Live kill feed <span class="muted small">· staff only</span></h4>
+        <div class="kf-list" data-kflist>${f.events.length ? f.events.map(killLine).join('') : `<p class="muted small" style="margin:0">${f.connected ? 'Waiting for kills…' : 'The kill feed isn\'t connected yet (Admin → Cheat watch → Connect kill feed).'}</p>`}</div></div>`;
+      const list = box.querySelector('[data-kflist]');
+      onLive('killfeed', (evs) => {
+        if (list.querySelector('p')) list.innerHTML = '';
+        list.insertAdjacentHTML('afterbegin', evs.slice().reverse().map(killLine).join(''));
+        while (list.children.length > 60) list.lastElementChild.remove();
+      });
+    }).catch(() => {});
+  }
 
   async function act(sid, body, done) {
     try {

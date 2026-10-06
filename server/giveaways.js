@@ -217,9 +217,9 @@ async function giveReward(g, u, index, { place = null, score = null, code = null
 async function sayInGame(g, text, whisper) {
   if (!g.in_game) return;
   for (const s of await wpgServers()) {
-    await rcon(s, 'POST', '/broadcast', { message: text.slice(0, 300) }).catch(() => {});
+    await rcon(s, 'POST', '/broadcast', { message: text.slice(0, 256) }).catch(() => {}); // the game's limit
     for (const [steamId, msg] of whisper || []) {
-      await rcon(s, 'POST', `/players/${steamId}/message`, { message: msg.slice(0, 300) }).catch(() => {});
+      await rcon(s, 'POST', `/players/${steamId}/message`, { message: msg.slice(0, 256) }).catch(() => {});
     }
   }
 }

@@ -689,6 +689,12 @@ body::after { display: none; }
 .cc-who b { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; } /* the whole name, wrapping if it must */
 .cc-badges { display: inline-flex; gap: 2px; flex: none; }
 .cc-unit { container-type: inline-size; }
+.kf-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: rgba(0,0,0,.2); }
+.kf-line { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 14px; }
+.kf-line:last-child { border-bottom: 0; }
+.kf-name a { color: inherit; }
+.kf-how { color: var(--accent2); font-size: 13px; }
+.kf-hs { color: #f5a524; font-weight: 700; }
 input[type=datetime-local] { color-scheme: dark; }
 .ga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .ga-card .ga-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 10px; }

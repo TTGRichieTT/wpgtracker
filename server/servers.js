@@ -182,7 +182,7 @@ servers.get('/servers/:id/live', member, async (req, res) => {
 async function lastMatch(serverId) {
   const r = (await one('SELECT state FROM server_track_state WHERE server_id=$1', [serverId]))?.state?.last;
   if (!r?.at) return null;
-  return { at: new Date(r.at).toISOString(), seconds: int(r.seconds), finished: !!r.finished, winner: str(r.winner, 40), best: int(r.best), cap: int(r.cap) };
+  return { at: new Date(r.at).toISOString(), seconds: int(r.seconds), finished: r.finished === null || r.finished === undefined ? null : !!r.finished, winner: str(r.winner, 40), best: int(r.best), cap: int(r.cap) };
 }
 
 // The match in progress, straight from the server (RCON). Cached 15 s. Also used by the Discord bot.
@@ -371,14 +371,15 @@ export async function restoreRotation(s) {
 
 // Game server tools are admins only (broadcast, whisper, kick, kill, move faction, ban, match and map control).
 const ACTIONS = {
-  broadcast: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/broadcast', { message: need(str(b.message, 300), 'Type a message.') }) },
+  // The game refuses messages over 256 characters (update 0.1.2).
+  broadcast: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/broadcast', { message: need(str(b.message, 256), 'Type a message.') }) },
   kick: { min: 'admin', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kick`, { reason: str(b.reason, 200) || 'Kicked by WPG staff' }) },
   kill: { min: 'admin', run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/kill`) },
   ban: { min: 'admin', run: (s, b) => rcon(s, 'POST', '/bans', { steamId: steamId(b), reason: str(b.reason, 200) || 'Banned by WPG staff' }) },
   unban: { min: 'admin', run: (s, b) => rcon(s, 'DELETE', `/bans/${steamId(b)}`) },
   whisper: {
     min: 'admin',
-    run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/message`, { message: need(str(b.message, 300), 'Type a message.') }),
+    run: (s, b) => rcon(s, 'POST', `/players/${steamId(b)}/message`, { message: need(str(b.message, 256), 'Type a message.') }),
   },
   faction: {
     min: 'admin',
@@ -546,11 +547,6 @@ async function reservedIds(s) {
   const cfg = await rcon(s, 'GET', '/config');
   return session(cfg?.text).reserved.map((x) => x.id);
 }
-async function reservedMax(s) {
-  const cfg = await rcon(s, 'GET', '/config').catch(() => null);
-  const m = session(cfg?.text).max;
-  return m === null ? 20 : m; // the game's default
-}
 
 // Version, health, host server id, banner and which controls this server's build has. One call for the Servers page.
 servers.get('/admin/servers/:id/tools', role('admin'), async (req, res) => {
@@ -582,22 +578,39 @@ servers.get('/admin/servers/:id/audit', role('admin'), async (req, res) => {
   })));
 });
 
-// Reserved slots: given by hand to members chosen here (never automatic).
+// Reserved slots: given by hand to members chosen here (never automatic). Everyone on the list skips the join queue;
+// MaxReservedSlots is how many player places are held back for them, not a limit on the list. The running server
+// only re-reads the list when it restarts (daily), so the config (what's coming) and the live list can differ.
 servers.get('/admin/servers/:id/reserved', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
-  const [ids, max] = await Promise.all([reservedIds(s), reservedMax(s)]);
+  const [live, cfg] = await Promise.all([
+    rcon(s, 'GET', '/reserved-slots').then((r) => (Array.isArray(r?.reservedSlots) ? r.reservedSlots.map(String) : null)).catch(() => null),
+    rcon(s, 'GET', '/config').catch(() => null),
+  ]);
+  const c = session(cfg?.text);
+  const doc = c.reserved.map((x) => x.id);
+  const now = live || doc;
+  const ids = [...new Set([...doc, ...now])];
   const users = ids.length ? await usersWithRanks(await q('SELECT * FROM users WHERE steam_id = ANY($1)', [ids])) : [];
   const byId = new Map(users.map((u) => [u.steam_id, u]));
-  res.json({ max, list: ids.map((id) => ({ steamId: id, user: byId.get(id) || null })) });
+  res.json({
+    held: c.max === null ? 20 : c.max,
+    list: ids.map((id) => ({
+      steamId: id, user: byId.get(id) || null,
+      // active · arrives at restart (in the config, not live yet) · leaves at restart (live, taken out of the config)
+      state: !live || (doc.includes(id) && now.includes(id)) ? 'active' : doc.includes(id) ? 'arriving' : 'leaving',
+    })),
+  });
 });
 
 servers.post('/admin/servers/:id/reserved', role('admin'), async (req, res) => {
   const s = await getServer(req.params.id);
   const u = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [int(req.body?.userId)]);
   if (!u || !/^\d{17}$/.test(u.steam_id)) throw new HttpError(400, 'Pick a member with a Steam account.');
-  const [ids, max] = await Promise.all([reservedIds(s), reservedMax(s)]);
-  if (ids.includes(u.steam_id)) throw new HttpError(400, `${u.persona_name} already has a reserved slot.`);
-  if (ids.length >= max) throw new HttpError(400, `All ${max} reserved slots are taken. Remove someone first.`);
+  const cfg = await rcon(s, 'GET', '/config').catch(() => null);
+  if (session(cfg?.text).reserved.some((x) => x.id === u.steam_id) || (await reservedIds(s)).includes(u.steam_id)) {
+    throw new HttpError(400, `${u.persona_name} already has a reserved slot.`);
+  }
   const caps = await capabilities(s);
   let done = false;
   if (supports(caps, 'POST /reserved-slots')) done = await rcon(s, 'POST', '/reserved-slots', { steamId: u.steam_id }).then(() => true).catch(() => false);

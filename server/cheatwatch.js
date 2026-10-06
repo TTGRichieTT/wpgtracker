@@ -222,8 +222,11 @@ export async function createReport({ name, steamId, reason, reporterUserId = nul
 }
 
 // ---------- Kill feed (from the game server) ----------
-// The game server can post every kill to a web address. We don't know its exact format yet, so every
-// event is stored as it came, and the usual field names are read where present.
+// The game server can post every kill to a web address ([WDServerFeed] Url + Token). The game always adds
+// "/api/ingest/events" to the address it's given, and sends batches like
+// { serverId, serverName, events: [{ type: "killed", eventTime, matchId, killerSteamId, killerName, victimSteamId,
+//   victimName, cause: "Id.Item.AK74M", distance (centimetres), contextTags: ["…KillContext.Headshot", …] }] }.
+// Every event is stored as it came; other field names are read too, in case a build changes them.
 const feedLog = { rejected: [] };
 const pick = (o, keys) => {
   for (const k of keys) {
@@ -239,14 +242,21 @@ const steamOf = (o, side) => {
 function readKill(ev) {
   const killer = steamOf(ev, 'killer') || steamOf(ev, 'attacker') || steamOf(ev, 'instigator');
   const victim = steamOf(ev, 'victim') || steamOf(ev, 'killed') || steamOf(ev, 'target');
-  const weapon = String(pick(ev, ['weapon', 'weaponName', 'weapon_name', 'weapon.name', 'weaponId', 'damageCauser', 'causer', 'item', 'itemName']) ?? '').slice(0, 80);
-  let distance = Number(pick(ev, ['distance', 'distanceM', 'distanceMeters', 'distance_m', 'range', 'dist']));
+  const weapon = String(pick(ev, ['weapon', 'weaponName', 'weapon_name', 'weapon.name', 'weaponId', 'cause', 'damageCauser', 'causer', 'item', 'itemName']) ?? '').replace(/^Id\.Item\./, '').slice(0, 80);
+  // The game's own format gives distance in centimetres (Unreal units); other field names are already metres.
+  const gameFormat = Array.isArray(ev.contextTags) || ev.type === 'killed' || 'cause' in ev;
+  let distance = Number(pick(ev, ['distanceM', 'distanceMeters', 'distance_m']));
   if (!Number.isFinite(distance)) {
+    const d = Number(pick(ev, ['distance', 'range', 'dist']));
+    distance = Number.isFinite(d) ? (gameFormat ? d / 100 : d) : null;
+  }
+  if (distance === null) {
     const cm = Number(pick(ev, ['distanceCm', 'distance_cm']));
     distance = Number.isFinite(cm) ? cm / 100 : null;
   }
   let headshot = pick(ev, ['headshot', 'isHeadshot', 'is_headshot', 'headShot']);
-  if (headshot === undefined) {
+  if (headshot === undefined && Array.isArray(ev.contextTags)) headshot = ev.contextTags.some((t) => /\.Headshot$/i.test(String(t)));
+  else if (headshot === undefined) {
     const bone = pick(ev, ['bone', 'hitBone', 'hit_bone', 'boneName', 'hitLocation']);
     headshot = bone === undefined ? null : /head|neck/i.test(String(bone));
   } else headshot = headshot === true || /^(true|1|yes)$/i.test(String(headshot));
@@ -254,7 +264,8 @@ function readKill(ev) {
 }
 
 export const killFeed = express.Router();
-killFeed.post('/feed/kills', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
+// "/feed/kills" is the address the app gives the game; the game posts to it plus "/api/ingest/events".
+killFeed.post(['/feed/kills', '/feed/kills/api/ingest/events'], express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
   const token = (await one("SELECT value FROM settings WHERE key='_killfeed_token'"))?.value || '';
   const text = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
   let body = null;
@@ -269,16 +280,19 @@ killFeed.post('/feed/kills', express.raw({ type: '*/*', limit: '1mb' }), async (
     return res.status(401).json({ error: 'bad token' });
   }
   const events = Array.isArray(body) ? body : Array.isArray(body?.events) ? body.events : Array.isArray(body?.kills) ? body.kills : Array.isArray(body?.data) ? body.data : [body];
+  const added = [];
   for (const ev of events.slice(0, 500)) {
     if (!ev || typeof ev !== 'object') continue;
     const k = readKill(ev);
     const raw = JSON.stringify(ev);
-    await q(
-      'INSERT INTO kill_events (killer, victim, weapon, distance, headshot, raw) VALUES ($1,$2,$3,$4,$5,$6)',
+    added.push(await one(
+      'INSERT INTO kill_events (killer, victim, weapon, distance, headshot, raw) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
       [k.killer, k.victim, k.weapon, k.distance, k.headshot, raw.length > 4000 ? JSON.stringify({ truncated: raw.slice(0, 4000) }) : raw],
-    );
+    ));
   }
   res.json({ ok: true });
+  // Staff watching the live kill feed (Servers page) see them straight away.
+  if (added.length) shapeKills(added.slice(-50)).then((evs) => bus.emit('killfeed:new', evs)).catch(() => {});
 });
 
 export async function killFeedToken() {
@@ -432,3 +446,45 @@ export function startCheatWatch() {
   };
   setTimeout(tidy, 10 * 60 * 1000);
 }
+
+// ---------- Live kill feed (staff) ----------
+// Names for Steam IDs: the name they last played under on our servers, or their WPG Barracks name.
+async function namesFor(sids) {
+  const ids = [...new Set(sids.filter(isSteam))];
+  if (!ids.length) return new Map();
+  const [played, members] = await Promise.all([
+    q(`SELECT DISTINCT ON (steam_id) steam_id, name FROM server_players WHERE steam_id = ANY($1) ORDER BY steam_id, last_seen DESC NULLS LAST`, [ids]),
+    q("SELECT id, steam_id, persona_name FROM users WHERE steam_id = ANY($1) AND status='active'", [ids]),
+  ]);
+  const out = new Map();
+  for (const p of played) out.set(p.steam_id, { name: cleanName(p.name), user: null });
+  for (const u of members) out.set(u.steam_id, { name: out.get(u.steam_id)?.name || u.persona_name, user: u.id });
+  return out;
+}
+// "BP_AK74M_C" / "Weapon_AK74M" → "AK74M"
+const weaponName = (w) => String(w || '').replace(/^(BP_|Weapon_|WPN_|W_)/i, '').replace(/_C$/, '').replace(/_/g, ' ').trim();
+async function shapeKills(rows) {
+  const names = await namesFor(rows.flatMap((r) => [r.killer, r.victim]));
+  const side = (sid, fallback) => ({ sid: isSteam(sid) ? sid : '', name: names.get(sid)?.name || cleanName(fallback, '') || (isSteam(sid) ? `…${sid.slice(-4)}` : '?'), user: names.get(sid)?.user || null });
+  return rows.map((r) => {
+    const raw = r.raw && typeof r.raw === 'object' ? r.raw : {};
+    return {
+      id: r.id, at: r.received_at,
+      killer: side(r.killer, pick(raw, ['killerName', 'killer_name', 'killer.name', 'attackerName', 'attacker.name', 'instigatorName'])),
+      victim: side(r.victim, pick(raw, ['victimName', 'victim_name', 'victim.name', 'killedName', 'targetName'])),
+      weapon: weaponName(r.weapon), distance: r.distance === null || r.distance === undefined ? null : Math.round(Number(r.distance)), headshot: r.headshot,
+    };
+  });
+}
+async function feedServerId() {
+  return (await one("SELECT id FROM game_servers WHERE enabled = true AND rcon_url <> '' AND rcon_password <> '' ORDER BY sort_order, id LIMIT 1"))?.id || null;
+}
+cheat.get('/admin/cheat/killfeed', role('mod'), async (req, res) => {
+  const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 50));
+  const rows = await q('SELECT * FROM kill_events ORDER BY id DESC LIMIT $1', [limit]);
+  res.json({
+    server_id: await feedServerId(),
+    connected: !!(await one("SELECT 1 FROM settings WHERE key='_killfeed_on'")),
+    events: await shapeKills(rows),
+  });
+});

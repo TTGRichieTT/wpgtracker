@@ -90,13 +90,21 @@ Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
 - **Server tools (admins, under Server controls):**
   - A status line: RCON healthy / busy / not answering, uptime, connections, the server's Wardogs build and host ID.
     Controls the server's version doesn't have are hidden (and refused).
-  - **Reserved slots:** players with one can always join, even when the server is full. Pick a member to give one;
-    nobody gets one automatically. Shows how many of the server's reserved slots are used.
+  - **Reserved slots:** players on the list skip the join queue, so they can join even when the server is full. Pick a
+    member to give one; nobody gets one automatically. The server only picks up changes when it restarts (daily), so
+    new and removed ones are labelled "starts / ends at the next restart". MaxReservedSlots is how many player places
+    are held back for them, not a limit on the list.
   - **Server action log:** what admins did on the game server (kicks, bans, config changes), from any tool.
   - **Server banner:** the picture shown for the server (1024×256 PNG/JPEG; its site must be on the server's allow-list).
-- **Matches:** a new match is spotted when the server's match clock starts again (or the map/mode changes). A match
-  "finished" when a team reached the score target; one staff ended, restarted or skipped doesn't give leaving-early
-  penalties, and a match under 5 minutes doesn't count for giveaways. The Servers page shows how the last match ended.
+- **Matches:** a new match is spotted when the match clock starts again (the server's, or the kill feed's: live builds
+  don't send theirs over RCON), or the map/mode changes. Where the server reports its score target, a match counts as
+  "finished" when a team (nearly) reached it; one staff stopped or skipped doesn't give leaving-early penalties. A
+  match under 5 minutes doesn't count for giveaways. The Servers page shows how the last match ended.
+- **In-game chat** can't be read: WARDOGS doesn't make it available to RCON or the kill feed yet. In-game messages
+  (broadcasts, whispers) are limited to 256 characters by the game.
+- **Live kill feed (staff):** on the Servers page, under the server the kill feed is connected to (Admin → Cheat watch →
+  Connect kill feed): who killed whom, weapon, distance and headshots, updating as kills happen. The game posts to the
+  address it's given plus "/api/ingest/events"; the app answers both.
 - RCON reference used for these: the unofficial [wardogs.tech RCON reference](https://wardogs.tech/rcon-reference).
   The RCON port is plain http, so the password travels unencrypted: ask the host to keep it behind a secure proxy or
   limit which addresses can reach it.

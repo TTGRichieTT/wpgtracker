@@ -81,6 +81,12 @@ export function startRealtime(httpServer, sessionMiddleware) {
   bus.on('user:changed', (userId) => io.to(`u:${userId}`).emit('me:changed'));
   bus.on('friends:changed', (ids) => ids.forEach((id) => io.to(`u:${id}`).emit('friends:changed')));
   bus.on('user:kick', (userId) => io.in(`u:${userId}`).disconnectSockets(true));
+  // Live kill feed to staff (cached list of staff, refreshed every minute; kills can come every few seconds).
+  let staffIds = { at: 0, ids: [] };
+  bus.on('killfeed:new', async (evs) => {
+    if (Date.now() - staffIds.at > 60 * 1000) staffIds = { at: Date.now(), ids: (await q("SELECT id FROM users WHERE role IN ('mod','admin') AND status='active'")).map((r) => r.id) };
+    staffIds.ids.forEach((id) => io.to(`u:${id}`).emit('killfeed', evs));
+  });
   bus.on('staff:notify', async (n) => {
     const staff = await q("SELECT id FROM users WHERE role IN ('mod','admin') AND status='active'");
     staff.forEach((s) => io.to(`u:${s.id}`).emit('notify', n));

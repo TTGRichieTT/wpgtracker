@@ -14,12 +14,13 @@ export async function reserved(sid) {
     const taken = new Set(d.list.map((r) => r.steamId));
     const choices = people.filter((p) => /^\d{17}$/.test(p.steam_id || '') && !taken.has(p.steam_id));
     m.el.innerHTML = `<div class="row between"><h2 style="margin:0">Reserved slots</h2><button class="btn ghost small" data-close>✕</button></div>
-      <p class="muted small" style="margin:6px 0 12px">Players with a reserved slot can always get onto the server, even when it's full. ${d.list.length} of ${d.max} used. Only people you choose here get one.</p>
-      <div class="list">${d.list.map((r) => `<div class="item"><div class="grow">${r.user ? `<a href="#/u/${r.user.id}" style="color:inherit">${userLine(r.user)}</a>` : `<b>Not in the app</b><div class="muted small">${esc(r.steamId)}</div>`}</div>
-        <button class="btn small ghost" data-remove="${esc(r.steamId)}" data-name="${esc(r.user?.name || r.steamId)}">Remove</button></div>`).join('') || '<p class="muted">Nobody has a reserved slot yet.</p>'}</div>
-      ${d.list.length < d.max ? `<div style="margin-top:14px"><b class="small" style="color:var(--accent2);text-transform:uppercase">Give a slot to</b>
+      <p class="muted small" style="margin:6px 0 12px">Players on this list skip the join queue, so they can get on even when the server is full. The server holds back ${d.held} player place${d.held === 1 ? '' : 's'} for them (MaxReservedSlots). Only people you choose here are added. <b>Changes take effect when the server next restarts</b> (it restarts by itself once a day).</p>
+      <div class="list">${d.list.map((r) => `<div class="item"><div class="grow">${r.user ? `<a href="#/u/${r.user.id}" style="color:inherit">${userLine(r.user)}</a>` : `<b>Not in the app</b><div class="muted small">${esc(r.steamId)}</div>`}
+          ${r.state === 'arriving' ? '<span class="pill" style="color:var(--green);border-color:var(--green)">Starts at the next restart</span>' : r.state === 'leaving' ? '<span class="pill" style="color:#f5a524;border-color:#f5a524">Ends at the next restart</span>' : ''}</div>
+        ${r.state === 'leaving' ? '' : `<button class="btn small ghost" data-remove="${esc(r.steamId)}" data-name="${esc(r.user?.name || r.steamId)}">Remove</button>`}</div>`).join('') || '<p class="muted">Nobody has a reserved slot yet.</p>'}</div>
+      <div style="margin-top:14px"><b class="small" style="color:var(--accent2);text-transform:uppercase">Give a slot to</b>
         <input type="search" id="rsSearch" placeholder="Search members" style="margin:6px 0">
-        <div class="list" id="rsChoices" style="max-height:40vh;overflow:auto"></div></div>` : '<p class="small" style="margin-top:12px;color:#f5a524">All reserved slots are in use. Remove someone to give a slot to someone else.</p>'}`;
+        <div class="list" id="rsChoices" style="max-height:40vh;overflow:auto"></div></div>`;
     m.el.querySelector('[data-close]').onclick = m.close;
     const list = m.el.querySelector('#rsChoices');
     const fill = () => {
@@ -36,11 +37,11 @@ export async function reserved(sid) {
       try {
         if (give) {
           await api(`admin/servers/${sid}/reserved`, { method: 'POST', body: { userId: Number(give.dataset.give) } });
-          toast('Reserved slot given');
+          toast('Reserved slot given', 'It starts when the server next restarts.');
           draw();
         } else if (rm && await confirmBox(`Take ${rm.dataset.name}'s reserved slot away?`)) {
           await api(`admin/servers/${sid}/reserved/${rm.dataset.remove}`, { method: 'DELETE' });
-          toast('Reserved slot removed');
+          toast('Reserved slot removed', 'It ends when the server next restarts.');
           draw();
         }
       } catch (x) { fail(x); }
