@@ -1,125 +1,182 @@
-// Global Wardogs stats from WARDOGS Tracker (https://wardogstracker.gg), through its free public stats API
-// (https://wardogstracker.gg/developers). Used as its terms allow: credited with a link wherever the stats are
-// shown, a gentle request rate (well under its 120 a minute, one request at a time), answers kept for a while
-// rather than asked again, and never presented as official. WARDOGS Tracker is a fan site, not BULKHEAD.
-//  - Per member, by Steam ID: Wardog level, career XP, cash, gold, unlocks, each class's level and XP, achievements,
-//    world rank by level, when they last synced on WARDOGS Tracker, and their WARDOGS Tracker / Twitch links.
-//  - World ranks for career XP, cash, gold and unlocks come from its leaderboards, read once an hour.
-// It only knows players who have signed in on WARDOGS Tracker and synced their stats there. Private profiles
-// and hidden players are never returned; cash and gold are null for players who hide them.
-import { q, one } from './db.js';
+// Wardogs stats are fetched only from the owner's keyed stats API, by Steam, social, or Discord ID.
+import { flag, q, one } from './db.js';
 import { noteLevelDrop } from './frames.js';
 
-export const TRACKER = { name: 'WARDOGS Tracker', url: 'https://wardogstracker.gg' };
-const API = 'https://wardogstracker.gg/api/v1';
+const API = 'https://wardogs.tools/api/player/stats';
 const HEADERS = { Accept: 'application/json', 'User-Agent': 'WPG-Barracks/1.0 (WPG clan app; https://wpg-barracks.onrender.com)' };
-const GAP_MS = 700; // between requests: at most ~85 a minute, under the 120 allowed
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const CACHE_MS = 6 * 60 * 60 * 1000;
+const REQUEST_GAP_MS = 10 * 1000;
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// One request at a time, spaced out; a 429 waits as long as the site asks (Retry-After) and tries once more.
-let chain = Promise.resolve();
-let last = 0;
-function get(path) {
+let requestChain = Promise.resolve();
+let lastRequestAt = 0;
+let retryAfterAt = 0;
+const responseCache = new Map();
+const inFlight = new Map();
+
+function playerId(value) {
+  const id = String(value || '');
+  return /^\d{15,22}$/.test(id) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+function scheduleRequest(id) {
   const run = async () => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const wait = last + GAP_MS - Date.now();
-      if (wait > 0) await pause(wait);
-      last = Date.now();
-      const res = await fetch(`${API}${path}`, { headers: HEADERS, signal: AbortSignal.timeout(20000) });
-      if (res.status === 429 && attempt === 0) {
-        await pause(Math.min(60, Number(res.headers.get('retry-after')) || 10) * 1000);
-        continue;
-      }
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`WARDOGS Tracker answered ${res.status}`);
-      return res.json();
+    const key = process.env.WARDOGS_API_KEY;
+    if (!key) throw new Error('WARDOGS_API_KEY is not configured');
+    const waitUntil = Math.max(lastRequestAt + REQUEST_GAP_MS, retryAfterAt);
+    if (waitUntil > Date.now()) await pause(waitUntil - Date.now());
+    lastRequestAt = Date.now();
+    const url = new URL(`${API}/${encodeURIComponent(id)}`);
+    url.searchParams.set('key', key);
+    const response = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20000) });
+    if (response.status === 429) {
+      const header = response.headers.get('retry-after');
+      const seconds = Number(header);
+      const retryAt = Number.isFinite(seconds) && seconds > 0 ? Date.now() + seconds * 1000 : Date.parse(header);
+      retryAfterAt = Number.isFinite(retryAt) && retryAt > Date.now() ? retryAt : Date.now() + 60 * 1000;
+      throw new Error('WARDOGS stats API is rate-limiting requests; try again later');
     }
-    throw new Error('WARDOGS Tracker is busy (too many requests); try again in a minute');
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`WARDOGS stats API returned ${response.status}`);
+    return response.json();
   };
-  const p = chain.then(run, run);
-  chain = p.catch(() => {});
-  return p;
+  const request = requestChain.then(run, run);
+  requestChain = request.catch(() => {});
+  return request;
 }
 
-// ---------- World ranks from the leaderboards (read once an hour) ----------
-const BOARDS = ['xp', 'cash', 'gold', 'unlocks'];
-let boards = { at: 0, total: null, ranks: {} };
-let refreshing = null;
-async function readBoards() {
-  const ranks = {};
-  let total = null;
-  for (const sort of BOARDS) {
-    const map = new Map();
-    for (let offset = 0; offset < 20000; offset += 100) {
-      const page = await get(`/leaderboard?sort=${sort}&limit=100&offset=${offset}`);
-      const rows = Array.isArray(page?.players) ? page.players : [];
-      total = Number(page?.total) || total;
-      for (const r of rows) if (/^\d{17}$/.test(String(r.steamId))) map.set(String(r.steamId), Number(r.rank) || null);
-      if (rows.length < 100) break;
+async function statsForId(id) {
+  if (!playerId(id)) throw new Error('Invalid WARDOGS player ID');
+  const cached = responseCache.get(id);
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.data;
+  if (inFlight.has(id)) return inFlight.get(id);
+  const pending = (async () => {
+    const saved = await one('SELECT response, fetched_at FROM wardogs_api_cache WHERE player_id=$1', [id]);
+    if (saved?.fetched_at && Date.now() - new Date(saved.fetched_at).getTime() < CACHE_MS) {
+      if (responseCache.size > 5000) responseCache.clear();
+      const item = { at: new Date(saved.fetched_at).getTime(), data: saved.response };
+      responseCache.set(id, item);
+      return saved.response;
     }
-    ranks[sort] = map;
-  }
-  boards = { at: Date.now(), total, ranks };
-  await fillSavedRanks();
-}
-// Members' saved stats get the fresh world ranks straight away, not only at their next sync (a sync that ran
-// before the leaderboards were read, e.g. just after a restart, saved none).
-async function fillSavedRanks() {
-  const rows = await q(`SELECT w.user_id, u.steam_id FROM wardogs_stats w JOIN users u ON u.id = w.user_id
-                         WHERE w.official IS NOT NULL AND w.ranks->>'source' = 'wardogstracker'`);
-  for (const r of rows) {
-    const add = { total: boards.total, ...Object.fromEntries(BOARDS.map((b) => [b, boards.ranks[b]?.get(r.steam_id) || null])) };
-    await q('UPDATE wardogs_stats SET ranks = ranks || $2::jsonb WHERE user_id=$1', [r.user_id, JSON.stringify(add)]);
-  }
-}
-// Starts a refresh in the background when the last one is over an hour old (members' syncs never wait for it).
-function boardRanks(steamId) {
-  if (Date.now() - boards.at > 3600 * 1000 && !refreshing) {
-    refreshing = readBoards().catch((e) => console.warn('[tracker] leaderboards', e.message)).finally(() => { refreshing = null; });
-  }
-  return { total: boards.total, ...Object.fromEntries(BOARDS.map((b) => [b, boards.ranks[b]?.get(steamId) || null])) };
+    const data = await scheduleRequest(id);
+    if (responseCache.size > 5000) responseCache.clear();
+    const item = { at: Date.now(), data };
+    const socialId = data?.player?.socialId;
+    await q(
+      `INSERT INTO wardogs_api_cache (player_id, response, fetched_at)
+       VALUES ($1,$2,now()) ON CONFLICT (player_id) DO UPDATE SET response=EXCLUDED.response, fetched_at=now()`,
+      [id, data === null ? null : JSON.stringify(data)],
+    );
+    if (playerId(socialId) && socialId !== id) {
+      await q(
+        `INSERT INTO wardogs_api_cache (player_id, response, fetched_at)
+         VALUES ($1,$2,now()) ON CONFLICT (player_id) DO UPDATE SET response=EXCLUDED.response, fetched_at=now()`,
+        [socialId, JSON.stringify(data)],
+      );
+    }
+    await q("DELETE FROM wardogs_api_cache WHERE fetched_at < now() - interval '1 day'");
+    responseCache.set(id, item);
+    if (playerId(socialId)) responseCache.set(socialId, item);
+    return data;
+  })().finally(() => inFlight.delete(id));
+  inFlight.set(id, pending);
+  return pending;
 }
 
-// ---------- One player ----------
-const n = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
-// A WARDOGS Tracker player → the stats shape the rest of the app uses (wardogs_stats.official / .ranks).
-function shape(p) {
-  const s = p.stats || {};
-  const roles = Object.fromEntries(Object.entries(s.roles || {}).map(([k, v]) => [k.toLowerCase(), { level: n(v?.level) || 0, xp: n(v?.xp) }]));
+const numberOrNull = (value) => (value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? null : Number(value));
+
+function shape(data) {
+  const player = data.player;
+  const stats = data.stats;
+  const worth = stats.worth || {};
+  const rank = stats.rank || {};
+  const sync = stats.sync || {};
+  const roles = Object.fromEntries((Array.isArray(stats.roles) ? stats.roles : []).map((role) => {
+    const key = String(role.roleId || '').toLowerCase();
+    return [key === 'infantry' ? 'assault' : key, { level: numberOrNull(role.level), xp: numberOrNull(role.totalXp) }];
+  }).filter(([key]) => key));
+  const position = numberOrNull(rank.position);
   return {
     official: {
-      wardogLevel: n(s.wardogLevel) || 0, careerXp: n(s.careerXp), cash: n(s.cash), gold: n(s.gold), unlocks: n(s.unlocks),
-      roles, achievements: n(p.achievements), syncedAt: s.syncedAt || null,
+      wardogLevel: numberOrNull(stats.wardogLevel),
+      careerXp: null,
+      cash: numberOrNull(stats.cash),
+      gold: numberOrNull(stats.gold),
+      unlocks: numberOrNull(worth.unlockedCount),
+      worth: numberOrNull(worth.total),
+      worthDetails: {
+        cash: numberOrNull(worth.cash),
+        unlockValue: numberOrNull(worth.unlockValue),
+        goldValue: numberOrNull(worth.goldValue),
+        vaultValue: numberOrNull(worth.vaultValue),
+        cosmeticValue: numberOrNull(worth.cosmeticValue),
+        unlockedCount: numberOrNull(worth.unlockedCount),
+      },
+      rates: {
+        xpPerMinute: numberOrNull(stats.rates?.xpPerMinute),
+        cashPerMinute: numberOrNull(stats.rates?.cashPerMinute),
+      },
+      roles,
+      achievements: null,
+      syncedAt: sync.syncedAt || null,
+      lastPolledAt: sync.lastPolledAt || null,
+      status: sync.status || null,
     },
     ranks: {
-      source: 'wardogstracker', level: n(p.leaderboardRank), polled_at: s.syncedAt || null,
-      profile_url: /^https:\/\/wardogstracker\.gg\//.test(p.profileUrl || '') ? p.profileUrl : `${TRACKER.url}/profile/${p.steamId}`,
-      twitch: /^https:\/\/(www\.)?twitch\.tv\/[\w-]+$/i.test(p.twitch || '') ? p.twitch : '',
-      // When the member last synced on WARDOGS Tracker: more than a week ago = "old" (they should sync there again).
-      state: s.syncedAt && Date.now() - Date.parse(s.syncedAt) > 7 * 86400 * 1000 ? 'old' : 'syncing',
+      source: 'wardogs.tools',
+      socialId: player.socialId,
+      displayName: player.displayName || '',
+      discriminator: player.discriminator || '',
+      position,
+      level: position,
+      total: numberOrNull(rank.total),
+      bracket: numberOrNull(rank.bracket),
+      change: {
+        places: numberOrNull(rank.change?.places),
+        since: rank.change?.since || null,
+      },
+      polled_at: sync.lastPolledAt || sync.syncedAt || null,
+      state: sync.status || null,
     },
   };
 }
 
-// Reads the member's stats from WARDOGS Tracker and saves them. { ok, official, state, reason? }
+async function saveMissing(userId, state) {
+  await q(
+    `INSERT INTO wardogs_stats (user_id, official, official_synced, ranks, ranks_synced)
+     VALUES ($1,NULL,NULL,$2,now())
+     ON CONFLICT (user_id) DO UPDATE SET official=NULL, official_synced=NULL, ranks=EXCLUDED.ranks, ranks_synced=now()`,
+    [userId, JSON.stringify({ source: 'wardogs.tools', state })],
+  );
+}
+
+// Member responses, including "not found", are cached in the database for six hours.
 export async function syncRanks(user) {
   if (!/^\d{17}$/.test(user.steam_id || '')) return { ok: false, reason: 'Test account (not a real Steam ID)' };
-  const data = await get(`/players/${user.steam_id}`);
-  const p = data?.player;
-  if (!p) {
-    // Not on WARDOGS Tracker (or a private profile): note why there are no stats.
-    await saveRanks(user.id, { source: 'wardogstracker', state: 'missing' });
-    return { ok: false, state: 'missing', reason: 'Not on WARDOGS Tracker yet: sign in there once with Steam and sync your stats' };
+  const saved = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
+  const savedAt = saved?.ranks_synced ? new Date(saved.ranks_synced).getTime() : 0;
+  if (saved?.ranks?.source === 'wardogs.tools' && Date.now() - savedAt < CACHE_MS) {
+    const state = saved.ranks.state;
+    const reason = saved.official ? '' : state === 'missing'
+      ? 'No WARDOGS stats found for this Steam ID'
+      : 'WARDOGS returned no stats for this account yet';
+    return { ok: !!saved.official, official: !!saved.official, cached: true, state, reason };
   }
-  if (!p.stats) {
-    await saveRanks(user.id, { source: 'wardogstracker', state: 'unsynced', profile_url: `${TRACKER.url}/profile/${user.steam_id}` });
-    return { ok: false, state: 'unsynced', reason: 'Signed in on WARDOGS Tracker, but stats not synced there yet: press Sync on your WARDOGS Tracker profile' };
+
+  const id = playerId(saved?.ranks?.socialId) ? saved.ranks.socialId : user.steam_id;
+  const data = await statsForId(id);
+  if (!data?.player || !data?.stats) {
+    const state = data?.player ? 'unsynced' : 'missing';
+    await saveMissing(user.id, state);
+    return { ok: false, state, reason: state === 'missing' ? 'No WARDOGS stats found for this Steam ID' : 'WARDOGS returned no stats for this account yet' };
   }
-  const { official, ranks } = shape(p);
-  Object.assign(ranks, boardRanks(user.steam_id));
-  // Wardog level halved or worse since last time: maybe the game wiped (several at once warns staff; frames.js).
-  const before = (await one("SELECT (official->>'wardogLevel')::int AS lvl FROM wardogs_stats WHERE user_id=$1 AND official ? 'syncedAt'", [user.id]))?.lvl || 0;
-  if (before >= 10 && official.wardogLevel <= before / 2) noteLevelDrop(user.id);
+
+  const { official, ranks } = shape(data);
+  const before = (await one(
+    "SELECT (official->>'wardogLevel')::int AS lvl FROM wardogs_stats WHERE user_id=$1 AND ranks->>'source'='wardogs.tools' AND official ? 'syncedAt'",
+    [user.id],
+  ))?.lvl || 0;
+  if (before >= 10 && official.wardogLevel !== null && official.wardogLevel <= before / 2) noteLevelDrop(user.id);
   await q(
     `INSERT INTO wardogs_stats (user_id, official, official_synced, ranks, ranks_synced) VALUES ($1,$2,now(),$3,now())
      ON CONFLICT (user_id) DO UPDATE SET official=EXCLUDED.official, official_synced=now(), ranks=EXCLUDED.ranks, ranks_synced=now()`,
@@ -127,27 +184,13 @@ export async function syncRanks(user) {
   );
   return { ok: true, official: true, state: ranks.state };
 }
-// Not (or no longer) on WARDOGS Tracker. Stats saved earlier from the old source (wardogs.tools, which the clan may no
-// longer use) are cleared then, so only WARDOGS Tracker figures are ever shown; WARDOGS Tracker's own are kept.
-async function saveRanks(userId, ranks) {
-  await q(
-    `INSERT INTO wardogs_stats (user_id, ranks, ranks_synced) VALUES ($1,$2,now())
-     ON CONFLICT (user_id) DO UPDATE SET ranks=EXCLUDED.ranks, ranks_synced=now()`,
-    [userId, JSON.stringify(ranks)],
-  );
-  await q("UPDATE wardogs_stats SET official=NULL, official_synced=NULL WHERE user_id=$1 AND official IS NOT NULL AND NOT (official ? 'syncedAt')", [userId]);
-}
 
-// For the Discord bot: a player who isn't in the app, by the Discord account they linked on WARDOGS Tracker.
+// Discord commands for people outside the app use their Discord ID directly; no name lookup is made.
 export async function trackerByDiscord(discordId) {
   if (!/^\d{15,22}$/.test(String(discordId || ''))) return null;
-  const data = await get(`/players/by-discord/${discordId}`).catch(() => null);
-  return data?.player?.stats ? { name: data.player.name, steamId: data.player.steamId, ...shape(data.player) } : null;
-}
-
-// Members whose saved stats are older than this are re-read by the regular sync (steam.js).
-export const STALE_MS = 30 * 60 * 1000;
-export async function needsRefresh(userId) {
-  const r = await one('SELECT ranks_synced FROM wardogs_stats WHERE user_id=$1', [userId]);
-  return !r?.ranks_synced || Date.now() - new Date(r.ranks_synced).getTime() > STALE_MS;
+  if (!(await flag('tracker_enabled'))) throw new Error('Global Wardogs stats are switched off in settings');
+  const data = await statsForId(String(discordId));
+  if (!data?.player || !data?.stats) return null;
+  const { official, ranks } = shape(data);
+  return { name: data.player.displayName || 'WARDOGS player', steamId: '', official, ranks };
 }

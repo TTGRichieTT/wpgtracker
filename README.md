@@ -25,6 +25,7 @@ It runs as a website on Replit, and as an Android app (APK) that opens the same 
    (Replit adds `DATABASE_URL` for you.)
 3. Open **Secrets** (padlock icon) and add:
    - `STEAM_API_KEY`: get one free at <https://steamcommunity.com/dev/apikey>
+   - `WARDOGS_API_KEY`: the private API key supplied by the WARDOGS site owner (also set it as a secret in Render)
    - `INGEST_KEY`: a long random password (only needed for a Discord bot, see part 6)
 4. Press **Run** to test it.
 5. Press **Deploy → Reserved VM**. (Reserved VM keeps chat and stat syncing running all the time.)
@@ -127,15 +128,19 @@ on the **Streams** tab with the stream's player, the platform's own chat box, an
 
 ## 5. How stats and XP work
 
-- **Global Wardogs stats** (Wardog level, career XP, cash, gold, unlocks, achievements, each class's level and XP, and
-  world ranks by level, XP and cash) come from **[WARDOGS Tracker](https://wardogstracker.gg)**'s free public stats API,
-  by Steam account. Each member signs in there once with Steam and presses **Sync**; HQ shows how, with a **Check now**
-  button. The app re-reads them with every stats sync (gently: one request at a time, under its rate limit) and its
-  leaderboards once an hour. Its terms allow this for clan sites as long as it's credited with a link wherever the
-  stats show (the app does: profiles, leaderboards, Discord) and not presented as official. Members not on it show
-  the sign-in card; old figures from the previous source are cleared then.
-- **Account worth** is worked out by the app: cash + the cost of the unlocks the member's levels open up.
-- **Discord /stats** for someone not in the app shows their WARDOGS Tracker stats if they linked that Discord there.
+- **Global Wardogs stats** come only from the owner's keyed [wardogs.tools player stats API](https://wardogs.tools).
+  The server requests `/api/player/stats/{id}?key=...` using a member's Steam ID, a saved social ID, or (for
+  `/stats` on a Discord user not in the app) their Discord ID. The API key is server-side only; set it as
+  `WARDOGS_API_KEY` in deployment secrets. The app does not call name-lookup or leaderboard endpoints, scrape the
+  site, or infer unsupported values.
+- Successful and not-found per-player results are cached for six hours, identical simultaneous requests are coalesced,
+  and outbound API requests are spaced at least ten seconds apart. A rate-limit response pauses later requests based
+  on `Retry-After`; the failed request is not automatically retried.
+- The fields shown are those returned by the player stats API: Wardog level, one overall rank and its total/bracket/change,
+  cash, gold, account worth and its breakdown, unlock count, per-role levels and XP, rates, and sync status/timestamps.
+  Career-wide XP, achievements, and separate XP/cash ranks are not returned and are not displayed as API stats.
+  Account worth comes from the API and is never estimated locally. API-sourced values link back to wardogs.tools.
+- **Discord `/stats`** for a person outside the app queries only their Discord ID; the command does not search by name.
 - **WPG server kills, deaths and matches** come from our own server (RCON and the game's kill feed).
 - **Steam playtime and achievements** come from Steam. The member's Steam "Game details" must be set to Public.
 - **Clan XP** = Steam hours + achievements + WPG server kills + server stats + bonus XP.
@@ -173,13 +178,13 @@ With `DEV_LOGIN=true` in a `.env` file, you can log in with test names and no St
   If the publish screen shows a red **DROP TABLE** or "delete" warning, press **Cancel**, restart the workspace app and try again.
 
 - **Site down:** Replit → Deployments → check the logs → press **Redeploy**.
-- **Stats not updating:** global Wardogs stats need the member to be signed in and synced on WARDOGS Tracker. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
+- **Stats not updating:** check that `WARDOGS_API_KEY` is set in deployment secrets and that the member's Steam ID has stats in the wardogs.tools API. Results are cached for six hours. For Steam playtime, check `STEAM_API_KEY` in Secrets and that the member has public Steam game details.
 - **Locked out of admin:** another admin can fix your role in Admin → Members.
 - **Android app says "Can't reach HQ":** the website is down or the phone is offline.
 
 ---
 
-Global Wardogs stats are provided by [WARDOGS Tracker](https://wardogstracker.gg).
+Global Wardogs stats are provided by [wardogs.tools](https://wardogs.tools).
 
 ---
 

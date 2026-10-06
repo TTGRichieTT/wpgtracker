@@ -271,7 +271,8 @@ const statLine = (s) => {
   if (s.server) parts.push(`WPG server: ${fmtNum(s.server.kills)} kills / ${fmtNum(s.server.deaths)} deaths · ${fmtNum(s.server.matches)} matches`);
   if (s.wpg) parts.push(`${esc(s.wpg.rank)} (${fmtNum(s.wpg.xp)} WPG XP)`);
   if (s.discord) parts.push(`Discord: ${esc(s.discord)}`);
-  return parts.length ? `<div class="small muted" style="margin-top:4px">${parts.join(' · ')}</div>` : '<div class="small muted">No stats yet.</div>';
+  const credit = s.wardogs ? ' · Wardogs data: <a href="https://wardogs.tools" target="_blank" rel="noopener">wardogs.tools</a>' : '';
+  return parts.length ? `<div class="small muted" style="margin-top:4px">${parts.join(' · ')}${credit}</div>` : '<div class="small muted">No stats yet.</div>';
 };
 
 export async function recruitmentTab(body) {
@@ -427,4 +428,3 @@ function unitEditor(u, done) {
     } catch (x) { fail(x); }
   };
 }
-

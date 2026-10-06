@@ -189,7 +189,7 @@ combat.post('/combat/applications/withdraw', member, async (req, res) => {
 async function statsFor(userIds) {
   if (!userIds.length) return new Map();
   const [ws, games, server, prog, users] = await Promise.all([
-    q('SELECT user_id, official FROM wardogs_stats WHERE user_id = ANY($1)', [userIds]),
+    q('SELECT user_id, official, ranks FROM wardogs_stats WHERE user_id = ANY($1)', [userIds]),
     q(`SELECT ug.user_id, SUM(ug.playtime_forever)::int mins FROM user_games ug JOIN games g ON g.app_id = ug.app_id AND g.enabled
         WHERE ug.user_id = ANY($1) GROUP BY ug.user_id`, [userIds]),
     q(`SELECT u.id AS user_id, SUM(sp.kills)::int kills, SUM(sp.deaths)::int deaths, SUM(sp.matches)::int matches, SUM(sp.playtime_s)::int playtime
@@ -199,8 +199,12 @@ async function statsFor(userIds) {
   ]);
   const m = new Map(userIds.map((id) => [id, {}]));
   ws.forEach((r) => {
-    const o = r.official || {};
-    m.get(r.user_id).wardogs = { level: o.wardogLevel ?? null, roles: Object.fromEntries(Object.entries(o.roles || {}).map(([k, v]) => [k, Number(v?.level ?? v) || 0])) };
+    if (!r.official || r.ranks?.source !== 'wardogs.tools') return;
+    const o = r.official;
+    m.get(r.user_id).wardogs = {
+      level: o.wardogLevel ?? null,
+      roles: Object.fromEntries(Object.entries(o.roles || {}).map(([k, v]) => [k, typeof v === 'object' && v !== null ? v.level ?? null : v ?? null]).filter(([, level]) => level !== null)),
+    };
   });
   games.forEach((r) => { m.get(r.user_id).hours = Math.round(r.mins / 60); });
   server.forEach((r) => { m.get(r.user_id).server = r; });
@@ -429,4 +433,3 @@ export async function combatFor(userId) {
     ...(profile || {}),
   };
 }
-

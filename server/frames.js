@@ -101,7 +101,7 @@ async function metricsFor(user, season) {
                  WHERE mp.steam_id=$1 AND mp.ended_at >= $2 AND mp.stayed IS NOT FALSE`, [sid, since]) : null,
     real ? one('SELECT COALESCE(SUM(kills),0)::int kills, COALESCE(SUM(playtime_s),0)::int secs, COALESCE(SUM(wins),0)::int wins FROM server_players WHERE steam_id=$1', [sid]) : null,
     real ? one('SELECT COUNT(*) FILTER (WHERE headshot)::int hs, COALESCE(MAX(distance),0)::float far FROM kill_events WHERE killer=$1', [sid]) : null,
-    one('SELECT official FROM wardogs_stats WHERE user_id=$1', [user.id]),
+    one('SELECT official, ranks FROM wardogs_stats WHERE user_id=$1', [user.id]),
     one("SELECT COUNT(*)::int n FROM giveaway_winners WHERE user_id=$1 AND status <> 'expired'", [user.id]),
     one('SELECT COUNT(*)::int n FROM user_awards WHERE user_id=$1', [user.id]),
     real ? one('SELECT xp FROM server_progress WHERE steam_id=$1', [sid]) : null,
@@ -110,7 +110,7 @@ async function metricsFor(user, season) {
     user.rank_id ? one('SELECT sort_order FROM ranks WHERE id=$1', [user.rank_id]) : null,
     one('SELECT cu.name, cu.color FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id WHERE cp.user_id=$1', [user.id]),
   ]);
-  const o = ws?.official || null;
+  const o = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
   // Tracker figures only count for a season once they've been synced since it started (a wipe resets them).
   const freshTracker = o?.syncedAt && Date.parse(o.syncedAt) >= new Date(since).getTime();
   const firstSeasonEnd = (await one('SELECT start_at FROM seasons WHERE number=2'))?.start_at;

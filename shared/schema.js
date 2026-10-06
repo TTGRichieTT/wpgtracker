@@ -177,9 +177,15 @@ export const wardogsStats = pgTable('wardogs_stats', {
   official_synced: timestamp({ withTimezone: true }),
   server: jsonb(),
   server_synced: timestamp({ withTimezone: true }),
-  // Worldwide ranks: { id, name, tag, level, worth, cash, total }
+  // API rank metadata: { source, socialId, displayName, position, total, bracket, change, polled_at, state }
   ranks: jsonb(),
   ranks_synced: timestamp({ withTimezone: true }),
+});
+
+export const wardogsApiCache = pgTable('wardogs_api_cache', {
+  player_id: text().primaryKey(),
+  response: jsonb(),
+  fetched_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
 export const statDefs = pgTable('stat_defs', {

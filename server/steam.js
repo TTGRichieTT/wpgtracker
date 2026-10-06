@@ -95,7 +95,7 @@ export async function syncUser(userId, opts = {}) {
   } else {
     result.steam = { ok: false, reason: 'Steam API key not set up yet' };
   }
-  // Global stats and world ranks: WARDOGS Tracker (by Steam ID).
+  // Global stats from the keyed WARDOGS player API (Steam ID first, then saved social ID).
   result.wardogs = await syncWardogs(user, opts).catch((e) => ({ ok: false, reason: e.message }));
   result.ranks = result.wardogs;
   // Steam achievements as medals (works with or without the API key).

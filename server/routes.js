@@ -36,7 +36,13 @@ api.get('/settings/public', async (_req, res) => {
 api.get('/me', signedIn, async (req, res) => {
   const unread = await one('SELECT COUNT(*)::int AS n FROM dms WHERE recipient_id=$1 AND read_at IS NULL', [req.user.id]);
   const requests = await one("SELECT COUNT(*)::int AS n FROM friends WHERE addressee_id=$1 AND status='pending'", [req.user.id]);
-  const tracker = await one("SELECT official IS NOT NULL AS linked, ranks->>'state' AS state, ranks->>'polled_at' AS polled_at FROM wardogs_stats WHERE user_id=$1", [req.user.id]);
+  const tracker = await one(
+    `SELECT (official IS NOT NULL AND ranks->>'source'='wardogs.tools') AS linked,
+            CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'state' END AS state,
+            CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'polled_at' END AS polled_at
+       FROM wardogs_stats WHERE user_id=$1`,
+    [req.user.id],
+  );
   const prog = await one('SELECT xp, rank_level, rank_name FROM server_progress WHERE steam_id=$1', [req.user.steam_id]);
   // Hand this device a "remember me" key once per sign-in, so it can sign back in if the cookie is lost.
   let rememberToken;
@@ -49,7 +55,7 @@ api.get('/me', signedIn, async (req, res) => {
     unread_dms: unread.n,
     friend_requests: requests.n,
     tracker_linked: !!tracker?.linked,
-    // WARDOGS Tracker: syncing · old (not synced there for a week) · missing (not on it) · unsynced (signed in, never synced).
+    // API-provided status (for example, active or paused); missing/unsynced are lookup outcomes.
     tracker_state: tracker?.state || null,
     tracker_polled_at: tracker?.polled_at || null,
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', ...(await rankProgress(prog?.xp)) },
@@ -81,14 +87,14 @@ api.delete('/me/discord-link', member, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Looks up my global stats on WARDOGS Tracker now (after I've signed in and synced there).
+// Checks my global stats directly by my Steam ID.
 const trackerChecks = new Map();
 api.post('/me/tracker-check', member, async (req, res) => {
   const last = trackerChecks.get(req.user.id) || 0;
   if (Date.now() - last < 10 * 1000) throw new HttpError(429, 'Checking too often.');
   trackerChecks.set(req.user.id, Date.now());
   const r = await syncWardogs(req.user).catch((e) => ({ ok: false, reason: e.message }));
-  if (r.official) await recalcXp(req.user.id);
+  if (r.official && !r.cached) await recalcXp(req.user.id);
   res.json({ linked: !!r.official, state: r.state || null, reason: r.ok ? '' : r.reason });
 });
 
@@ -252,12 +258,21 @@ api.get('/users/:id', member, async (req, res) => {
     if (friendship.status === 'accepted') friend = 'friends';
     else friend = friendship.requester_id === req.user.id ? 'outgoing' : 'incoming';
   }
+  const currentWardogs = wardogs?.ranks?.source === 'wardogs.tools'
+    ? wardogs
+    : wardogs ? { ...wardogs, official: null, ranks: null, account_worth: null } : null;
   res.json({
     user: await userOut(u),
     games,
     awards: topTierOnly(awards),
     medals,
-    wardogs: wardogs?.official ? { ...wardogs, official: { ...wardogs.official, accountWorth: Number(wardogs.account_worth) } } : wardogs || {},
+    wardogs: currentWardogs?.official ? {
+      ...currentWardogs,
+      official: {
+        ...currentWardogs.official,
+        accountWorth: currentWardogs.account_worth === null || currentWardogs.account_worth === undefined ? null : Number(currentWardogs.account_worth),
+      },
+    } : currentWardogs || {},
     stats: Object.fromEntries(stats.map((s) => [s.key, Number(s.value)])),
     wpg_position: serverRank.pos,
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', position: progPos?.pos || null, ...(await rankProgress(prog?.xp)) },
@@ -281,12 +296,8 @@ export function topTierOnly(awards) {
   return awards.filter((a) => !a.auto_rule || best.get(series(a.auto_rule)) === a);
 }
 
-// Account worth: the real figure from the global stats (cash + gold + bought unlocks + vault) when
-// there is one, otherwise cash + cost of every unlock reached by level. Needs "ws" = wardogs_stats.
-export const ACCOUNT_WORTH_SQL = `COALESCE((ws.official->>'worth')::bigint, COALESCE((ws.official->>'cash')::bigint, 0) + COALESCE((
-    SELECT SUM(ul.cost) FROM unlocks ul
-     WHERE ul.level <= CASE WHEN ul.role = 'career' THEN (ws.official->>'wardogLevel')::int
-                            ELSE (ws.official->'roles'->ul.role->>'level')::int END), 0))::bigint`;
+// Account worth is shown only when the stats API supplies it; the app does not estimate it.
+export const ACCOUNT_WORTH_SQL = `NULLIF(ws.official->>'worth', '')::bigint`;
 api.get('/leaderboard', member, async (req, res) => {
   const by = str(req.query.by, 20);
   let rows;
@@ -298,28 +309,28 @@ api.get('/leaderboard', member, async (req, res) => {
     );
   } else if (by === 'level') {
     rows = await q(
-      `SELECT u.*, COALESCE((ws.official->>'wardogLevel')::int, 0) AS score FROM users u
+      `SELECT u.*, CASE WHEN ws.ranks->>'source'='wardogs.tools' THEN (ws.official->>'wardogLevel')::int END AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
-        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+        WHERE u.status='active' ORDER BY score DESC NULLS LAST, u.xp DESC LIMIT 100`,
     );
   } else if (by === 'cash') {
     rows = await q(
-      `SELECT u.*, COALESCE((ws.official->>'cash')::bigint, 0) AS score FROM users u
+      `SELECT u.*, CASE WHEN ws.ranks->>'source'='wardogs.tools' THEN (ws.official->>'cash')::bigint END AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
-        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+        WHERE u.status='active' ORDER BY score DESC NULLS LAST, u.xp DESC LIMIT 100`,
     );
   } else if (by === 'worth') {
     rows = await q(
-      `SELECT u.*, CASE WHEN ws.official IS NULL THEN 0 ELSE ${ACCOUNT_WORTH_SQL} END AS score FROM users u
+      `SELECT u.*, CASE WHEN ws.ranks->>'source'='wardogs.tools' THEN ${ACCOUNT_WORTH_SQL} END AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
-        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+        WHERE u.status='active' ORDER BY score DESC NULLS LAST, u.xp DESC LIMIT 100`,
     );
-  } else if (by === 'careerxp' || by === 'gold' || by === 'unlocks') {
-    const key = { careerxp: 'careerXp', gold: 'gold', unlocks: 'unlocks' }[by];
+  } else if (by === 'gold' || by === 'unlocks') {
+    const key = { gold: 'gold', unlocks: 'unlocks' }[by];
     rows = await q(
-      `SELECT u.*, COALESCE((ws.official->>'${key}')::bigint, 0) AS score FROM users u
+      `SELECT u.*, CASE WHEN ws.ranks->>'source'='wardogs.tools' THEN (ws.official->>'${key}')::bigint END AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
-        WHERE u.status='active' ORDER BY score DESC, u.xp DESC LIMIT 100`,
+        WHERE u.status='active' ORDER BY score DESC NULLS LAST, u.xp DESC LIMIT 100`,
     );
   } else if (by === 'hours') {
     rows = await q(
@@ -331,7 +342,7 @@ api.get('/leaderboard', member, async (req, res) => {
     rows = await q("SELECT u.*, u.xp AS score FROM users u WHERE u.status='active' ORDER BY u.xp DESC LIMIT 100");
   }
   const out = await usersWithRanks(rows);
-  res.json(out.map((u, i) => ({ ...u, score: Number(rows[i].score) })));
+  res.json(out.map((u, i) => ({ ...u, score: rows[i].score === null || rows[i].score === undefined ? null : Number(rows[i].score) })));
 });
 
 api.get('/announcements', member, async (_req, res) => {

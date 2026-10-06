@@ -40,6 +40,7 @@ export const inviteUrl = () => `https://discord.com/oauth2/authorize?client_id=$
 // ---------- Small helpers ----------
 const num = (n) => Number(n || 0).toLocaleString('en-GB');
 const money = (n) => `$${num(Math.round(Number(n) || 0))}`;
+const shown = (n, format = num) => n === null || n === undefined ? '—' : format(n);
 const hours = (secs) => `${Math.floor((Number(secs) || 0) / 3600)}h ${Math.floor(((Number(secs) || 0) % 3600) / 60)}m`;
 // "SERGEANT VII" -> "Sergeant VII"
 const wpgRank = (name) => String(name || 'RECRUIT I').split(/\s+/)
@@ -115,11 +116,12 @@ const header = (u) => ({
   author: { name: u.persona_name, icon_url: /^https:\/\//.test(u.avatar || '') ? u.avatar : undefined, url: `${SITE()}/#/u/${u.id}` },
 });
 const footer = { text: 'WPG Barracks' };
+const TRACKER_CREDIT = '[Data provided by WARDOGS Tracker](<https://wardogs.tools>)';
 
 // Everything on the career card for one member.
 async function careerData(u) {
   const [ws, prog, srv, awards, game] = await Promise.all([
-    one(`SELECT ws.official, ws.ranks, CASE WHEN ws.official IS NULL THEN NULL ELSE ${ACCOUNT_WORTH_SQL} END AS worth FROM wardogs_stats ws WHERE ws.user_id=$1`, [u.id]),
+    one(`SELECT ws.official, ws.ranks, CASE WHEN ws.official IS NULL OR ws.ranks->>'source' IS DISTINCT FROM 'wardogs.tools' THEN NULL ELSE ${ACCOUNT_WORTH_SQL} END AS worth FROM wardogs_stats ws WHERE ws.user_id=$1`, [u.id]),
     one('SELECT xp, rank_name, bot_name FROM server_progress WHERE steam_id=$1', [u.steam_id]),
     one(
       `SELECT COALESCE(SUM(kills),0)::int kills, COALESCE(SUM(deaths),0)::int deaths, COALESCE(SUM(matches),0)::int matches,
@@ -149,12 +151,13 @@ async function careerData(u) {
     ]);
     achievements = { game: game.name, total: total?.n || 0, earned };
   }
+  const currentWardogs = ws?.ranks?.source === 'wardogs.tools';
   return {
     // The name used on the WPG server (with the clan tag), else the Steam name.
     // (No Steam ID or Discord name: cards are posted in Discord, so they stay private.)
     name: cleanName(prog?.bot_name || srv?.name, '') || cleanName(u.persona_name),
-    official: ws?.official ? { ...ws.official, worth: ws.worth === null ? null : Number(ws.worth) } : null,
-    worldRank: ws?.ranks?.level || null,
+    official: currentWardogs && ws?.official ? { ...ws.official, worth: ws.worth === null ? null : Number(ws.worth) } : null,
+    worldRank: currentWardogs ? ws.ranks?.position || null : null,
     wpg: { rank: prog?.rank_name || 'RECRUIT I', xp: prog?.xp || 0, position: pos?.n || null },
     server: srv || {},
     medals: topTierOnly(awards),
@@ -171,42 +174,62 @@ export async function careerCard(user) {
 
 // ---------- Commands ----------
 // /stats: the WPG career card picture (falls back to a text card if the picture can't be made).
-// Global stats come from WARDOGS Tracker (credited under the card); re-read first if over 10 minutes old.
-const CREDIT = 'Global Wardogs stats: [WARDOGS Tracker](<https://wardogstracker.gg>)';
+// Global stats come from WARDOGS Tracker; the sync cache prevents repeat API calls for six hours.
+const CREDIT = TRACKER_CREDIT;
 async function freshWardogs(user) {
   let ws = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
-  if (!ws?.ranks_synced || Date.now() - new Date(ws.ranks_synced).getTime() > 10 * 60 * 1000) {
+  let refreshError = null;
+  if (ws?.ranks?.source !== 'wardogs.tools' || !ws.ranks_synced || Date.now() - new Date(ws.ranks_synced).getTime() > 6 * 60 * 60 * 1000) {
     const { syncWardogs } = await import('./wardogs.js');
-    await syncWardogs(user).catch((e) => problem('Refreshing Wardogs stats', e.message));
+    try {
+      const result = await syncWardogs(user);
+      if (!result.ok && !['missing', 'unsynced'].includes(result.state)) refreshError = result.reason;
+    } catch (e) {
+      problem('Refreshing Wardogs stats', e.message);
+      refreshError = e.message;
+    }
     ws = await one('SELECT official, ranks, ranks_synced FROM wardogs_stats WHERE user_id=$1', [user.id]);
   }
-  if (!ws?.official) return `${CREDIT} · **${user.persona_name}** isn't on it yet (sign in there once with Steam and sync).`;
-  if (ws.ranks?.state === 'old') return `${CREDIT} · **${user.persona_name}** last synced there ${new Date(ws.ranks.polled_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}.`;
-  return CREDIT;
+  if (refreshError) return `${CREDIT} · Could not refresh stats: ${refreshError}.`;
+  if (ws?.ranks?.source !== 'wardogs.tools' || !ws.official) return `${CREDIT} · No stats were returned for **${user.persona_name}**.`;
+  return `${CREDIT} · **${user.persona_name}** · ${ws.ranks?.state || 'status unavailable'}.`;
 }
 
 async function cmdStats(data, caller) {
+  if (option(data, 'name')) {
+    return { content: 'WARDOGS stats can only be looked up by a linked account or Discord ID, not by name.' };
+  }
   const f = await findMember(data, caller);
   if (f.error) {
-    // Not in the app: show their WARDOGS Tracker stats if they linked this Discord account there.
+    // A Discord ID is accepted by the stats API; names are never used for a Tracker lookup.
     const mention = option(data, 'member');
     const { trackerByDiscord } = await import('./ranking.js');
-    const t = mention ? await trackerByDiscord(String(mention)).catch(() => null) : null;
+    let t = null;
+    if (mention) {
+      try {
+        t = await trackerByDiscord(String(mention));
+      } catch (e) {
+        problem('Fetching WARDOGS stats by Discord ID', e.message);
+        return { content: `WARDOGS stats could not be fetched: ${e.message}` };
+      }
+    }
     if (!t) return { content: f.error };
     const o = t.official;
+    const rank = t.ranks;
     return {
       embeds: [{
-        title: `${t.name} · Wardogs stats`, url: t.ranks.profile_url, color: COLOR,
-        description: `<@${mention}> isn't in WPG Barracks, so these are their global stats from WARDOGS Tracker.`,
+        title: `${t.name} · Wardogs stats`, url: 'https://wardogs.tools', color: COLOR,
+        description: `<@${mention}> isn't in WPG Barracks. ${TRACKER_CREDIT}.`,
         fields: [
-          { name: 'Wardog level', value: num(o.wardogLevel), inline: true },
-          { name: 'Career XP', value: o.careerXp ? num(o.careerXp) : '—', inline: true },
-          { name: 'World rank', value: t.ranks.level ? `#${num(t.ranks.level)}` : '—', inline: true },
-          { name: 'Cash', value: o.cash === null ? 'hidden' : money(o.cash), inline: true },
-          { name: 'Unlocks', value: o.unlocks ? num(o.unlocks) : '—', inline: true },
-          { name: 'Classes', value: ROLES.map(([k, l]) => `${l} **${num(o.roles?.[k]?.level ?? 0)}**`).join(' · ') },
+          { name: 'Wardog level', value: shown(o.wardogLevel), inline: true },
+          { name: 'Global rank', value: rank.position ? `#${num(rank.position)}${rank.total ? ` of ${num(rank.total)}` : ''}` : '—', inline: true },
+          { name: 'Cash', value: shown(o.cash, money), inline: true },
+          { name: 'Worth', value: shown(o.worth, money), inline: true },
+          { name: 'Gold', value: shown(o.gold), inline: true },
+          { name: 'Unlocks', value: shown(o.unlocks), inline: true },
+          { name: 'Classes', value: ROLES.map(([k, l]) => `${l} **${shown(o.roles?.[k]?.level)}** · ${shown(o.roles?.[k]?.xp)} XP`).join(' · ') },
         ],
-        footer: { text: 'Global stats: WARDOGS Tracker (wardogstracker.gg)' },
+        footer: { text: 'Data provided by wardogs.tools' },
         timestamp: o.syncedAt || undefined,
       }],
     };
@@ -227,26 +250,27 @@ async function cmdStats(data, caller) {
 
 async function statsEmbed(f) {
   const ws = await one('SELECT official, ranks, official_synced FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
-  const o = ws?.official;
-  if (!o) return { content: `**${f.user.persona_name}** has no global Wardogs stats yet: they sign in once on WARDOGS Tracker (wardogstracker.gg) with Steam and sync.` };
+  const o = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
+  if (!o) return { content: `${TRACKER_CREDIT} · No stats were returned for **${f.user.persona_name}**.` };
   const r = ws.ranks || {};
-  const of = r.total ? ` of ${num(r.total)}` : '';
   return {
     embeds: [{
       ...header(f.user),
       title: 'Wardogs stats',
       color: COLOR,
       fields: [
-        { name: 'Wardog level', value: num(o.wardogLevel), inline: true },
-        { name: 'Cash', value: money(o.cash), inline: true },
-        { name: 'Achievements', value: o.achievements !== null && o.achievements !== undefined ? num(o.achievements) : '—', inline: true },
-        { name: 'Total XP', value: o.careerXp ? num(o.careerXp) : '—', inline: true },
-        { name: 'Unlocks', value: o.unlocks ? num(o.unlocks) : '—', inline: true },
-        { name: 'Gold', value: num(o.gold), inline: true },
-        { name: 'Classes', value: ROLES.map(([k, l]) => `${l} **${num(o.roles?.[k]?.level ?? o.roles?.[k] ?? 0)}**`).join(' · ') },
-        { name: 'World rank', value: [r.level && `Level #${num(r.level)}${of}`, r.xp && `XP #${num(r.xp)}`, r.cash && `Cash #${num(r.cash)}`].filter(Boolean).join(' · ') || '—' },
+        { name: 'Wardog level', value: shown(o.wardogLevel), inline: true },
+        { name: 'Cash', value: shown(o.cash, money), inline: true },
+        { name: 'Worth', value: shown(o.worth, money), inline: true },
+        { name: 'Unlocks', value: shown(o.unlocks), inline: true },
+        { name: 'Gold', value: shown(o.gold), inline: true },
+        { name: 'Classes', value: ROLES.map(([k, l]) => `${l} **${shown(o.roles?.[k]?.level)}** · ${shown(o.roles?.[k]?.xp)} XP`).join(' · ') },
+        { name: 'Global rank', value: r.position ? `#${num(r.position)}${r.total ? ` of ${num(r.total)}` : ''}${r.bracket ? ` · top ${num(r.bracket)}%` : ''}` : '—' },
+        { name: 'XP/min', value: shown(o.rates?.xpPerMinute), inline: true },
+        { name: 'Cash/min', value: shown(o.rates?.cashPerMinute), inline: true },
       ],
-      footer: { text: 'Global stats: WARDOGS Tracker (wardogstracker.gg) · WPG Barracks' },
+      footer: { text: 'Data provided by wardogs.tools · WPG Barracks' },
+      url: 'https://wardogs.tools',
       timestamp: o.syncedAt || ws.official_synced || undefined,
     }],
   };
@@ -354,13 +378,15 @@ async function cmdMedals(data, caller) {
       footer,
     }],
   });
-  return asPicture('medals', async (cards) => cards.renderMedalsCard({
+  const result = await asPicture('medals', async (cards) => cards.renderMedalsCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
     frame: f.pub?.frame || null,
     medals: awards,
     achievements: { game: game?.name || '', total: total?.n || 0, earned },
   }), text, profileLink(f.user));
+  result.content = TRACKER_CREDIT;
+  return result;
 }
 
 async function cmdServer(data, caller) {
@@ -423,14 +449,14 @@ const BOARDS = {
   level: {
     title: 'Wardog level',
     sql: `SELECT u.persona_name AS name, (ws.official->>'wardogLevel')::int AS v FROM users u JOIN wardogs_stats ws ON ws.user_id=u.id
-           WHERE u.status='active' AND ws.official IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
+           WHERE u.status='active' AND ws.ranks->>'source'='wardogs.tools' AND ws.official->>'wardogLevel' IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
     show: (r) => `Level **${num(r.v)}**`,
     value: (r) => `LEVEL ${num(r.v)}`,
   },
   worth: {
     title: 'Account worth',
     sql: `SELECT u.persona_name AS name, ${ACCOUNT_WORTH_SQL} AS v FROM users u JOIN wardogs_stats ws ON ws.user_id=u.id
-           WHERE u.status='active' AND ws.official IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
+           WHERE u.status='active' AND ws.ranks->>'source'='wardogs.tools' AND ${ACCOUNT_WORTH_SQL} IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
     show: (r) => `**${money(r.v)}**`,
     value: (r) => money(r.v),
   },
@@ -448,17 +474,19 @@ async function cmdLeaderboard(data) {
   const text = () => ({
     embeds: [{
       title: `🏆 ${b.title} — top 10`,
-      url: `${SITE()}/#/leaderboard`,
+      url: b === BOARDS.level || b === BOARDS.worth ? 'https://wardogs.tools' : `${SITE()}/#/leaderboard`,
       color: GOLD,
       description: rows.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — ${b.show(r)}`).join('\n') || 'No data yet.',
-      footer,
+      footer: b === BOARDS.level || b === BOARDS.worth ? { text: 'Data provided by wardogs.tools' } : footer,
     }],
   });
-  return asPicture('leaderboard', (cards) => cards.renderLeaderboardCard({
+  const result = await asPicture('leaderboard', (cards) => cards.renderLeaderboardCard({
     title: b.title,
     accent: 'top 10',
     rows: rows.map((r) => ({ name: cleanName(r.name), value: b.value(r), extra: r.extra || '' })),
   }), text, { label: 'All leaderboards', url: `${SITE()}/#/leaderboard` });
+  if (b === BOARDS.level || b === BOARDS.worth) result.content = TRACKER_CREDIT;
+  return result;
 }
 
 // When the tracker last read the server, as a short time ("7:07 AM", or "2 OCT 7:07 AM" if not today).
@@ -561,12 +589,15 @@ async function cmdLive() {
 }
 
 async function cmdProgress(data, caller) {
+  if (option(data, 'name')) {
+    return { content: 'WARDOGS progression can only be shown for a linked account or Discord ID, not by name.' };
+  }
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
   const warning = await freshWardogs(f.user);
-  const ws = await one('SELECT official FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
-  const o = ws?.official;
-  if (!o) return { content: `**${f.user.persona_name}** has no global Wardogs stats yet: they sign in once on WARDOGS Tracker (wardogstracker.gg) with Steam and sync.` };
+  const ws = await one('SELECT official, ranks FROM wardogs_stats WHERE user_id=$1', [f.user.id]);
+  const o = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
+  if (!o) return { content: `${TRACKER_CREDIT} · No synced Wardogs stats were returned for **${f.user.persona_name}**.` };
   const unlocks = await q('SELECT role, level, name, cost, image FROM unlocks ORDER BY level, name');
   const bought = new Set((await q('SELECT role, name FROM user_unlocks WHERE user_id=$1', [f.user.id])).map((r) => `${r.role}|${r.name}`));
   const levelOf = (role) => (role === 'career' ? Number(o.wardogLevel) || 0 : Number(o.roles?.[role]?.level ?? o.roles?.[role]) || 0);
@@ -739,7 +770,8 @@ const WHO = [
 function commandDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
-    if (['stats', 'rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
+    if (name === 'stats' || name === 'progress') def.options = [WHO[0]];
+    else if (['rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
     if (name === 'leaderboard') {
       def.options = [{
         type: 3, name: 'board', description: 'Which leaderboard', required: false,

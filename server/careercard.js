@@ -453,13 +453,13 @@ export async function renderCareerCard(d) {
   // Official Wardogs (global).
   const o = d.official;
   value(g, 'publicRank', d.worldRank ? `#${fmt(d.worldRank)}` : '—');
-  value(g, 'level', o ? fmt(o.wardogLevel) : '—');
+  value(g, 'level', o && o.wardogLevel !== null && o.wardogLevel !== undefined ? fmt(o.wardogLevel) : '—');
   value(g, 'totalXp', o?.careerXp ? fmt(o.careerXp) : '—');
-  value(g, 'cash', o ? money(o.cash) : '—');
-  value(g, 'worth', o?.worth ? money(o.worth) : '—');
+  value(g, 'cash', o && o.cash !== null && o.cash !== undefined ? money(o.cash) : '—');
+  value(g, 'worth', o && o.worth !== null && o.worth !== undefined ? money(o.worth) : '—');
   for (const role of ['recon', 'assault', 'medic', 'support', 'driver', 'pilot']) {
     const lvl = o?.roles?.[role]?.level ?? o?.roles?.[role];
-    value(g, role, o ? fmt(lvl || 0) : '—', { size: 16 });
+    value(g, role, o && lvl !== null && lvl !== undefined ? fmt(lvl) : '—', { size: 16 });
   }
 
   // WPG server (private).

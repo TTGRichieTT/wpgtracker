@@ -484,15 +484,16 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
   const users = await q("SELECT id, persona_name FROM users WHERE status='active' AND steam_id ~ '^[0-9]{17}$'");
   res.json({ ok: true, queued: users.length });
   syncAllRunning = true;
-  const tally = { done: 0, failed: 0, tracker: 0, notOnTracker: [] };
+  const tally = { done: 0, failed: 0, tracker: 0, missing: [] };
   try {
     for (const u of users) {
       const r = await syncUser(u.id).catch(() => null);
       if (!r) tally.failed++;
       else {
         tally.done++;
-        if (r.wardogs?.official) tally.tracker++;
-        else tally.notOnTracker.push(u.persona_name);
+        if (r.wardogs?.ok) tally.tracker++;
+        else if (['missing', 'unsynced'].includes(r.wardogs?.state)) tally.missing.push(u.persona_name);
+        else tally.failed++;
       }
       await new Promise((ok) => setTimeout(ok, 1500));
     }
@@ -501,10 +502,10 @@ admin.post('/sync-all', role('admin'), async (req, res) => {
   }
   bus.emit('notify', req.user.id, {
     title: 'Full sync finished',
-    body: `${tally.done} members synced · ${tally.tracker} with global stats from WARDOGS Tracker${tally.failed ? ` · ${tally.failed} failed` : ''}.${tally.notOnTracker.length
-      ? ` Not on WARDOGS Tracker yet (they sign in there once with Steam and sync): ${tally.notOnTracker.slice(0, 12).join(', ')}${tally.notOnTracker.length > 12 ? ` and ${tally.notOnTracker.length - 12} more` : ''}.` : ''}`,
+    body: `${tally.done} members synced · ${tally.tracker} with global stats from the wardogs.tools API${tally.failed ? ` · ${tally.failed} failed` : ''}.${tally.missing.length
+      ? ` No stats were returned for these accounts: ${tally.missing.slice(0, 12).join(', ')}${tally.missing.length > 12 ? ` and ${tally.missing.length - 12} more` : ''}.` : ''}`,
   });
-  await audit(req.user.id, 'sync.all', '', { synced: tally.done, tracker: tally.tracker, notOnTracker: tally.notOnTracker.length, failed: tally.failed });
+  await audit(req.user.id, 'sync.all', '', { synced: tally.done, tracker: tally.tracker, missing: tally.missing.length, failed: tally.failed });
 });
 
 admin.get('/audit', role('mod'), async (_req, res) => {

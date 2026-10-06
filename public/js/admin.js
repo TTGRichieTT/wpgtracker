@@ -91,7 +91,7 @@ const RESOURCES = {
   unlocks: {
     one: 'unlock',
     title: 'Wardogs unlocks',
-    help: 'What each class unlocks at each level, stored in our own database. The full list was imported once from WARDOGS Tracker (used with permission). Add, change or remove items here after game updates. Members see their last and next unlock under each class, and the full list on the Progression page. "Career" is the overall Wardog level.',
+    help: 'What each class unlocks at each level, stored in our own database. Add, change or remove items here after game updates. Members see their last and next unlock under each class, and the full list on the Progression page. "Career" is the overall Wardog level.',
     fields: [
       { k: 'role', label: 'Class', type: 'select', options: [['recon', 'Recon'], ['assault', 'Assault'], ['medic', 'Medic'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot'], ['career', 'Career (Wardog level)']] },
       { k: 'level', label: 'Level', type: 'number' },
@@ -599,7 +599,7 @@ const SETTINGS = [
     ['xp_event_message', 'XP event banner on the Ranks page (e.g. "Kill XP is 10 this weekend!") — leave empty when no event'],
   ]],
   ['Stats syncing', [
-    ['tracker_enabled', 'Get global Wardogs stats from WARDOGS Tracker (level, XP, cash, gold, unlocks, classes, world ranks)', 'check'],
+    ['tracker_enabled', 'Get global Wardogs stats from the keyed wardogs.tools player API (level, rank, cash, gold, worth, classes and rates)', 'check'],
     ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
   ]],
   ['Discord bot (automatic posts)', [

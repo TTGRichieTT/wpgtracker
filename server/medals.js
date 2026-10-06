@@ -54,14 +54,19 @@ export function ruleMet(rule, s) {
 }
 
 async function statsFor(userId) {
-  const ws = await one('SELECT official FROM wardogs_stats WHERE user_id=$1', [userId]);
+  const ws = await one('SELECT official, ranks FROM wardogs_stats WHERE user_id=$1', [userId]);
+  const official = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
   const classes = {};
-  for (const [k, v] of Object.entries(ws?.official?.roles || {})) classes[k.toLowerCase()] = Number(v?.level ?? v) || 0;
+  for (const [k, v] of Object.entries(official?.roles || {})) {
+    const level = v?.level ?? (typeof v === 'number' ? v : null);
+    if (level !== null && level !== undefined) classes[k.toLowerCase()] = Number(level) || 0;
+  }
   const mins = await one(
     'SELECT COALESCE(SUM(ug.playtime_forever), 0)::int AS m FROM user_games ug JOIN games g ON g.app_id = ug.app_id AND g.enabled = true WHERE ug.user_id = $1',
     [userId],
   );
-  return { classes, career: ws?.official ? Number(ws.official.wardogLevel) || 0 : null, hours: mins.m / 60 };
+  const career = official?.wardogLevel;
+  return { classes, career: career === null || career === undefined ? null : Number(career) || 0, hours: mins.m / 60 };
 }
 
 // Gives any automatic medals this member now qualifies for. Returns the new medal names.
