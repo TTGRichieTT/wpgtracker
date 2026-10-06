@@ -73,7 +73,7 @@ function palette(faction) {
 const ENEMY = [['infantry', 'Infantry'], ['sniper', 'Sniper'], ['mortar', 'Mortar'], ['artillery', 'Artillery'], ['tank', 'Tank'],
   ['apc', 'Spawn APC'], ['armed', 'Armed vehicle'], ['supply', 'Supply / unarmed'], ['air', 'Air (helicopter)'], ['vehicle', 'Vehicle'], ['armour', 'Armour']];
 const ENEMY_PICK = ENEMY.slice(0, 9);
-const NEEDS = [['ammo', 'Ammo supplies'], ['fob', 'FOB building supplies'], ['fuel', 'Fuel'], ['mech', 'Mechanical supplies'], ['medic', 'Medic'], ['transport', 'Transport'], ['repair', 'Repair'], ['fire', 'Fire support'], ['backup', 'Backup']];
+const NEEDS = [['ammo', 'Ammo supplies'], ['build', 'Build supplies'], ['fuel', 'Fuel'], ['mech', 'Mechanical supplies'], ['medic', 'Medic'], ['transport', 'Transport'], ['repair', 'Repair'], ['fire', 'Fire support'], ['backup', 'Backup']];
 const DANGER = [['mines', 'Mines'], ['sniper', 'Sniper'], ['other', 'Other']];
 const label = (list, k) => (list.find(([v]) => v === k) || [k, k])[1];
 
