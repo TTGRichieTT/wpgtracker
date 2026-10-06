@@ -48,6 +48,9 @@ export const METRICS = {
   placement: { label: 'Season placing', scope: 'all', yesno: true },
 };
 
+// Frames worked out from wardogs.tools stats (credited wherever they're shown or posted).
+export const TRACKER_METRICS = new Set(['max_class_level', 'wardog_level', 'cash']);
+
 // ---------- Seasons ----------
 export async function currentSeason() {
   return one("SELECT * FROM seasons WHERE status='active' ORDER BY number DESC LIMIT 1");
@@ -427,6 +430,7 @@ framesRouter.get('/users/:id/frames', member, async (req, res) => {
     out[group]?.push({
       ...look, description: f.description, category: f.category, unlocked, unlocked_at: own?.unlocked_at || null,
       season_number: f.season_number || null,
+      source: TRACKER_METRICS.has(f.metric) ? 'wardogs.tools' : '',
       locked_reason: f.category === 'clan' && !isWpgMember(user) ? 'WPG members only' : '',
       progress: unlocked || def.yesno || group === 'past' ? null : { value: Math.min(Number(m[f.metric]) || 0, Number(f.target)), target: Number(f.target), unit: def.unit || '' },
     });

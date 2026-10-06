@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import {
-  prepare, icon, fitText, roundRect, panel, title, ribbon, medalIcon, trophyIcon,
+  prepare, icon, fitText, roundRect, panel, title, ribbon, medalIcon, trophyIcon, dataCredit,
   W, FOOT_SRC, FOOT, MID_X, BAND_BG, BOX_FILL, WHITE, CYAN, GREEN, AMBER, VALUE_FONT, LABEL_FONT,
 } from './careercard.js';
 import { rankBadge, wpgBadge } from '../public/js/insignia.js';
@@ -20,6 +20,8 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-GB');
 const money = (n) => `$${fmt(Math.round(Number(n) || 0))}`;
 // "SERGEANT VII" -> "Sergeant VII" style is for chat; the cards use capitals like the design.
 const upper = (s) => String(s || '').toUpperCase();
+// Automatic medals for class / career levels are worked out from wardogs.tools stats.
+const trackerMedal = (m) => /^(class|career):/i.test(m?.auto_rule || '');
 function playtime(secs) {
   const m = Math.floor((Number(secs) || 0) / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
@@ -75,7 +77,8 @@ function titlePlate(g, text) {
 }
 
 // Header art, title plate, dark content area, footer art. draw(g, top) fills the content area.
-async function frame(heading, contentH, draw) {
+// credit: the card shows wardogs.tools stats, so it carries "Data provided by wardogs.tools".
+async function frame(heading, contentH, draw, { credit = false } = {}) {
   const art = await prepare();
   const footY = HEAD_H + contentH;
   const canvas = createCanvas(W, footY + FOOT);
@@ -120,6 +123,7 @@ async function frame(heading, contentH, draw) {
   g.fillStyle = seam;
   g.fillRect(MID_X, footY, W - MID_X, 14);
   await draw(g, HEAD_H + 6);
+  if (credit) dataCredit(g, W, footY + FOOT);
   return canvas.encode('jpeg', 90);
 }
 
@@ -396,7 +400,7 @@ export function renderMedalsCard(d) {
       g.fillText(a.percent !== null && a.percent !== undefined ? `${Number(a.percent).toFixed(1)}% of players have this` : '', 920, ry + 34);
     });
     if (ach.earned.length > list.length) label(g, `+${ach.earned.length - list.length} MORE`, 920, y + 100 + 8 * 54 + 22, { color: CYAN });
-  });
+  }, { credit: (d.medals || []).some(trackerMedal) });
 }
 
 // ---------- /progress ----------
@@ -441,7 +445,7 @@ export function renderProgressCard(d) {
     const sy = y + 84 + rows.length * 66 + 34;
     label(g, `REACHED BUT NOT BOUGHT: ${d.readyCount ? `${fmt(d.readyCount)} ITEMS · ${money(d.readyCost)}` : 'NOTHING WAITING'}`, 72, sy, { size: 22, color: d.readyCount ? AMBER : GREEN });
     label(g, `TICKED AS BOUGHT: ${money(d.spent)}`, 1470, sy, { align: 'right', size: 22, color: MUTED });
-  });
+  }, { credit: true }); // the levels come from wardogs.tools
 }
 
 // ---------- /leaderboard ----------
@@ -475,7 +479,7 @@ export function renderLeaderboardCard(d) {
       if (r.extra) label(g, upper(r.extra), 1060, ry + 26, { align: 'right', size: 22, color: CYAN });
       bigValue(g, r.value, 1470, ry + 26, 380, { size: 26, align: 'right', color: i < 3 ? podium[i] : WHITE });
     });
-  });
+  }, { credit: !!d.credit });
 }
 
 // ---------- /serverboard (the WPG server leaderboard, in the style of the WPG design) ----------
@@ -921,7 +925,7 @@ export function renderMedalAwardCard(d) {
       wrapLines(g, m.description, 1170, 2).forEach((line, k) => g.fillText(line, 300, py + 168 + k * 32));
     });
     if (more > 0) label(g, `+${more} MORE — SEE THEIR PROFILE IN WPG BARRACKS`, W / 2, y + 6 + list.length * each + 12, { align: 'center', size: 22, color: CYAN });
-  });
+  }, { credit: (d.medals || []).some(trackerMedal) });
 }
 
 // d: { name, avatar, rank, level, xp, position, total, from, next{name,xp} }
@@ -967,7 +971,7 @@ export function renderFrameUnlockCard(d) {
     g.textAlign = 'left';
     g.textBaseline = 'middle';
     wrapLines(g, d.description, 1120, 2).forEach((line, k) => g.fillText(line, 350, y + 230 + k * 32));
-  });
+  }, { credit: !!d.credit });
 }
 
 // ---------- Discord "… is live" post ----------

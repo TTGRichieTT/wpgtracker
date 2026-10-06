@@ -92,6 +92,29 @@ export function fitText(g, text, cx, cy, maxW, size, { font = VALUE_FONT, weight
   g.fillText(shown, cx, cy + 1);
 }
 
+// "Data provided by wardogs.tools" on every card that shows their stats (the wardogs.tools developer's condition),
+// on a dark pill at the bottom centre, below the footer art's own text.
+export function dataCredit(g, w, h) {
+  const text = 'DATA PROVIDED BY WARDOGS.TOOLS';
+  g.save();
+  g.font = `700 15px ${LABEL_FONT}`;
+  const pw = g.measureText(text).width + 28;
+  const ph = 23;
+  const x = w / 2 - pw / 2;
+  const y = h - ph - 3;
+  roundRect(g, x, y, pw, ph, 11.5);
+  g.fillStyle = 'rgba(4,11,20,0.88)';
+  g.fill();
+  g.strokeStyle = 'rgba(56,170,235,0.75)';
+  g.lineWidth = 1.4;
+  g.stroke();
+  g.fillStyle = '#d6efff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, w / 2, y + ph / 2 + 1);
+  g.restore();
+}
+
 export function roundRect(g, x, y, w, h, r) {
   g.beginPath();
   g.moveTo(x + r, y);
@@ -479,6 +502,7 @@ export async function renderCareerCard(d) {
   // New band: medals and Steam achievements, lined up with the panels above.
   medalsPanel(g, 28, SPLIT + 12, 794, BAND - 24, d.medals || []);
   await achievementsPanel(g, 834, SPLIT + 12, 674, BAND - 24, d.achievements || { earned: [], total: 0 });
+  if (d.official || d.worldRank || (d.medals || []).some((m) => /^(class|career):/i.test(m.auto_rule || ''))) dataCredit(g, W, FOOT_Y + FOOT);
 
   return canvas.encode('jpeg', 90);
 }

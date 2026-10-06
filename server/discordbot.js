@@ -10,7 +10,7 @@ import { q, one, setting, flag } from './db.js';
 import { bus } from './bus.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
-import { shownFrames, frameLookFor } from './frames.js';
+import { shownFrames, frameLookFor, TRACKER_METRICS } from './frames.js';
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
@@ -117,6 +117,18 @@ const header = (u) => ({
 });
 const footer = { text: 'WPG Barracks' };
 const TRACKER_CREDIT = 'Data provided by [wardogs.tools](<https://wardogs.tools>)';
+// Every post with wardogs.tools stats also gets a button to their site.
+const TRACKER_BUTTON = { type: 2, style: 5, label: 'Data: wardogs.tools', url: 'https://wardogs.tools' };
+function withTrackerButton(out) {
+  if (!out || typeof out !== 'object') return out;
+  const row = (out.components || []).find((r) => r.type === 1 && r.components.length < 5);
+  if (row) {
+    if (!row.components.some((c) => c.url === TRACKER_BUTTON.url)) row.components.push(TRACKER_BUTTON);
+  } else out.components = [...(out.components || []), { type: 1, components: [TRACKER_BUTTON] }];
+  return out;
+}
+// Automatic medals for class / career levels are worked out from wardogs.tools stats.
+const trackerMedal = (m) => /^(class|career):/i.test(m?.auto_rule || '');
 
 // Everything on the career card for one member.
 async function careerData(u) {
@@ -230,6 +242,7 @@ async function cmdStats(data, caller) {
         footer: { text: 'Data provided by wardogs.tools' },
         timestamp: o.syncedAt || undefined,
       }],
+      components: [{ type: 1, components: [TRACKER_BUTTON] }],
     };
   }
   const warning = await freshWardogs(f.user);
@@ -238,11 +251,11 @@ async function cmdStats(data, caller) {
     return {
       ...(warning ? { content: warning } : {}),
       files: [{ name: 'wpg-career.jpg', data: card, type: 'image/jpeg' }],
-      components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open in WPG Barracks', url: `${SITE()}/#/u/${f.user.id}` }] }],
+      components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Open in WPG Barracks', url: `${SITE()}/#/u/${f.user.id}` }, TRACKER_BUTTON] }],
     };
   } catch (e) {
     problem('/stats picture (sent text instead)', e.message);
-    return statsEmbed(f);
+    return withTrackerButton(await statsEmbed(f));
   }
 }
 
@@ -376,13 +389,19 @@ async function cmdMedals(data, caller) {
       footer,
     }],
   });
-  return asPicture('medals', async (cards) => cards.renderMedalsCard({
+  const out = await asPicture('medals', async (cards) => cards.renderMedalsCard({
     name: await cardName(f.user),
     avatar: avatarOf(f.user),
     frame: f.pub?.frame || null,
     medals: awards,
     achievements: { game: game?.name || '', total: total?.n || 0, earned },
   }), text, profileLink(f.user));
+  // Class / career level medals come from wardogs.tools stats.
+  if (awards.some(trackerMedal)) {
+    out.content = `${out.content ? `${out.content}\n` : ''}Class and career level medals: ${TRACKER_CREDIT}`;
+    withTrackerButton(out);
+  }
+  return out;
 }
 
 async function cmdServer(data, caller) {
@@ -476,12 +495,17 @@ async function cmdLeaderboard(data) {
       footer: b === BOARDS.level || b === BOARDS.worth ? { text: 'Data provided by wardogs.tools' } : footer,
     }],
   });
+  const tracker = b === BOARDS.level || b === BOARDS.worth;
   const result = await asPicture('leaderboard', (cards) => cards.renderLeaderboardCard({
     title: b.title,
     accent: 'top 10',
+    credit: tracker,
     rows: rows.map((r) => ({ name: cleanName(r.name), value: b.value(r), extra: r.extra || '' })),
   }), text, { label: 'All leaderboards', url: `${SITE()}/#/leaderboard` });
-  if (b === BOARDS.level || b === BOARDS.worth) result.content = TRACKER_CREDIT;
+  if (tracker) {
+    result.content = TRACKER_CREDIT;
+    withTrackerButton(result);
+  }
   return result;
 }
 
@@ -617,7 +641,7 @@ async function cmdProgress(data, caller) {
       color: COLOR,
       description: rows.map((r) => `**${r.label}** ${r.level} → ${r.next ? `next: ${r.next.name} at ${r.next.level}` : 'all unlocked'}`).join('\n'),
       fields: [{ name: 'Reached but not bought', value: readyCount ? `${num(readyCount)} items · ${money(readyCost)}` : 'Nothing waiting' }],
-      footer: { text: 'Tick what you have bought on the Progression page · WPG Barracks' },
+      footer: { text: 'Levels: data provided by wardogs.tools · Tick what you have bought on the Progression page · WPG Barracks' },
     }],
   });
   const out = await asPicture('progress', async (cards) => cards.renderProgressCard({
@@ -630,7 +654,8 @@ async function cmdProgress(data, caller) {
     spent,
   }), text, { label: 'Open Progression', url: `${SITE()}/#/progression` });
   if (warning && !out.content) out.content = warning;
-  return out;
+  if (!out.content) out.content = TRACKER_CREDIT;
+  return withTrackerButton(out);
 }
 
 async function cmdLink(_data, caller, callerName) {
@@ -1064,11 +1089,13 @@ async function promotionPost(u, rank, from) {
   }), () => ({ embeds: [{ color: GOLD, title: '⬆️ Promotion', description: text.replace(/^⬆️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
 }
 async function medalPost(u, names) {
-  const text = `🎖️ **${u.persona_name}**${mentionFor(u)} earned ${names.map((n) => `**${n}**`).join(', ')}.`;
-  const rows = await q('SELECT DISTINCT ON (name) name, description, colors FROM awards WHERE name = ANY($1) ORDER BY name, id', [names]);
+  const rows = await q('SELECT DISTINCT ON (name) name, description, colors, auto_rule FROM awards WHERE name = ANY($1) ORDER BY name, id', [names]);
   const medals = names.map((n) => rows.find((m) => m.name === n) || { name: n, description: '', colors: '' });
-  return announcePicture('medal', text, async (cards) => cards.renderMedalAwardCard({ name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), medals }),
+  const tracker = medals.some(trackerMedal); // a class / career level medal: from wardogs.tools stats
+  const text = `🎖️ **${u.persona_name}**${mentionFor(u)} earned ${names.map((n) => `**${n}**`).join(', ')}.${tracker ? ` ${TRACKER_CREDIT}` : ''}`;
+  const out = await announcePicture('medal', text, async (cards) => cards.renderMedalAwardCard({ name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), medals }),
     () => ({ embeds: [{ color: GOLD, title: names.length === 1 ? '🎖️ Medal awarded' : '🎖️ Medals awarded', description: text.replace(/^🎖️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
+  return tracker ? withTrackerButton(out) : out;
 }
 // u may be null (a player on the WPG server who isn't in the app); name is then the bot's name for them.
 async function wpgRankPost(u, name, rank, xp, level) {
@@ -1086,11 +1113,13 @@ async function wpgRankPost(u, name, rank, xp, level) {
 async function framePost(u, f) {
   const season = f.category === 'season' ? await one("SELECT name FROM seasons WHERE status='active' ORDER BY number DESC LIMIT 1") : null;
   const kind = f.category === 'season' ? `${season?.name || 'Season'} frame` : f.category === 'clan' ? 'Clan frame' : 'Permanent frame';
-  const text = `🖼️ **${u.persona_name}**${mentionFor(u)} unlocked the **${f.name}** profile frame.`;
+  const tracker = TRACKER_METRICS.has(f.metric); // worked out from wardogs.tools stats (level, cash, class level)
+  const text = `🖼️ **${u.persona_name}**${mentionFor(u)} unlocked the **${f.name}** profile frame.${tracker ? ` ${TRACKER_CREDIT}` : ''}`;
   const look = await frameLookFor(u, f);
-  return announcePicture('frame', text, async (cards) => cards.renderFrameUnlockCard({
-    name: await cardName(u), avatar: avatarOf(u), frame: look, description: f.description, kind,
+  const out = await announcePicture('frame', text, async (cards) => cards.renderFrameUnlockCard({
+    name: await cardName(u), avatar: avatarOf(u), frame: look, description: f.description, kind, credit: tracker,
   }), () => ({ embeds: [{ color: GOLD, title: '🖼️ Profile frame unlocked', description: `${text.replace(/^🖼️ /, '')}\n${f.description}`, url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
+  return tracker ? withTrackerButton(out) : out;
 }
 // A new season (the game wiped), and the last season's results: one post each.
 async function seasonPost(a) {

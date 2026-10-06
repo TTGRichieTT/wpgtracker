@@ -873,7 +873,7 @@ async function viewProfile(main, [id]) {
           <div class="panel-title">${icon('target')} Wardogs <span class="sub">(global stats)</span></div>
           ${off && wr?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${wr.state && wr.state !== 'active' ? '#f5a524' : 'var(--muted)'}">Last polled ${esc(fmtDate(wr.polled_at))} ${esc(new Date(wr.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${wr.state ? ` · ${esc(wr.state)}` : ''}</p>` : ''}
           ${officialHtml}
-          ${off ? trackerCredit() : ''}
+          ${off || wr?.position || wr?.level ? trackerCredit() : ''}
         </div>
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
@@ -915,6 +915,7 @@ async function viewProfile(main, [id]) {
           ${p.awards.length ? `<div class="ribbon-rack">${p.awards.map((a) => `
             <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}">
               ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
+          ${p.awards.some((a) => /^(class|career):/i.test(a.auto_rule || '')) ? `<p class="muted small" style="margin:8px 0 0">Class and career level medals use stats provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>` : ''}
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>

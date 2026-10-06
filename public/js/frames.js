@@ -50,6 +50,7 @@ export async function profileFramesPanel(box, user) {
       ${f.season_number && f.category === 'season' ? `<div class="small" style="color:var(--accent2);font:700 12px var(--head);text-transform:uppercase">Season ${f.season_number}</div>` : ''}
       <div class="muted small">${esc(f.description)}</div>
       ${f.locked_reason ? `<div class="small" style="color:#f5a524;margin-top:6px">${esc(f.locked_reason)}</div>` : progressHtml(f.progress)}
+      ${f.source === 'wardogs.tools' ? '<div class="small muted" style="margin-top:4px">Data: <a href="https://wardogs.tools" target="_blank" rel="noopener">wardogs.tools</a></div>' : ''}
       ${d.mine && f.unlocked ? (sel ? `<span class="pill mod" style="margin-top:8px">✓ Showing</span>` : `<button class="btn small" style="margin-top:8px" data-use-frame="${f.id}">Use this frame</button>`) : ''}
       ${!d.mine && sel ? '<span class="pill mod" style="margin-top:8px">Showing</span>' : ''}
     </div>`;
@@ -66,6 +67,7 @@ export async function profileFramesPanel(box, user) {
     ${PROFILE_GROUPS.map(([k, label, help]) => (d.groups[k].length ? `
       <h4 class="row" style="margin:14px 0 4px">${esc(k === 'season' && d.season ? seasonName(d.season) : label)} <span class="muted small" style="font-weight:400;text-transform:none">${esc(help)}</span></h4>
       <div class="frame-grid">${d.groups[k].map(card).join('')}</div>` : '')).join('')}
+    ${all.some((f) => f.source === 'wardogs.tools') ? '<p class="muted small" style="margin:12px 0 0">Wardog level, cash and class level frames use stats provided by <a href="https://wardogs.tools" target="_blank" rel="noopener">wardogs.tools</a>.</p>' : ''}
   </div>`;
   box.querySelectorAll('[data-use-frame]').forEach((b) => {
     b.onclick = async () => {
