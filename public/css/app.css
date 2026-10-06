@@ -803,3 +803,6 @@ input[type=datetime-local] { color-scheme: dark; }
 .sit-toolbar .btn { flex: none; }
 .sit-colors { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: 6px; }
 .sit-draw-bar .btn { background: rgba(5,12,22,.92); color: #fff; }
+.sit-pin .t.fire { border: 1px solid #f5a524; color: #ffd479; }
+.sit-msgs { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.sit-msg { font-size: 14px; overflow-wrap: anywhere; }

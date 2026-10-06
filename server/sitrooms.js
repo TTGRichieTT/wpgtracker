@@ -94,13 +94,15 @@ async function roomFull(room, user) {
   const members = await q('SELECT user_id, joined_at, last_seen FROM sit_members WHERE room_id=$1 ORDER BY joined_at', [room.id]);
   const requests = canManage(room, user) ? await q('SELECT user_id, kind, created_at FROM sit_requests WHERE room_id=$1 ORDER BY created_at', [room.id]) : [];
   const items = await q('SELECT id, user_id, kind, type, data, created_at, updated_at, expires_at FROM sit_items WHERE room_id=$1 AND (expires_at IS NULL OR expires_at > now()) ORDER BY id', [room.id]);
-  const ids = [...new Set([...members.map((m) => m.user_id), ...requests.map((r) => r.user_id), ...items.map((i) => i.user_id).filter(Boolean), room.creator_id].filter(Boolean))];
+  const messages = (await q('SELECT id, user_id, body, created_at FROM sit_messages WHERE room_id=$1 ORDER BY id DESC LIMIT 60', [room.id])).reverse();
+  const ids = [...new Set([...members.map((m) => m.user_id), ...requests.map((r) => r.user_id), ...items.map((i) => i.user_id).filter(Boolean), ...messages.map((m) => m.user_id).filter(Boolean), room.creator_id].filter(Boolean))];
   const users = ids.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [ids])) : [];
   return {
     room: { id: room.id, faction: FACTIONS.find((f) => f.id === room.faction), name: room.name, map_id: room.map_id, creator_id: room.creator_id, created_at: room.created_at },
     members: members.map((m) => ({ user_id: m.user_id, joined_at: m.joined_at, last_seen: m.last_seen })),
     requests,
     items,
+    messages,
     users,
     can_manage: canManage(room, user),
     is_member: members.some((m) => m.user_id === user.id),
@@ -116,8 +118,23 @@ async function touch(roomId, userId) {
 }
 const notify = (userId, title, body, link) => bus.emit('notify', userId, { title, body, link });
 
+// A copy of the board for admins, taken before it's cleared (new match, map change, room closed). Only if
+// there was something on it.
+async function archive(room, reason) {
+  const items = await q('SELECT user_id, kind, type, data, created_at FROM sit_items WHERE room_id=$1 ORDER BY id', [room.id]);
+  const messages = await q('SELECT user_id, body, created_at FROM sit_messages WHERE room_id=$1 ORDER BY id', [room.id]);
+  if (!items.length && !messages.length) return;
+  const members = await q('SELECT u.id, u.persona_name AS name FROM sit_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=$1 ORDER BY m.joined_at', [room.id]);
+  await q(
+    'INSERT INTO sit_archives (room_id, faction, name, map_id, reason, items, members, messages) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+    [room.id, room.faction, room.name, room.map_id, reason, JSON.stringify(items), JSON.stringify(members), JSON.stringify(messages)],
+  );
+}
+
 async function closeRoom(room, byUserId, why) {
+  await archive(room, why).catch((e) => console.warn('[sitrooms] archive', e.message));
   await q("UPDATE sit_rooms SET status='closed', closed_at=now(), closed_by=$2 WHERE id=$1", [room.id, byUserId || null]);
+  await q('DELETE FROM sit_messages WHERE room_id=$1', [room.id]);
   const left = await q('DELETE FROM sit_members WHERE room_id=$1 RETURNING user_id', [room.id]);
   await q('DELETE FROM sit_requests WHERE room_id=$1', [room.id]);
   await q('DELETE FROM sit_items WHERE room_id=$1', [room.id]);
@@ -201,7 +218,10 @@ sitrooms.put('/sitrooms/:id', member, wpgOnly, async (req, res) => {
   const mapId = req.body?.map !== undefined ? str(req.body.map, 40) : room.map_id;
   if (!MAP_IDS.includes(mapId)) throw new HttpError(400, 'Unknown map.');
   await q('UPDATE sit_rooms SET name=$2, map_id=$3, last_active_at=now() WHERE id=$1', [room.id, name, mapId]);
-  if (mapId !== room.map_id) await q('DELETE FROM sit_items WHERE room_id=$1', [room.id]);
+  if (mapId !== room.map_id) {
+    await archive(room, `map changed by ${req.user.persona_name}`);
+    await q('DELETE FROM sit_items WHERE room_id=$1', [room.id]);
+  }
   roomEvent(room.id, 'room', { by: req.user.persona_name });
   listChanged();
   res.json({ ok: true });
@@ -210,6 +230,7 @@ sitrooms.put('/sitrooms/:id', member, wpgOnly, async (req, res) => {
 sitrooms.post('/sitrooms/:id/clear', member, wpgOnly, async (req, res) => {
   const room = await roomParam(req);
   manager(room, req.user);
+  await archive(room, `new match (cleared by ${req.user.persona_name})`);
   await q('DELETE FROM sit_items WHERE room_id=$1', [room.id]);
   await touch(room.id, req.user.id);
   roomEvent(room.id, 'cleared', { by: req.user.persona_name });
@@ -400,6 +421,10 @@ sitrooms.patch('/sitrooms/:id/items/:itemId', member, wpgOnly, async (req, res) 
     const ttl = item.type === 'me' ? MARKERS.me.ttl : item.type === 'enemy' ? ENEMY[data.what] * 60 * 1000 : null;
     if (!ttl) throw new HttpError(400, 'That mark doesn\'t expire.');
     expires = new Date(Date.now() + ttl);
+  } else if (action === 'firing' || action === 'ceasefire') {
+    // Fire mission: shows the room who is shelling this spot.
+    if (!['enemy', 'danger', 'objective'].includes(item.type)) throw new HttpError(400, 'Fire missions are for enemy, danger and objective marks.');
+    data = { ...data, firing_by: action === 'firing' ? req.user.id : null };
   } else if (action === 'claim' || action === 'unclaim') {
     if (item.type !== 'need') throw new HttpError(400, 'Only requests can be claimed.');
     data = { ...data, claimed_by: action === 'claim' ? req.user.id : null };
@@ -413,7 +438,11 @@ sitrooms.patch('/sitrooms/:id/items/:itemId', member, wpgOnly, async (req, res) 
         data = { ...data, points: pts };
       }
     } else {
-      data = { ...cleanItem(item.kind, item.type, { ...data, ...req.body }).data, ...(item.kind === 'marker' ? { at: data.at } : { points: data.points }), claimed_by: data.claimed_by || null };
+      data = {
+        ...cleanItem(item.kind, item.type, { ...data, ...req.body }).data,
+        ...(item.kind === 'marker' ? { at: data.at } : { points: data.points }),
+        claimed_by: data.claimed_by || null, firing_by: data.firing_by || null,
+      };
     }
   } else {
     throw new HttpError(400, 'Unknown change.');
@@ -439,6 +468,39 @@ sitrooms.delete('/sitrooms/:id/items/:itemId', member, wpgOnly, async (req, res)
   res.json({ ok: true });
 });
 
+// ---------- Room text box ----------
+sitrooms.post('/sitrooms/:id/messages', member, wpgOnly, async (req, res) => {
+  const room = await roomParam(req);
+  await memberOrThrow(room, req.user);
+  if (req.user.muted_until && new Date(req.user.muted_until) > new Date()) {
+    throw new HttpError(403, `You are muted until ${new Date(req.user.muted_until).toLocaleString('en-GB')}.`);
+  }
+  rateLimit(req.user.id);
+  const body = str(req.body?.body, 300);
+  if (!body) throw new HttpError(400, 'Message is empty.');
+  const msg = await one('INSERT INTO sit_messages (room_id, user_id, body) VALUES ($1,$2,$3) RETURNING id, user_id, body, created_at', [room.id, req.user.id, body]);
+  await q('DELETE FROM sit_messages WHERE room_id=$1 AND id < (SELECT id FROM sit_messages WHERE room_id=$1 ORDER BY id DESC OFFSET 199 LIMIT 1)', [room.id]);
+  await touch(room.id, req.user.id);
+  roomEvent(room.id, 'msg', { message: msg });
+  res.json(msg);
+});
+
+// ---------- Last matches (admins) ----------
+sitrooms.get('/sitrooms-archive', member, wpgOnly, async (req, res) => {
+  if (!isAdmin(req.user)) throw new HttpError(403, 'Admins only.');
+  const rows = await q(`SELECT id, faction, name, map_id, reason, created_at, jsonb_array_length(items) AS marks,
+    jsonb_array_length(messages) AS messages, members FROM sit_archives ORDER BY id DESC LIMIT 30`);
+  res.json(rows);
+});
+sitrooms.get('/sitrooms-archive/:id', member, wpgOnly, async (req, res) => {
+  if (!isAdmin(req.user)) throw new HttpError(403, 'Admins only.');
+  const a = await one('SELECT * FROM sit_archives WHERE id=$1', [int(req.params.id)]);
+  if (!a) throw new HttpError(404, 'Not found.');
+  const ids = [...new Set([...a.items.map((i) => i.user_id), ...a.messages.map((m) => m.user_id), ...a.members.map((m) => m.id)].filter(Boolean))];
+  const users = ids.length ? await usersWithRanks(await q('SELECT * FROM users WHERE id = ANY($1)', [ids])) : [];
+  res.json({ ...a, faction: FACTIONS.find((f) => f.id === a.faction) || { name: a.faction, color: '#888' }, users });
+});
+
 // The room's page sends this every minute while it's open (keeps the room from closing as idle).
 export async function sitHeartbeat(roomId, userId) {
   if (await isMember(roomId, userId)) await touch(roomId, userId);
@@ -459,6 +521,7 @@ export function startSitRooms() {
       for (const g of gone) roomEvent(g.room_id, 'item:removed', { id: g.id });
       const idle = await q("SELECT * FROM sit_rooms WHERE status='open' AND last_active_at < now() - ($1 || ' milliseconds')::interval", [String(IDLE_CLOSE_MS)]);
       for (const r of idle) await closeRoom(r, null, 'closed (nobody used it for 30 minutes)');
+      await q("DELETE FROM sit_archives WHERE created_at < now() - interval '14 days'");
     } catch (e) {
       console.warn('[sitrooms]', e.message);
     }

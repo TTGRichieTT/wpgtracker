@@ -115,8 +115,19 @@ export async function viewArtyMap(main, _rest, alive) {
     weaponId: guns.some((g) => g.id === saved.weaponId) ? saved.weaponId : guns[0]?.id,
     mode: saved.gun ? 'target' : 'gun',
   };
+  // From a situation room's fire mission: ?target=x,y adds that target (once).
+  const fromRoom = /^(-?[\d.]+),(-?[\d.]+)$/.exec(params.get('target') || '');
+  if (fromRoom) {
+    const t = { x: Number(fromRoom[1]), y: Number(fromRoom[2]) };
+    if (t.x >= 0 && t.y >= 0 && t.x <= UNITS && t.y <= UNITS && !st.targets.some((o) => Math.hypot(o.x - t.x, o.y - t.y) < 0.05)) {
+      if (st.targets.length >= MAX_TARGETS) st.targets.shift();
+      st.targets.push(t);
+      if (st.gun) st.mode = 'target';
+    }
+  }
   const weapon = () => guns.find((g) => g.id === st.weaponId);
   const persist = () => save(map.id, { gun: st.gun, targets: st.targets, weaponId: st.weaponId });
+  if (fromRoom) persist();
 
   main.innerHTML = `
     <div class="row between"><h1 style="margin:0">Artillery map</h1>

@@ -1,9 +1,9 @@
 // Situation rooms: a shared tactical map for one group during a match (WPG members only).
 // The list shows the 3 faction slots (Lonestar, Valkyra, Manticore); the room shows the map with everyone's
 // markers and drawings live, the Needs list, who's in the room and (for its creator and admins) the controls.
-import { api, esc, state, toast, fail, modal, confirmBox, onLive, avatar, timeAgo, userLine } from './app.js';
+import { api, esc, state, toast, fail, modal, confirmBox, onLive, avatar, timeAgo, fmtTime, userLine } from './app.js';
 import { icon } from './icons.js';
-import { loadLeaflet, buildMap, toLL, fromLL } from './artymap.js';
+import { loadLeaflet, buildMap, toLL, fromLL, solution } from './artymap.js';
 
 const UNITS = 163.84;
 const MARKERS = {
@@ -29,11 +29,98 @@ const NEEDS = [['ammo', 'Ammo'], ['medic', 'Medic'], ['transport', 'Transport'],
 const DANGER = [['mines', 'Mines'], ['sniper', 'Sniper'], ['other', 'Other']];
 const label = (list, k) => (list.find(([v]) => v === k) || [k, k])[1];
 
+// Alerts: a short beep (and a buzz on phones) for new needs, enemy spots, messages and join requests.
+const SOUND_KEY = 'wpg.sit.sound';
+const soundOn = () => { try { return localStorage.getItem(SOUND_KEY) !== 'off'; } catch { return true; } };
+let audio = null;
+function alertBeep(kind = 'need') {
+  if (!soundOn()) return;
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    const notes = { need: [880, 1175], enemy: [440, 330], msg: [660], ask: [523, 784] }[kind] || [660];
+    notes.forEach((f, i) => {
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      const t0 = audio.currentTime + i * 0.14;
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.15, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+      o.connect(g).connect(audio.destination);
+      o.start(t0);
+      o.stop(t0 + 0.13);
+    });
+  } catch { /* no sound on this device */ }
+  try { navigator.vibrate?.(kind === 'msg' ? 60 : [80, 60, 80]); } catch { /* no vibration */ }
+}
+
+// Your gun position: the same one the Arty map keeps (per map, on this device).
+const gunKey = (mapId) => `wpg.arty2.${mapId}`;
+function savedGun(mapId) {
+  try { return JSON.parse(localStorage.getItem(gunKey(mapId))) || {}; } catch { return {}; }
+}
+function saveGun(mapId, gun, weaponId) {
+  const cur = savedGun(mapId);
+  try { localStorage.setItem(gunKey(mapId), JSON.stringify({ ...cur, gun, ...(weaponId ? { weaponId } : {}) })); } catch { /* storage blocked */ }
+}
+
+const FACTION_NAMES = { lonestar: 'Lonestar', valkyra: 'Valkyra', manticore: 'Manticore' };
 let mapsCache = null;
 const loadMaps = async () => (mapsCache ||= await fetch('/maps/maps.json').then((r) => r.json()));
 
+// ---------- Drawing marks on the map (rooms and the admins' last-match view) ----------
+function markerIcon(L, it, nameOf) {
+  const t = MARKERS[it.type];
+  const d2 = it.data;
+  const text = it.type === 'me' ? nameOf(it.user_id)
+    : it.type === 'enemy' ? `${d2.count > 1 ? `${d2.count}× ` : ''}${label(ENEMY, d2.what)}`
+      : it.type === 'need' ? label(NEEDS, d2.need)
+        : it.type === 'fob' ? d2.name || 'FOB'
+          : it.type === 'objective' ? (d2.goal === 'defend' ? 'Defend' : 'Attack')
+            : it.type === 'danger' ? label(DANGER, d2.what) : '';
+  const fire = d2.firing_by ? `<span class="t fire">💥 ${esc(nameOf(d2.firing_by))} firing</span>` : '';
+  return L.divIcon({
+    className: `sit-pin ${it.type}${it.type === 'need' && d2.claimed_by ? ' claimed' : ''}`,
+    html: `<span class="e">${t.emoji}</span>${text ? `<span class="t">${esc(text)}</span>` : ''}${fire}`,
+    iconSize: null,
+    iconAnchor: [14, 14],
+  });
+}
+// Arrowhead at the end of a line, in map units (it scales with the map like the line does).
+function arrowHead(L, pts, c) {
+  const a = pts[pts.length - 2];
+  const b = pts[pts.length - 1];
+  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  const len = Math.min(3, Math.hypot(b.x - a.x, b.y - a.y) * 0.45);
+  const side = (s) => ({ x: b.x - len * Math.cos(ang + s * 0.45), y: b.y - len * Math.sin(ang + s * 0.45) });
+  return L.polygon([toLL(b), toLL(side(1)), toLL(side(-1))], { color: c, weight: 1, fillColor: c, fillOpacity: 0.95 });
+}
+function drawingLayer(L, it) {
+  const c = COLORS[it.data.color] || COLORS.blue;
+  const lls = it.data.points.map(toLL);
+  const g = L.featureGroup();
+  if (it.type === 'label') {
+    L.marker(lls[0], { icon: L.divIcon({ className: 'sit-label', html: `<span style="color:${c}">${esc(it.data.text)}</span>`, iconSize: null, iconAnchor: [0, 10] }) }).addTo(g);
+  } else if (it.type === 'area') {
+    L.polygon(lls, { color: c, weight: 2, fillColor: c, fillOpacity: 0.15, dashArray: '6 4' }).addTo(g);
+  } else {
+    const style = {
+      attack: { weight: 5 },
+      flank: { weight: 4, dashArray: '10 8' },
+      defend: { weight: 7, dashArray: '2 10', lineCap: 'square' },
+      route: { weight: 3, dashArray: '4 6' },
+    }[it.type];
+    L.polyline(lls, { color: c, opacity: 0.9, ...style }).addTo(g);
+    if (it.type === 'defend') L.polyline(lls, { color: c, weight: 2, opacity: 0.9 }).addTo(g);
+    if (it.type !== 'defend') arrowHead(L, it.data.points, c).addTo(g);
+  }
+  return g;
+}
+
+
 // ---------- The list of rooms ----------
-export async function viewSitRooms(main, [id], alive) {
+export async function viewSitRooms(main, [id, sub], alive) {
+  if (id === 'archive') return viewArchive(main, Number(sub), alive);
   if (id) return viewRoom(main, Number(id), alive);
   const [d, maps] = await Promise.all([api('sitrooms'), loadMaps()]);
   if (!alive()) return;
@@ -68,7 +155,19 @@ export async function viewSitRooms(main, [id], alive) {
         One room per faction, so up to 3 at once. The person who opens a room picks the map and invites people (or lets them in when they ask).</p>
       ${inRoom ? `<div class="panel" style="border-color:var(--accent)">You're in a room. <a class="btn small primary" href="#/sitrooms/${inRoom}">Open it</a></div>` : ''}
       <div class="sit-slots">${d.slots.map(slot).join('')}</div>
+      ${d.is_admin ? '<div class="panel" id="srArchive"><div class="panel-title">Last matches <span class="sub">admins · kept 14 days</span></div><div class="spinner"></div></div>' : ''}
     </div>`;
+  if (d.is_admin) {
+    api('sitrooms-archive').then((list) => {
+      const el = main.querySelector('#srArchive');
+      if (!el || !alive()) return;
+      el.innerHTML = `<div class="panel-title">Last matches <span class="sub">admins · kept 14 days</span></div>
+        <p class="muted small" style="margin:0 0 8px">A copy of a room's board is kept each time it's cleared: new match, map change or room closed.</p>
+        <div class="list">${list.map((a) => `<a class="item" href="#/sitrooms/archive/${a.id}"><div class="grow"><b>${esc(a.name)}</b>
+          <div class="muted small">${esc(FACTION_NAMES[a.faction] || a.faction)} · ${esc(mapName(a.map_id))} · ${a.marks} marks · ${a.messages} messages · ${esc(a.members.map((m) => m.name).join(', '))}</div>
+          <div class="muted small">${esc(a.reason)} · ${esc(timeAgo(a.created_at))}</div></div></a>`).join('') || '<p class="muted small">None yet.</p>'}</div>`;
+    }).catch(() => {});
+  }
   const reload = () => { if (alive()) viewSitRooms(main, [], alive).catch(() => {}); };
   onLive('sitrooms', reload);
   const act = (sel, fn) => main.querySelectorAll(sel).forEach((b) => {
@@ -133,6 +232,9 @@ async function viewRoom(main, id, alive) {
   let tool = null; // marker type or drawing type
   let color = 'blue';
   let points = []; // drawing in progress
+  let messages = d.messages || [];
+  let pendingFire = null; // the mark to show a fire mission for once the gun is placed
+  let guns = null;
 
   const map = () => maps.find((m) => m.id === d.room.map_id) || maps[0];
   main.innerHTML = `
@@ -144,7 +246,8 @@ async function viewRoom(main, id, alive) {
     <div class="sit-wrap">
       <div style="min-width:0">
       <div class="sit-toolbar">
-        <div class="sit-tools">${Object.entries(MARKERS).map(([k, t]) => `<button type="button" class="btn small" data-tool="${k}" title="${esc(t.label)}">${t.emoji} ${esc(t.label)}</button>`).join('')}</div>
+        <div class="sit-tools">${Object.entries(MARKERS).map(([k, t]) => `<button type="button" class="btn small" data-tool="${k}" title="${esc(t.label)}">${t.emoji} ${esc(t.label)}</button>`).join('')}
+          <button type="button" class="btn small" data-tool="gun" title="Your gun (only you see it; same as the Arty map)">🔫 My gun</button></div>
         <div class="sit-tools">${Object.entries(DRAWINGS).map(([k, t]) => `<button type="button" class="btn small" data-tool="${k}" title="${esc(t.label)}">${t.emoji} ${esc(t.label)}</button>`).join('')}
           <span class="sit-colors">${Object.entries(COLORS).map(([k, c]) => `<button type="button" class="sit-swatch" data-color="${k}" style="background:${c}" title="${esc(COLOR_NAMES[k])}" aria-label="${esc(COLOR_NAMES[k])}"></button>`).join('')}
           <span class="muted small" id="srColorName"></span></span></div>
@@ -161,6 +264,10 @@ async function viewRoom(main, id, alive) {
       </div>
       <div class="sit-side">
         <div class="panel"><div class="panel-title" style="margin-bottom:8px">🆘 Needs <span class="sub" id="srNeedCount"></span></div><div id="srNeeds"></div></div>
+        <div class="panel"><div class="panel-title" style="margin-bottom:8px">💬 Room chat</div>
+          <div class="sit-msgs" id="srMsgs"></div>
+          <form class="row" id="srMsgForm" style="gap:6px;margin-top:8px;flex-wrap:nowrap"><input type="text" name="body" maxlength="300" placeholder="Quick message to the room" class="grow" autocomplete="off"><button class="btn small primary">${icon('send')}</button></form>
+        </div>
         <div class="panel"><div class="panel-title" style="margin-bottom:8px">${icon('users')} In the room <span class="sub" id="srCount"></span></div><div id="srMembers"></div></div>
         <div class="panel" id="srManage" hidden></div>
       </div>
@@ -172,64 +279,41 @@ async function viewRoom(main, id, alive) {
   let draft = L.layerGroup().addTo(lmap);
   setTimeout(() => lmap.invalidateSize(), 200);
 
-  const markerIcon = (it) => {
-    const t = MARKERS[it.type];
-    const d2 = it.data;
-    const text = it.type === 'me' ? nameOf(it.user_id)
-      : it.type === 'enemy' ? `${d2.count > 1 ? `${d2.count}× ` : ''}${label(ENEMY, d2.what)}`
-        : it.type === 'need' ? label(NEEDS, d2.need)
-          : it.type === 'fob' ? d2.name || 'FOB'
-            : it.type === 'objective' ? (d2.goal === 'defend' ? 'Defend' : 'Attack')
-              : it.type === 'danger' ? label(DANGER, d2.what) : '';
-    return L.divIcon({
-      className: `sit-pin ${it.type}${it.type === 'need' && d2.claimed_by ? ' claimed' : ''}`,
-      html: `<span class="e">${t.emoji}</span>${text ? `<span class="t">${esc(text)}</span>` : ''}`,
-      iconSize: null,
-      iconAnchor: [14, 14],
-    });
-  };
-  // Arrowhead at the end of a line, in map units (it scales with the map like the line does).
-  const arrowHead = (pts, c) => {
-    const a = pts[pts.length - 2];
-    const b = pts[pts.length - 1];
-    const ang = Math.atan2(b.y - a.y, b.x - a.x);
-    const len = Math.min(3, Math.hypot(b.x - a.x, b.y - a.y) * 0.45);
-    const side = (s) => ({ x: b.x - len * Math.cos(ang + s * 0.45), y: b.y - len * Math.sin(ang + s * 0.45) });
-    return L.polygon([toLL(b), toLL(side(1)), toLL(side(-1))], { color: c, weight: 1, fillColor: c, fillOpacity: 0.95 });
-  };
-  const drawingLayer = (it) => {
-    const c = COLORS[it.data.color] || COLORS.blue;
-    const lls = it.data.points.map(toLL);
-    const g = L.featureGroup();
-    if (it.type === 'label') {
-      L.marker(lls[0], { icon: L.divIcon({ className: 'sit-label', html: `<span style="color:${c}">${esc(it.data.text)}</span>`, iconSize: null, iconAnchor: [0, 10] }) }).addTo(g);
-    } else if (it.type === 'area') {
-      L.polygon(lls, { color: c, weight: 2, fillColor: c, fillOpacity: 0.15, dashArray: '6 4' }).addTo(g);
-    } else {
-      const style = {
-        attack: { weight: 5 },
-        flank: { weight: 4, dashArray: '10 8' },
-        defend: { weight: 7, dashArray: '2 10', lineCap: 'square' },
-        route: { weight: 3, dashArray: '4 6' },
-      }[it.type];
-      L.polyline(lls, { color: c, opacity: 0.9, ...style }).addTo(g);
-      if (it.type === 'defend') L.polyline(lls, { color: c, weight: 2, opacity: 0.9 }).addTo(g);
-      if (it.type !== 'defend') arrowHead(it.data.points, c).addTo(g);
-    }
-    return g;
-  };
-
   function render() {
     layer.clearLayers();
     const now = Date.now();
     items = items.filter((it) => !it.expires_at || Date.parse(it.expires_at) > now);
     for (const it of items) {
-      const lay = it.kind === 'marker' ? L.marker(toLL(it.data.at), { icon: markerIcon(it) }) : drawingLayer(it);
+      const lay = it.kind === 'marker' ? L.marker(toLL(it.data.at), { icon: markerIcon(L, it, nameOf) }) : drawingLayer(L, it);
       lay.on('click', (e) => { L.DomEvent.stopPropagation(e); if (!tool) itemMenu(it); });
       lay.addTo(layer);
     }
+    const g = savedGun(map().id).gun;
+    if (g) {
+      L.marker(toLL(g), { icon: L.divIcon({ className: 'arty-pin gun', html: icon('crosshair'), iconSize: [30, 30], iconAnchor: [15, 15] }), interactive: false })
+        .bindTooltip('Your gun', { className: 'arty-label' }).addTo(layer);
+    }
     renderNeeds();
   }
+
+  function renderChat() {
+    const box = main.querySelector('#srMsgs');
+    const near = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    box.innerHTML = messages.length ? messages.map((m) => `<div class="sit-msg"><b>${esc(nameOf(m.user_id))}</b> <span class="muted small">${fmtTime(m.created_at)}</span><div>${esc(m.body)}</div></div>`).join('')
+      : '<p class="muted small" style="margin:0">No messages yet.</p>';
+    if (near) box.scrollTop = box.scrollHeight;
+  }
+  main.querySelector('#srMsgForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const input = e.target.body;
+    const body = input.value.trim();
+    if (!body) return;
+    input.value = '';
+    try {
+      const m = await api(`sitrooms/${id}/messages`, { method: 'POST', body: { body } });
+      if (!messages.some((x) => x.id === m.id)) { messages.push(m); renderChat(); }
+    } catch (x) { input.value = body; fail(x); }
+  };
 
   function renderNeeds() {
     const needs = items.filter((it) => it.type === 'need');
@@ -268,7 +352,14 @@ async function viewRoom(main, id, alive) {
     }).join('');
     // Top buttons
     const top = main.querySelector('#srTop');
-    top.innerHTML = `${d.is_member ? '<button class="btn small ghost" id="srLeave">Leave room</button>' : '<button class="btn small primary" id="srJoin">Join (admin)</button>'}`;
+    top.innerHTML = `<button class="btn small ghost" id="srSound" title="Beep (and buzz on phones) for new needs, enemy spots, messages and join requests">${soundOn() ? '🔔 Alerts on' : '🔕 Alerts off'}</button>
+      ${d.is_member ? '<button class="btn small ghost" id="srLeave">Leave room</button>' : '<button class="btn small primary" id="srJoin">Join (admin)</button>'}`;
+    top.querySelector('#srSound').onclick = (e) => {
+      const on = !soundOn();
+      try { localStorage.setItem(SOUND_KEY, on ? 'on' : 'off'); } catch { /* storage blocked */ }
+      e.currentTarget.textContent = on ? '🔔 Alerts on' : '🔕 Alerts off';
+      if (on) alertBeep('msg');
+    };
     top.querySelector('#srLeave')?.addEventListener('click', async () => {
       if (!(await confirmBox('Leave this room?'))) return;
       try { await api(`sitrooms/${id}/leave`, { method: 'POST', body: {} }); location.hash = '#/sitrooms'; } catch (x) { fail(x); }
@@ -361,8 +452,8 @@ async function viewRoom(main, id, alive) {
     points = [];
     draft.clearLayers();
     main.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('primary', b.dataset.tool === tool));
-    const def = MARKERS[tool] || DRAWINGS[tool];
-    hint.textContent = !d.is_member ? 'Join the room to mark the map.' : def ? def.help : 'Pick a tool, then tap the map.';
+    const def = MARKERS[tool] || DRAWINGS[tool] || (tool === 'gun' ? { help: 'Tap where your gun is. Only you see it (it\'s the same position as on the Arty map).' } : null);
+    hint.textContent = !d.is_member && tool !== 'gun' ? 'Join the room to mark the map.' : def ? def.help : 'Pick a tool, then tap the map.';
     drawBar.hidden = !(DRAWINGS[tool] && tool !== 'label');
   }
   function setColor(c) {
@@ -402,9 +493,17 @@ async function viewRoom(main, id, alive) {
 
   function bindMapClicks() {
     lmap.on('click', async (e) => {
-      if (!tool || !d.is_member) return;
+      if (!tool) return;
       const p = fromLL(e.latlng);
       if (p.x < 0 || p.y < 0 || p.x > UNITS || p.y > UNITS) return;
+      if (tool === 'gun') {
+        saveGun(map().id, p);
+        setTool(null);
+        render();
+        if (pendingFire) { const it = items.find((x) => x.id === pendingFire); pendingFire = null; if (it) fireBox(it); }
+        return;
+      }
+      if (!d.is_member) return;
       if (DRAWINGS[tool]) {
         if (tool === 'label') {
           const text = await promptText('Label', 'e.g. Wait for smoke');
@@ -465,10 +564,12 @@ async function viewRoom(main, id, alive) {
     const details = it.type === 'enemy' ? `${it.data.count}× ${label(ENEMY, it.data.what)}` : it.type === 'need' ? label(NEEDS, it.data.need)
       : it.type === 'fob' ? it.data.name : it.type === 'label' ? it.data.text : it.type === 'objective' ? label([['attack', 'Attack'], ['defend', 'Defend']], it.data.goal)
         : it.type === 'danger' ? label(DANGER, it.data.what) : '';
+    const canFire = ['enemy', 'danger', 'objective'].includes(it.type);
     const m = modal(`<h3 style="margin-top:0">${def.emoji} ${esc(def.label)}${details ? ` — ${esc(details)}` : ''}</h3>
       ${it.data.note ? `<p>${esc(it.data.note)}</p>` : ''}
-      <p class="muted small">By ${esc(nameOf(it.user_id))} · ${esc(timeAgo(it.created_at))}${it.expires_at ? ` · fades ${esc(fadesIn(it.expires_at))}` : ''}</p>
+      <p class="muted small">By ${esc(nameOf(it.user_id))} · ${esc(timeAgo(it.created_at))}${it.expires_at ? ` · fades ${esc(fadesIn(it.expires_at))}` : ''}${it.data.firing_by ? ` · 💥 ${esc(nameOf(it.data.firing_by))} is firing on it` : ''}</p>
       <div class="row" style="gap:6px;justify-content:flex-end">
+        ${canFire ? '<button class="btn primary" data-a="fire">🎯 Fire mission</button>' : ''}
         ${refresh ? `<button class="btn" data-a="refresh">${it.type === 'me' ? 'I\'m still here' : 'Still there'}</button>` : ''}
         ${canDel ? '<button class="btn danger" data-a="delete">Remove</button>' : ''}
         <button class="btn ghost" data-a="close">Close</button></div>`);
@@ -478,10 +579,60 @@ async function viewRoom(main, id, alive) {
         try {
           if (b.dataset.a === 'refresh') await api(`sitrooms/${id}/items/${it.id}`, { method: 'PATCH', body: { action: 'refresh' } });
           if (b.dataset.a === 'delete') await api(`sitrooms/${id}/items/${it.id}`, { method: 'DELETE' });
+          if (b.dataset.a === 'fire') await fireBox(it);
         } catch (x) { fail(x); }
       };
     });
   }
+  // Fire mission: distance, bearing and elevation from your gun (the Arty map's) to the mark, and tell the room.
+  async function fireBox(it) {
+    guns ||= await api('artillery').catch(() => []);
+    const saved = savedGun(map().id);
+    if (!saved.gun) {
+      const m = modal(`<h3 style="margin-top:0">🎯 Fire mission</h3>
+        <p>Set your gun position first: tap where your gun is on the map. It's the same position as on the Arty map, and only you see it.</p>
+        <div class="row" style="justify-content:flex-end;gap:6px"><button class="btn ghost" data-x>Cancel</button><button class="btn primary" data-set>Set my gun on the map</button></div>`);
+      m.el.querySelector('[data-x]').onclick = m.close;
+      m.el.querySelector('[data-set]').onclick = () => { m.close(); pendingFire = it.id; tool = 'gun'; applyTool(); };
+      return;
+    }
+    let weaponId = guns.some((g) => g.id === saved.weaponId) ? saved.weaponId : guns[0]?.id;
+    const what = it.type === 'enemy' ? `${it.data.count}× ${label(ENEMY, it.data.what)}` : MARKERS[it.type].label;
+    const m = modal(`<h3 style="margin-top:0">🎯 Fire mission — ${esc(what)}</h3>
+      ${guns.length ? `<label class="field"><span>Gun</span><select id="fmGun">${guns.map((g) => `<option value="${esc(g.id)}" ${g.id === weaponId ? 'selected' : ''}>${esc(g.label)}</option>`).join('')}</select></label>` : '<p class="muted small">No gun tables set up (Admin → Artillery).</p>'}
+      <div id="fmSol" class="arty-sol" style="margin:10px 0"></div>
+      <p class="muted small" id="fmWho"></p>
+      <div class="row" style="gap:6px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="btn" data-f="move">Move my gun</button>
+        <a class="btn" href="#/map?map=${encodeURIComponent(map().id)}&target=${it.data.at.x},${it.data.at.y}">Open in Arty map</a>
+        <button class="btn primary" data-f="fire"></button>
+        <button class="btn ghost" data-f="close">Close</button></div>`);
+    const draw = () => {
+      const cur = items.find((x) => x.id === it.id) || it;
+      const w = guns.find((g) => g.id === weaponId);
+      const sol = solution(saved.gun, cur.data.at, w);
+      m.el.querySelector('#fmSol').innerHTML = `<div><span>Elevation</span><b class="${sol.mil === null ? 'bad' : ''}">${sol.mil === null ? 'Out of range' : `${sol.mil} mil`}</b></div>
+        <div><span>Bearing</span><b>${sol.bearing.toFixed(1)}°</b><em>${sol.bearingMil} mil</em></div>
+        <div><span>Distance</span><b>${Math.round(sol.dist).toLocaleString('en-GB')} m</b></div>`;
+      const mineFiring = cur.data.firing_by === state.me.id;
+      m.el.querySelector('[data-f="fire"]').textContent = mineFiring ? 'Cease fire' : '💥 I\'m firing on it';
+      m.el.querySelector('[data-f="fire"]').hidden = !d.is_member;
+      m.el.querySelector('#fmWho').textContent = cur.data.firing_by ? `${nameOf(cur.data.firing_by)} is firing on it.` : 'Nobody is firing on it yet.';
+    };
+    draw();
+    m.el.querySelector('#fmGun')?.addEventListener('change', (e) => { weaponId = e.target.value; saveGun(map().id, saved.gun, weaponId); draw(); });
+    m.el.querySelector('[data-f="close"]').onclick = m.close;
+    m.el.querySelector('[data-f="move"]').onclick = () => { m.close(); pendingFire = it.id; tool = 'gun'; applyTool(); };
+    m.el.querySelector('[data-f="fire"]').onclick = async () => {
+      const cur = items.find((x) => x.id === it.id) || it;
+      try {
+        const out = await api(`sitrooms/${id}/items/${it.id}`, { method: 'PATCH', body: { action: cur.data.firing_by === state.me.id ? 'ceasefire' : 'firing' } });
+        upsert(out);
+        draw();
+      } catch (x) { fail(x); }
+    };
+  }
+
   const fadesIn = (iso) => {
     const s = Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 1000));
     return s < 60 ? `in ${s}s` : `in ${Math.round(s / 60)} min`;
@@ -501,6 +652,8 @@ async function viewRoom(main, id, alive) {
     d = nd;
     users = new Map(d.users.map((u) => [u.id, u]));
     items = d.items;
+    messages = d.messages || [];
+    renderChat();
     if (mapChanged) {
       lmap.remove();
       lmap = buildMap(L, 'srMap', map());
@@ -516,13 +669,27 @@ async function viewRoom(main, id, alive) {
   }
   onLive('sit', async (ev) => {
     if (ev.room !== id || !alive()) return;
-    if (ev.type === 'item') upsert(ev.item);
+    if (ev.type === 'item') {
+      const isNew = !items.some((x) => x.id === ev.item.id);
+      if (isNew && ev.item.user_id !== state.me.id && (ev.item.type === 'need' || ev.item.type === 'enemy')) alertBeep(ev.item.type);
+      upsert(ev.item);
+    } else if (ev.type === 'msg') {
+      if (!messages.some((x) => x.id === ev.message.id)) {
+        messages.push(ev.message);
+        if (messages.length > 200) messages.shift();
+        if (ev.message.user_id !== state.me.id) alertBeep('msg');
+        if (ev.message.user_id && !users.has(ev.message.user_id)) refresh().catch(() => {});
+        renderChat();
+      }
+    }
     else if (ev.type === 'item:removed') { items = items.filter((x) => x.id !== ev.id); render(); }
     else if (ev.type === 'cleared') { items = []; render(); toast('Board cleared', `By ${ev.by}.`); }
     else if (ev.type === 'closed') { toast('Room closed', `This room was ${ev.why}.`); location.hash = '#/sitrooms'; }
     else if (ev.type === 'removed' && ev.user_id === state.me.id) { toast('Removed', 'You were removed from the room.'); location.hash = '#/sitrooms'; }
     else {
+      const asksBefore = d.requests.filter((r) => r.kind === 'ask').length;
       try { await refresh(); } catch (x) { if (x.status === 403 || x.status === 404) location.hash = '#/sitrooms'; }
+      if (ev.type === 'requests' && d.can_manage && d.requests.filter((r) => r.kind === 'ask').length > asksBefore) alertBeep('ask');
       if (ev.type === 'room') toast('Map changed', `${ev.by} switched the map; the board was cleared.`);
     }
   });
@@ -543,4 +710,44 @@ async function viewRoom(main, id, alive) {
 
   render();
   renderPeople();
+  renderChat();
+}
+
+// ---------- Admins: a saved copy of a board ----------
+async function viewArchive(main, id, alive) {
+  let a;
+  try {
+    a = await api(`sitrooms-archive/${id}`);
+  } catch (x) {
+    main.innerHTML = `<div class="panel empty"><p>${esc(x.message)}</p><a class="btn" href="#/sitrooms">Situation rooms</a></div>`;
+    return;
+  }
+  const maps = await loadMaps();
+  await loadLeaflet();
+  if (!alive()) return;
+  const L = window.L;
+  const users = new Map(a.users.map((u) => [u.id, u]));
+  const nameOf = (uid) => users.get(uid)?.name || 'Someone';
+  const map = maps.find((m) => m.id === a.map_id) || maps[0];
+  main.innerHTML = `
+    <div style="margin-bottom:10px"><a href="#/sitrooms" class="small">← Situation rooms</a>
+      <h1 style="margin:2px 0 0"><span class="sit-fac-dot" style="background:${esc(a.faction.color)}"></span> ${esc(a.name)} <span class="muted small">${esc(a.faction.name)} · ${esc(map.name)} · saved ${esc(timeAgo(a.created_at))}</span></h1>
+      <p class="muted small" style="margin:4px 0 0">${esc(a.reason)}. In the room: ${esc(a.members.map((m) => m.name).join(', ') || '—')}. Read only.</p></div>
+    <div class="sit-wrap">
+      <div class="panel sit-map-panel"><div id="saMap" class="arty-map style-tactical"></div></div>
+      <div class="sit-side">
+        <div class="panel"><div class="panel-title" style="margin-bottom:8px">Marks <span class="sub">${a.items.length}</span></div>
+          <div class="small">${a.items.filter((i) => i.kind === 'marker').map((i) => `<div>${MARKERS[i.type]?.emoji || ''} ${esc(MARKERS[i.type]?.label || i.type)} — ${esc(nameOf(i.user_id))}${i.data?.note ? `: ${esc(i.data.note)}` : ''}</div>`).join('') || '<span class="muted">No marks.</span>'}</div></div>
+        <div class="panel"><div class="panel-title" style="margin-bottom:8px">💬 Room chat</div>
+          <div class="sit-msgs">${a.messages.map((m) => `<div class="sit-msg"><b>${esc(nameOf(m.user_id))}</b> <span class="muted small">${fmtTime(m.created_at)}</span><div>${esc(m.body)}</div></div>`).join('') || '<p class="muted small" style="margin:0">No messages.</p>'}</div></div>
+      </div>
+    </div>`;
+  const lmap = buildMap(L, 'saMap', map);
+  const layer = L.layerGroup().addTo(lmap);
+  for (const it of a.items) {
+    try {
+      (it.kind === 'marker' ? L.marker(toLL(it.data.at), { icon: markerIcon(L, it, nameOf), interactive: false }) : drawingLayer(L, it)).addTo(layer);
+    } catch { /* skip a damaged mark */ }
+  }
+  setTimeout(() => lmap.invalidateSize(), 200);
 }

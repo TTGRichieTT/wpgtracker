@@ -754,3 +754,26 @@ export const sitItems = pgTable('sit_items', {
   updated_at: now(),
   expires_at: timestamp({ withTimezone: true }),
 }, (t) => [index('sit_items_room_idx').on(t.room_id)]);
+
+// Quick text messages inside a situation room (deleted when the room closes).
+export const sitMessages = pgTable('sit_messages', {
+  id: serial().primaryKey(),
+  room_id: integer().notNull().references(() => sitRooms.id, { onDelete: 'cascade' }),
+  user_id: integer().references(() => users.id, { onDelete: 'set null' }),
+  body: text().notNull(),
+  created_at: now(),
+}, (t) => [index('sit_messages_room_idx').on(t.room_id, t.id.desc())]);
+
+// A copy of a room's board each time it's cleared (new match, map change, room closed), for admins. Kept 14 days.
+export const sitArchives = pgTable('sit_archives', {
+  id: serial().primaryKey(),
+  room_id: integer(),
+  faction: text().notNull().default(''),
+  name: text().notNull().default(''),
+  map_id: text().notNull().default(''),
+  reason: text().notNull().default(''),
+  items: jsonb().notNull().default([]),
+  members: jsonb().notNull().default([]),
+  messages: jsonb().notNull().default([]),
+  created_at: now(),
+});

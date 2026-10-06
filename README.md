@@ -142,6 +142,14 @@ PMC guests can't see or use them.
 - Positions fade after 2 minutes and enemy spots after 3–5 minutes unless refreshed. The creator (or an admin) can
   change the map or press **New match / clear board**, both of which clear the board. A room nobody uses for
   30 minutes closes by itself; if the creator leaves, the longest-serving member takes over.
+- **Fire mission:** tap an enemy, danger or objective mark → **Fire mission** shows elevation, bearing and distance
+  from your gun (set with **🔫 My gun**; it's the same saved position as the Arty map, only you see it). **I'm firing on
+  it** shows "💥 Name firing" on the mark for everyone; **Open in Arty map** adds it as a target there.
+- **Room chat:** a small text box for quick messages (kept until the room closes).
+- **Alerts:** a beep (and a buzz on phones) for new needs, enemy spots, messages and, for the room's creator, join
+  requests. Each member can switch them off with **🔔 Alerts on / off**.
+- **Last matches (admins):** each time a board is cleared (new match, map change, room closed) a copy is kept for
+  14 days; admins see them at the bottom of the Situation rooms page and can open each on its map (read only).
 - New maps: rooms use the same map files as the Arty map (`public/maps`).
 
 ## 5. How stats and XP work
