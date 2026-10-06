@@ -136,7 +136,8 @@ on the **Streams** tab with the stream's player, the platform's own chat box, an
 - As the developer asked, every request sends the app's User-Agent and the stats always show
   "Data provided by wardogs.tools" with a link (profiles, leaderboards, progression, Discord).
 - Requests are gentle: one at a time, 10 seconds apart, and paused when wardogs.tools says so. Found players are
-  re-read every six hours. "Not found" is asked again after 30 minutes, or straight away when the member presses
+  re-read every six hours, and 30 minutes after the app sees them stop playing Wardogs on Steam (wardogs.tools can only
+  read an account once the game is closed), so stats update soon after each session with nothing for members to press. "Not found" is asked again after 30 minutes, or straight away when the member presses
   **Check now** (members who've just linked their account there don't have to wait).
 - Shown: Wardog level, world rank (position out of everyone, top %, change), cash, gold, account worth and its
   breakdown, unlock count, each class's level and XP, XP and cash per minute. wardogs.tools doesn't give total

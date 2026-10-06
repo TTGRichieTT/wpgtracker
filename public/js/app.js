@@ -665,7 +665,7 @@ function trackerCardHtml() {
         <div class="panel-title" style="margin-bottom:8px">${icon('target')} Show your <span class="sub">Wardogs stats</span></div>
         <p style="margin:0 0 10px">Your Wardog level, cash, gold, account worth, class levels and world rank come from <b>wardogs.tools</b>. The app finds you by your Steam account. One time only:</p>
         <p style="margin:0 0 6px"><b>1.</b> Open wardogs.tools, sign in and <b>link your Wardogs account</b>.</p>
-        <p style="margin:0 0 10px"><b>2.</b> Come back and press <b>Check now</b>. After that your stats update by themselves. Still not found? Add your in-game name with its 4 numbers (Name#1234) in <a href="#/profile/edit">Edit profile</a>.</p>
+        <p style="margin:0 0 10px"><b>2.</b> Come back and press <b>Check now</b>. After that your stats update by themselves, about 30 minutes after you close Wardogs. Still not found? Add your in-game name with its 4 numbers (Name#1234) in <a href="#/profile/edit">Edit profile</a>.</p>
         ${why ? `<p class="small" style="margin:0 0 10px;color:#f5a524">${why}</p>` : ''}
         <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
         <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open wardogs.tools</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
