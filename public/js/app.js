@@ -1446,6 +1446,14 @@ async function viewServers(main, _r, alive) {
   const { servers, stale } = await api('servers');
   if (!alive()) return;
   const adminTools = () => import('./admin.js');
+  // Controls a server's version of Wardogs doesn't have (from its capabilities list) are hidden.
+  const unsupported = new Map();
+  const hideUnsupported = (sid) => {
+    const off = unsupported.get(String(sid)) || [];
+    main.querySelectorAll(`[data-act][data-sid="${sid}"]`).forEach((b) => { b.hidden = off.includes(b.dataset.act); });
+    const bc = main.querySelector(`[data-broadcast="${sid}"]`);
+    if (bc) bc.hidden = off.includes('broadcast');
+  };
   const addServer = async () => {
     try { await (await adminTools()).addGameServer(() => route()); } catch (x) { fail(x); }
   };
@@ -1500,6 +1508,7 @@ async function viewServers(main, _r, alive) {
       <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px" class="stack">
         <div class="row between"><h4 class="row" style="margin:0">${icon('shield', 'width="18" height="18" style="color:var(--gold)"')} Server controls</h4>
           ${admin ? `<button class="btn small" data-settings="${s.id}">${icon('settings')} Server settings</button>` : ''}</div>
+        ${admin ? `<div class="small muted" data-tools="${s.id}">Checking the server…</div>` : ''}
         <form class="row" data-broadcast="${s.id}"><input type="text" name="message" class="grow" maxlength="300" placeholder="Message everyone on the server" style="min-width:180px"><button class="btn">${icon('megaphone')} Broadcast</button></form>
         ${admin ? `
         <div class="row">
@@ -1509,6 +1518,11 @@ async function viewServers(main, _r, alive) {
           <button class="btn" data-act="next" data-sid="${s.id}">Force next map</button>
           <button class="btn" data-act="lighting" data-sid="${s.id}">Time of day</button>
           <button class="btn ghost" data-act="unban" data-sid="${s.id}">Unban a Steam ID</button>
+        </div>
+        <div class="row">
+          <button class="btn" data-tool="reserved" data-sid="${s.id}">${icon('star')} Reserved slots</button>
+          <button class="btn" data-tool="log" data-sid="${s.id}">${icon('chart')} Server action log</button>
+          <button class="btn" data-tool="banner" data-sid="${s.id}">${icon('server')} Server banner</button>
         </div>` : ''}
       </div>`;
   };
@@ -1542,6 +1556,7 @@ async function viewServers(main, _r, alive) {
           </div>` : ''}
           ${p.steamId && !admin ? `<button class="btn small ghost" data-report="${esc(p.steamId)}" data-name="${esc(p.name)}" title="Report a suspected cheater to staff">Report</button>` : ''}
         </div>`).join('') : '<p class="muted">Nobody on right now.</p>';
+      hideUnsupported(s.id);
     } catch (e) {
       box.innerHTML = `<p class="muted small">Couldn't load players: ${esc(e.message)}</p>`;
     }
@@ -1570,12 +1585,39 @@ async function viewServers(main, _r, alive) {
             <div class="xpbar"><div style="width:${Math.min(100, (f.score / Math.max(1, m.scoreCap)) * 100).toFixed(1)}%;background:var(--fc);box-shadow:0 0 10px var(--fc)"></div></div>
           </div>`).join('')}</div>` : ''}
         ${m.next ? `<p class="muted small row" style="margin:10px 0 0">Next map: <b style="color:var(--text)">${esc(m.next.map)}</b>${m.next.mode ? ` · ${esc(m.next.mode)}` : ''}${m.next.lighting ? ` · ${esc(m.next.lighting)}` : ''}${m.next.zone ? ` · ${esc(m.next.zone)}` : ''}${m.queued ? ' <span class="accent">(queued)</span>' : ''}
-          ${m.queued && admin ? `<button class="btn small ghost" data-act="unqueue" data-sid="${s.id}">Cancel queue</button>` : ''}</p>` : ''}`;
+          ${m.queued && admin ? `<button class="btn small ghost" data-act="unqueue" data-sid="${s.id}">Cancel queue</button>` : ''}</p>` : ''}
+        ${m.last ? `<p class="muted small" style="margin:6px 0 0">Last match: ${m.last.finished
+          ? `<b style="color:var(--text)">${esc(m.last.winner || 'a team')}</b> won (${fmtNum(m.last.best)} of ${fmtNum(m.last.cap)})`
+          : 'ended early (stopped, restarted or skipped by staff)'}${m.last.seconds ? ` · ${Math.round(m.last.seconds / 60)} min` : ''} · ${esc(timeAgo(m.last.at))}</p>` : ''}`;
     } catch (e) {
       box.innerHTML = staff ? `<p class="muted small">Live match unavailable: ${esc(e.message)}</p>` : '';
     }
   }
   servers.filter((s) => s.has_rcon).forEach(loadLive);
+
+  // Admins: server health, version and which controls this server's build has (others are hidden).
+  async function loadTools(s) {
+    const box = main.querySelector(`[data-tools="${s.id}"]`);
+    if (!box) return;
+    try {
+      const t = await api(`admin/servers/${s.id}/tools`);
+      if (!alive()) return;
+      unsupported.set(String(s.id), t.unsupported || []);
+      hideUnsupported(s.id);
+      const h = t.health;
+      const up = h?.uptime ? `up ${h.uptime >= 86400 ? `${Math.floor(h.uptime / 86400)}d ` : ''}${Math.floor((h.uptime % 86400) / 3600)}h` : '';
+      const busy = h?.ok && (h.queue > 0 || h.rejected > 0);
+      const dot = !h ? '' : !h.ok ? 'var(--red)' : busy ? '#f5a524' : 'var(--green)';
+      box.innerHTML = `${dot ? `<span style="color:${dot}">●</span> ` : ''}${!h ? 'RCON connected (this server version has no health check)'
+        : !h.ok ? `RCON not answering: ${esc(h.error)}`
+          : `RCON ${busy ? `busy (${fmtNum(h.queue)} waiting${h.rejected ? `, ${fmtNum(h.rejected)} turned away` : ''})` : 'healthy'}${up ? ` · ${up}` : ''} · ${fmtNum(h.connections)} connection${h.connections === 1 ? '' : 's'}`}
+        ${t.build ? ` · build ${esc(t.build.replace(/^\+\+Wardogs\+Live-/, ''))}` : ''}${t.server_id ? ` · host ID ${esc(t.server_id)}` : ''}
+        ${t.unsupported?.length ? ` · <span title="${esc(t.unsupported.join(', '))}">${t.unsupported.length} control${t.unsupported.length === 1 ? '' : 's'} hidden (not in this server version)</span>` : ''}`;
+    } catch (e) {
+      box.innerHTML = `<span style="color:var(--red)">●</span> ${esc(e.message)}`;
+    }
+  }
+  if (admin) servers.filter((s) => s.has_rcon).forEach(loadTools);
 
   async function act(sid, body, done) {
     try {
@@ -1587,6 +1629,12 @@ async function viewServers(main, _r, alive) {
   }
 
   main.onclick = async (e) => {
+    const toolBtn = e.target.closest('[data-tool]');
+    if (toolBtn) {
+      const m = await import('./servertools.js');
+      m[toolBtn.dataset.tool](toolBtn.dataset.sid).catch(fail);
+      return;
+    }
     const copy = e.target.closest('[data-copy]');
     if (copy) {
       try { await navigator.clipboard.writeText(copy.dataset.copy); toast('Copied', 'Server ID copied.'); } catch { toast('Copy failed', 'Select the ID and copy it by hand.', { error: true }); }

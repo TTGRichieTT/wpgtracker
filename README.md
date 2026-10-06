@@ -87,6 +87,19 @@ Live data comes from [Wardog Servers](https://wardogservers.com) (free, no key).
   - **Admins:** also ban, unban, restart match, end match, change map.
 - Every server action is saved in Admin → Audit log.
 - The RCON password is never shown again after saving. Leave the box empty to keep it.
+- **Server tools (admins, under Server controls):**
+  - A status line: RCON healthy / busy / not answering, uptime, connections, the server's Wardogs build and host ID.
+    Controls the server's version doesn't have are hidden (and refused).
+  - **Reserved slots:** players with one can always join, even when the server is full. Pick a member to give one;
+    nobody gets one automatically. Shows how many of the server's reserved slots are used.
+  - **Server action log:** what admins did on the game server (kicks, bans, config changes), from any tool.
+  - **Server banner:** the picture shown for the server (1024×256 PNG/JPEG; its site must be on the server's allow-list).
+- **Matches:** a new match is spotted when the server's match clock starts again (or the map/mode changes). A match
+  "finished" when a team reached the score target; one staff ended, restarted or skipped doesn't give leaving-early
+  penalties, and a match under 5 minutes doesn't count for giveaways. The Servers page shows how the last match ended.
+- RCON reference used for these: the unofficial [wardogs.tech RCON reference](https://wardogs.tech/rcon-reference).
+  The RCON port is plain http, so the password travels unencrypted: ask the host to keep it behind a secure proxy or
+  limit which addresses can reach it.
 
 ## 4b. Streams tab
 

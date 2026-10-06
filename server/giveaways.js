@@ -372,11 +372,14 @@ async function settleDrops(server, stayed, trusted) {
 
 // Called by the server tracker when a match on a WPG XP server ends. stayed: Steam ID → seconds played in it, for
 // everyone still on at the end. trusted: false if the app lost sight of the server or half the players dropped at once.
-export async function matchEnded(serverId, stayed, { trusted }) {
-  await settleDrops(serverId, stayed, trusted);
+// real: false for a very short match (restarted or skipped straight away), which doesn't count.
+export async function matchEnded(serverId, stayed, { trusted, real = true }) {
+  // A very short match (staff restarted or skipped it straight away) decides nothing: drops wait for the next one and
+  // giveaways don't count it. Giveaways waiting to start still start with the match beginning now.
+  if (real) await settleDrops(serverId, stayed, trusted);
   // Giveaways count their matches; after the last one, the draw is among whoever qualifies and is on now.
   // A match that can't be trusted (crash, app restart) doesn't count: the giveaway runs one more.
-  if (trusted) {
+  if (trusted && real) {
     for (const g of await q("SELECT * FROM giveaways WHERE status='drawing'")) await drawScheduled(g, null, stayed);
     for (const g of await q("SELECT * FROM giveaways WHERE kind='scheduled' AND status='open' AND match_server=$1", [serverId])) {
       const done = await one("UPDATE giveaways SET matches_done = matches_done + 1 WHERE id=$1 AND status='open' AND matches_done=$2 RETURNING *", [g.id, g.matches_done]);

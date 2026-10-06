@@ -1,8 +1,11 @@
 // Server leaderboard tracker. Every 30 seconds it reads each RCON-enabled game server and adds up
 // kills, deaths, matches, wins, losses and playtime for every player (members and guests).
 //  - RCON kill/death counters are per match, so we add the change since the last check.
-//  - A new match is spotted when the map/mode changes or the team scores drop back towards zero;
-//    players who were in the finished match get a win (their team had the top score) or a loss.
+//  - A new match is spotted when the server's match clock starts again, the map/mode changes or the team
+//    scores drop back towards zero; players who were in the finished match get a win (their team had the top
+//    score) or a loss.
+//  - A match "finished" when a team reached (nearly) the score target; otherwise staff ended, restarted or
+//    skipped it. Leaving early only counts in a finished match, and very short matches don't count for giveaways.
 //  - Members' totals also go to their career page and WPG XP.
 //  - On servers ticked "Earns WPG XP", each finished match also gives (or takes) WPG XP (wpgxp.js).
 import { q, one } from './db.js';
@@ -16,6 +19,8 @@ import { matchEnded } from './giveaways.js';
 const POLL_MS = 30 * 1000;
 const RECENT_MS = 3 * 60 * 1000; // must have been seen this recently at match end to get a win/loss
 const HEALTHY_GAP_MS = 2 * 60 * 1000; // a longer gap between checks (app restart, host outage) = can't tell who left
+const FINISH_SHARE = 0.8; // top score at the last check at least this share of the target = the match was won, not stopped
+const REAL_MATCH_SECS = 5 * 60; // shorter than this (a quick restart or skip) doesn't count as a match for giveaways
 const MEMBER_PUSH_MS = 5 * 60 * 1000;
 
 const totalScore = (st) => (st?.factionScores || []).reduce((n, f) => n + (Number(f.score) || 0), 0);
@@ -29,6 +34,10 @@ async function finishMatch(server, state) {
   const best = Math.max(0, ...scores.map((f) => Number(f.score) || 0));
   const winners = scores.filter((f) => (Number(f.score) || 0) === best);
   const winner = best > 0 && winners.length === 1 ? winners[0].name : null;
+  // How long it ran (the server's match clock at the last check, or our own count) and whether a team won it.
+  const seconds = Number.isFinite(state.ms) ? state.ms : Math.round(((state.at || Date.now()) - (state.started || state.at || Date.now())) / 1000);
+  const finished = best > 0 && best >= (state.cap || 100) * FINISH_SHARE;
+  state.result = { at: Date.now(), seconds, finished, winner, best, cap: state.cap || 100 };
   const played = [];
   for (const [sid, p] of Object.entries(state.players || {})) {
     const stayed = p.faction && Date.now() - (p.seen || 0) <= RECENT_MS;
@@ -49,13 +58,13 @@ async function finishMatch(server, state) {
   }
   if (server.wpg_xp) {
     const healthy = (state.maxGap || 0) <= HEALTHY_GAP_MS && Date.now() - (state.at || 0) <= HEALTHY_GAP_MS;
-    await awardMatch(serverId, played, { winner: !!winner, scored: best > 0, healthy })
+    await awardMatch(serverId, played, { winner: !!winner, scored: best > 0, healthy, finished })
       .catch((e) => console.warn('[tracker] WPG XP', e.message));
     // Giveaway draws waiting for this match to end: everyone still on at the end, with the seconds they played in it.
     // Not trusted if the app lost sight of the server, or half the players dropped out at once (a crash).
     const stayed = new Map(Object.entries(state.players || {}).filter(([, p]) => p.faction && Date.now() - (p.seen || 0) <= RECENT_MS).map(([sid, p]) => [sid, p.secs || 0]));
     const crash = played.length > 0 && played.filter((p) => !p.stayed).length / played.length >= 0.5;
-    await matchEnded(serverId, stayed, { trusted: healthy && !crash })
+    await matchEnded(serverId, stayed, { trusted: healthy && !crash, real: seconds >= REAL_MATCH_SECS, finished, seconds })
       .catch((e) => console.warn('[tracker] giveaways', e.message));
   }
 }
@@ -80,7 +89,10 @@ export async function pollServer(server) {
 
   const now = Date.now();
   const before = state.players || {}; // who was on at the last check (for cheat watch's join alerts)
-  const newMatch = state.key !== matchKey(status) || totalScore(status) + 5 < (state.total || 0);
+  // The match clock going back (by more than a minute) = a new match, even on the same map with the same mode.
+  const clock = Number(status?.matchSeconds);
+  const clockReset = Number.isFinite(clock) && Number.isFinite(state.ms) && clock + 60 < state.ms;
+  const newMatch = state.key !== matchKey(status) || totalScore(status) + 5 < (state.total || 0) || clockReset;
   // A queued map has started (or it's been hours): put the server's normal rotation back.
   const queued = await queuedMap(server.id);
   if (queued && ((newMatch && status.map === queued.map && now - queued.at > 60 * 1000) || now - queued.at > 6 * 60 * 60 * 1000)) {
@@ -88,7 +100,7 @@ export async function pollServer(server) {
   }
   if (newMatch) {
     await finishMatch(server, state);
-    state = { key: matchKey(status), total: 0, scores: [], players: {}, at: now, maxGap: 0 };
+    state = { key: matchKey(status), total: 0, scores: [], players: {}, at: now, maxGap: 0, started: now, last: state.result || state.last };
   }
   const rawGap = Math.max(0, now - (state.at || now));
   state.maxGap = Math.max(state.maxGap || 0, rawGap); // longest time this match went unwatched
@@ -132,6 +144,9 @@ export async function pollServer(server) {
   await watchPoll(server, players, { players: before }, state).catch((e) => console.warn('[tracker] cheat watch', e.message));
   state.scores = status.factionScores || [];
   state.total = totalScore(status);
+  if (Number.isFinite(clock)) state.ms = clock;
+  if (Number(status?.scoreCap) > 0) state.cap = Number(status.scoreCap);
+  if (!state.started) state.started = now;
   state.at = now;
   await q(
     `INSERT INTO server_track_state (server_id, state, updated_at) VALUES ($1,$2,now())

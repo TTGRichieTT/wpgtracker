@@ -195,7 +195,7 @@ export async function awardMatch(serverId, players, match) {
     if (r.penalties) {
       if (enough && p.won === false) add('loss', -r.loss);
       if (p.secs >= r.kdMinutes * 60 && p.deaths > p.kills) add('kd', -Math.min(r.kdCap, (p.deaths - p.kills) * r.kdEach));
-      if (enough && !p.stayed && match.winner && match.healthy && !massExit && p.secs >= r.leaveMinutes * 60) add('left', -r.leave);
+      if (enough && !p.stayed && match.winner && match.healthy && match.finished !== false && !massExit && p.secs >= r.leaveMinutes * 60) add('left', -r.leave);
     }
     const old = before.get(p.steam_id);
     const was = old?.xp || 0;

@@ -182,6 +182,8 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
 .list > .item { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid #13263d; }
 .list > .item:last-child { border-bottom: 0; }
 a.item { color: inherit; text-decoration: none; }
+button.item { background: transparent; border: 0; border-bottom: 1px solid #13263d; color: inherit; font: inherit; cursor: pointer; border-radius: 0; }
+button.item:hover { background: rgba(41,182,246,.08); }
 a.item:hover { background: rgba(41,182,246,.05); }
 
 /* ---------- Stat tiles (career card style) ---------- */

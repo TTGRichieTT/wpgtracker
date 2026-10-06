@@ -178,6 +178,13 @@ servers.get('/servers/:id/live', member, async (req, res) => {
   res.json(await liveMatch(await getServer(req.params.id)));
 });
 
+// How the last match on this server ended (from the server tracker): won by a team, or stopped early by staff.
+async function lastMatch(serverId) {
+  const r = (await one('SELECT state FROM server_track_state WHERE server_id=$1', [serverId]))?.state?.last;
+  if (!r?.at) return null;
+  return { at: new Date(r.at).toISOString(), seconds: int(r.seconds), finished: !!r.finished, winner: str(r.winner, 40), best: int(r.best), cap: int(r.cap) };
+}
+
 // The match in progress, straight from the server (RCON). Cached 15 s. Also used by the Discord bot.
 export async function liveMatch(s) {
   const hit = liveCacheRcon.get(s.id);
@@ -208,6 +215,7 @@ export async function liveMatch(s) {
       color: /^#?[0-9a-f]{6}$/i.test(String(f?.colorHex || '')) ? `#${String(f.colorHex).replace('#', '')}` : '',
     })),
     queued: !!(await queuedMap(s.id)),
+    last: await lastMatch(s.id),
     next: next ? { map: mapName(next.map), mode: modeLabel((next.experiences || []).find((e) => !isModifier(e))) || '', lighting: spaceCamel(next.lighting), zone: zoneLabel(next.zoneAlternator) } : null,
   };
   liveCacheRcon.set(s.id, { at: Date.now(), data });
@@ -426,6 +434,7 @@ servers.post('/admin/servers/:id/action', role('admin'), async (req, res) => {
   const action = ACTIONS[b.action];
   if (!action) throw new HttpError(400, 'Unknown action.');
   if (!roleAtLeast(req.user.role, action.min)) throw new HttpError(403, 'Only admins can do that.');
+  if ((await unsupportedActions(s)).includes(b.action)) throw new HttpError(400, "This server's version of Wardogs doesn't support that.");
   const result = await action.run(s, b);
   playersCache.delete(s.id);
   liveCacheRcon.delete(s.id);
@@ -433,6 +442,194 @@ servers.post('/admin/servers/:id/action', role('admin'), async (req, res) => {
     steamId: b.steamId, reason: b.reason, message: b.message, map: b.map, faction: b.faction, lighting: b.lighting,
   });
   res.json({ ok: true, result });
+});
+
+// ---------- Server tools: version, health, action log, reserved slots, banner ----------
+// What a server's build supports (GET /v1/capabilities), cached 10 minutes. null = an older build that can't
+// say (it then supports everything the app uses, including the reserved-slot and sponsor calls removed later).
+const capsCache = new Map();
+const routeKey = (r) => String(r || '').trim().replace(/\s+/, ' ').replace(' /v1/', ' /').replace(/\{[^}]*\}/g, '{}');
+export async function capabilities(s) {
+  const hit = capsCache.get(s.id);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.data;
+  const c = await rcon(s, 'GET', '/capabilities').catch(() => null);
+  const data = c && Array.isArray(c.routes)
+    ? { routes: new Set(c.routes.map(routeKey)), build: str(c.build, 80), apiVersion: str(c.apiVersion, 10), writable: c.config?.writable !== false }
+    : null;
+  capsCache.set(s.id, { at: Date.now(), data });
+  return data;
+}
+const supports = (caps, route) => !caps || caps.routes.has(routeKey(route));
+// The server call behind each control, so controls a server's build doesn't have can be hidden and refused.
+const ACTION_ROUTES = {
+  broadcast: 'POST /broadcast', kick: 'POST /players/{}/kick', kill: 'POST /players/{}/kill', ban: 'POST /bans', unban: 'DELETE /bans/{}',
+  whisper: 'POST /players/{}/message', faction: 'PATCH /players/{}', restart: 'POST /match/restart', end: 'POST /match/end',
+  next: 'POST /match/end', queue: 'PUT /config', unqueue: 'PUT /config', lighting: 'PUT /world/lighting', map: 'POST /match/map',
+};
+async function unsupportedActions(s) {
+  const caps = await capabilities(s);
+  return Object.keys(ACTION_ROUTES).filter((a) => !supports(caps, ACTION_ROUTES[a]));
+}
+
+// The session section of the config: reserved Steam IDs (one ".DefaultReservedPlayerIds" line each), the number of
+// reserved slots, and the banner picture. Only these lines are ever changed; the rest of the document is kept as is.
+const SESSION = '[/Script/WDGame.WDGameSession]';
+const RESERVED_LINE = /^[.+]DefaultReservedPlayerIds\s*=\s*"?(\d{17})"?\s*$/;
+function session(text) {
+  const eol = String(text || '').includes('\r\n') ? '\r\n' : '\n';
+  const lines = String(text || '').split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim() === SESSION);
+  let end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && l.trim().startsWith('['));
+  if (start >= 0 && end < 0) end = lines.length;
+  const reserved = [];
+  let max = null;
+  let image = '';
+  for (let i = start + 1; start >= 0 && i < end; i++) {
+    const t = lines[i].trim();
+    const m = RESERVED_LINE.exec(t);
+    if (m) reserved.push({ i, id: m[1] });
+    else if (/^MaxReservedSlots\s*=/.test(t)) max = int(t.split('=')[1], null);
+    else if (/^ServerImageURL\s*=/.test(t)) image = t.slice(t.indexOf('=') + 1).trim().replace(/^"|"$/g, '');
+  }
+  return { eol, lines, start, end, reserved, max, image };
+}
+// Puts a line into the session section (making the section if the document has none): after `afterIndex`, or at
+// the end of the section (before any blank lines that close it).
+function insertInSession(c, line, afterIndex = null) {
+  const lines = [...c.lines];
+  if (c.start < 0) {
+    while (lines.length && lines[lines.length - 1].trim() === '') lines.pop();
+    lines.push('', SESSION, line, '');
+    return lines.join(c.eol);
+  }
+  let at = afterIndex !== null ? afterIndex + 1 : c.end;
+  if (afterIndex === null) while (at - 1 > c.start && lines[at - 1].trim() === '') at--;
+  lines.splice(at, 0, line);
+  return lines.join(c.eol);
+}
+function withReserved(text, steamId) {
+  const c = session(text);
+  if (c.reserved.some((r) => r.id === steamId)) return null;
+  const clear = c.start < 0 ? -1 : c.lines.findIndex((l, i) => i > c.start && i < c.end && /^!DefaultReservedPlayerIds\s*=\s*ClearArray/i.test(l.trim()));
+  const after = c.reserved.length ? c.reserved[c.reserved.length - 1].i : clear >= 0 ? clear : null;
+  return insertInSession(c, `.DefaultReservedPlayerIds="${steamId}"`, after);
+}
+function withoutReserved(text, steamId) {
+  const c = session(text);
+  const drop = new Set(c.reserved.filter((r) => r.id === steamId).map((r) => r.i));
+  if (!drop.size) return null;
+  return c.lines.filter((_, i) => !drop.has(i)).join(c.eol);
+}
+function withBanner(text, url) {
+  const c = session(text);
+  const at = c.start < 0 ? -1 : c.lines.findIndex((l, i) => i > c.start && i < c.end && /^ServerImageURL\s*=/.test(l.trim()));
+  if (at >= 0) {
+    const lines = [...c.lines];
+    lines[at] = `ServerImageURL=${url}`;
+    return lines.join(c.eol);
+  }
+  return insertInSession(c, `ServerImageURL=${url}`);
+}
+async function editConfig(s, change) {
+  const cfg = await rcon(s, 'GET', '/config');
+  if (!cfg?.writable) throw new HttpError(400, "This server's config can't be changed over RCON.");
+  const text = change(String(cfg.text || ''));
+  if (text === null) return false;
+  await saveConfig(s, text, cfg.revision);
+  return true;
+}
+
+// The reserved Steam IDs: from the server's own list, or its config if that call isn't there.
+async function reservedIds(s) {
+  const r = await rcon(s, 'GET', '/reserved-slots').catch(() => null);
+  if (Array.isArray(r?.reservedSlots)) return r.reservedSlots.map(String).filter((x) => /^\d{17}$/.test(x));
+  const cfg = await rcon(s, 'GET', '/config');
+  return session(cfg?.text).reserved.map((x) => x.id);
+}
+async function reservedMax(s) {
+  const cfg = await rcon(s, 'GET', '/config').catch(() => null);
+  const m = session(cfg?.text).max;
+  return m === null ? 20 : m; // the game's default
+}
+
+// Version, health, host server id, banner and which controls this server's build has. One call for the Servers page.
+servers.get('/admin/servers/:id/tools', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const [health, caps, sid, sponsor] = await Promise.all([
+    rcon(s, 'GET', '/health').catch((e) => ({ error: e.message })),
+    capabilities(s),
+    rcon(s, 'GET', '/server-id').catch(() => null),
+    rcon(s, 'GET', '/sponsor').catch(() => null),
+  ]);
+  res.json({
+    health: health?.error ? { ok: false, error: health.error } : health ? {
+      ok: true, status: str(health.status, 30), uptime: Number(health.uptimeSeconds) || 0, connections: Number(health.connections?.active) || 0,
+      queue: Number(health.gameThreadQueue?.depth) || 0, rejected: Number(health.gameThreadQueue?.rejectedTotal) || 0,
+    } : null,
+    build: caps?.build || '', api: caps?.apiVersion || '', known: !!caps,
+    unsupported: await unsupportedActions(s),
+    server_id: str(sid?.serverId, 120),
+    banner: safeImage(sponsor?.imageUrl),
+  });
+});
+
+// The server's own log of admin actions (from any tool, not just this app).
+servers.get('/admin/servers/:id/audit', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const r = await rcon(s, 'GET', `/audit?limit=${Math.max(1, Math.min(500, int(req.query.limit, 200)))}`);
+  res.json((Array.isArray(r?.entries) ? r.entries : []).map((e) => ({
+    at: str(e.timestampUtc, 40), peer: str(e.peer, 80), event: str(e.event, 80), detail: str(e.detail, 500),
+  })));
+});
+
+// Reserved slots: given by hand to members chosen here (never automatic).
+servers.get('/admin/servers/:id/reserved', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const [ids, max] = await Promise.all([reservedIds(s), reservedMax(s)]);
+  const users = ids.length ? await usersWithRanks(await q('SELECT * FROM users WHERE steam_id = ANY($1)', [ids])) : [];
+  const byId = new Map(users.map((u) => [u.steam_id, u]));
+  res.json({ max, list: ids.map((id) => ({ steamId: id, user: byId.get(id) || null })) });
+});
+
+servers.post('/admin/servers/:id/reserved', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const u = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [int(req.body?.userId)]);
+  if (!u || !/^\d{17}$/.test(u.steam_id)) throw new HttpError(400, 'Pick a member with a Steam account.');
+  const [ids, max] = await Promise.all([reservedIds(s), reservedMax(s)]);
+  if (ids.includes(u.steam_id)) throw new HttpError(400, `${u.persona_name} already has a reserved slot.`);
+  if (ids.length >= max) throw new HttpError(400, `All ${max} reserved slots are taken. Remove someone first.`);
+  const caps = await capabilities(s);
+  let done = false;
+  if (supports(caps, 'POST /reserved-slots')) done = await rcon(s, 'POST', '/reserved-slots', { steamId: u.steam_id }).then(() => true).catch(() => false);
+  if (!done) await editConfig(s, (t) => withReserved(t, u.steam_id));
+  await audit(req.user.id, 'server.reserve', s.name || s.join_code, { steamId: u.steam_id, member: u.persona_name });
+  res.json({ ok: true });
+});
+
+servers.delete('/admin/servers/:id/reserved/:steamId', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const id = String(req.params.steamId || '');
+  if (!/^\d{17}$/.test(id)) throw new HttpError(400, 'That is not a valid Steam ID.');
+  const caps = await capabilities(s);
+  let done = false;
+  if (supports(caps, 'DELETE /reserved-slots/{}')) done = await rcon(s, 'DELETE', `/reserved-slots/${id}`).then(() => true).catch(() => false);
+  if (!done && !(await editConfig(s, (t) => withoutReserved(t, id)))) throw new HttpError(400, 'That Steam ID has no reserved slot.');
+  await audit(req.user.id, 'server.unreserve', s.name || s.join_code, { steamId: id });
+  res.json({ ok: true });
+});
+
+// The banner picture shown for the server (1024×256 PNG/JPEG; its web address must be on the server's allow-list).
+const safeImage = (v) => (/^https:\/\/[^\s"<>]{4,490}$/.test(String(v || '')) ? String(v) : '');
+servers.put('/admin/servers/:id/banner', role('admin'), async (req, res) => {
+  const s = await getServer(req.params.id);
+  const url = str(req.body?.url, 500);
+  if (url && !safeImage(url)) throw new HttpError(400, 'The picture link must start with https:// and have no spaces.');
+  const caps = await capabilities(s);
+  const cfg = await rcon(s, 'GET', '/config').catch(() => null);
+  if (!cfg?.writable && supports(caps, 'PUT /sponsor')) await rcon(s, 'PUT', '/sponsor', { imageUrl: url });
+  else await editConfig(s, (t) => withBanner(t, url));
+  await audit(req.user.id, 'server.banner', s.name || s.join_code, { url });
+  res.json({ ok: true });
 });
 
 // Admin helper: find a server in the public list by name or join code.
