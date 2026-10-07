@@ -123,11 +123,24 @@ async function syncSteam(user) {
   const userId = user.id;
   const owned = await steamGet('/IPlayerService/GetOwnedGames/v1/', {
     steamid: user.steam_id,
-    include_appinfo: 'false',
+    include_appinfo: 'true',
     include_played_free_games: 'true',
   }).catch(() => null);
   const ownedGames = owned?.response?.games;
   const isPrivate = !ownedGames;
+  // Games played 10+ hours (for the Discord game roles). Left as they were when Steam sends nothing.
+  if (ownedGames) {
+    const long = ownedGames.filter((g) => (g.playtime_forever || 0) >= 600)
+      .map((g) => ({ app_id: g.appid, name: String(g.name || '').slice(0, 100), minutes: g.playtime_forever }));
+    await q('DELETE FROM steam_playtime WHERE user_id=$1', [userId]);
+    if (long.length) {
+      await q(
+        `INSERT INTO steam_playtime (user_id, app_id, name, minutes, updated_at)
+         SELECT $1, app_id, name, minutes, now() FROM jsonb_to_recordset($2::jsonb) AS x(app_id int, name text, minutes int)`,
+        [userId, JSON.stringify(long)],
+      );
+    }
+  }
   const byApp = new Map((ownedGames || []).map((g) => [g.appid, g]));
 
   const games = await q('SELECT * FROM games WHERE enabled = true');

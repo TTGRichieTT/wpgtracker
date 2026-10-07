@@ -15,7 +15,7 @@ import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
 
-const API = 'https://discord.com/api/v10';
+const API = process.env.DISCORD_API_URL || 'https://discord.com/api/v10'; // overridable for local tests only
 const WPG_APP_ID = '1555526462319366165';
 const WPG_PUBLIC_KEY = 'f7572684d37e69c27da9c32bcd5519eb2d94683760a64776c155246159f48710';
 // Values pasted into the host's settings sometimes carry spaces, quotes or a "Bot " prefix.
@@ -47,7 +47,7 @@ const wpgRank = (name) => String(name || 'RECRUIT I').split(/\s+/)
   .map((w) => (/^(WPG|[IVX]+)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(' ');
 const ROLES = [['assault', 'Assault'], ['medic', 'Medic'], ['recon', 'Recon'], ['support', 'Support'], ['driver', 'Driver'], ['pilot', 'Pilot']];
 
-async function discordFetch(path, method = 'GET', body) {
+export async function discordFetch(path, method = 'GET', body) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(`${API}${path}`, {
       method,
@@ -669,6 +669,7 @@ async function cmdLink(_data, caller, callerName) {
 
 async function cmdUnlink(_data, caller) {
   const u = await one("UPDATE users SET discord_id='' WHERE discord_id=$1 RETURNING id", [caller]);
+  if (u) bus.emit('discord:unlinked', caller);
   return { content: u ? 'Your Discord is no longer linked to the Barracks app.' : "Your Discord wasn't linked." };
 }
 

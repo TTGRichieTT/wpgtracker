@@ -18,6 +18,9 @@ const DEFAULT_SETTINGS = {
   facebook_url: 'https://www.facebook.com/wastedprodigygamer',
   discord_server_id: '',
   discord_voice_enabled: 'true',
+  discord_build_server_id: '', // Admin → Discord server: the server the bot builds and keeps roles on
+  discord_sync_roles: 'false',
+  discord_game_role_hours: '100',
   accent_color: '#29b6f6',
   logo_url: '/img/brand/wpg-logo.webp',
   tracker_enabled: 'true',
