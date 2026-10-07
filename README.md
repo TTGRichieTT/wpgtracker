@@ -163,9 +163,16 @@ PMC guests can't see or use them.
   14 days; admins see them at the bottom of the Situation rooms page and can open each on its map (read only).
 - New maps: rooms use the same map files as the Arty map (`public/maps`).
 
-## 4d. Discord server (Admin → Discord server)
+## 4d. Discord control panel (Admin → Discord)
 
 The bot builds the WPG Discord layout and keeps members' roles in step with the app.
+
+Everything the WPG Discord bot does is on one page, in sections: **Bot** (setup checklist, connection, test post, card
+previews), **Server & roles**, **Entry & rules**, **Filters & moderation**, **Logs & extras**, **Posts & channels**
+and **Cases**. Each bot feature has its own on / off switch (e.g. the offensive language filter, each spam filter, the
+moderator commands, DMs to members, each kind of mod log, welcome posts, raid alarm, tickets, role buttons, game roles).
+Switching an AutoMod filter off turns the bot's rule off on Discord; switching it back on turns it on again. These
+switches control the bot, not Discord's own server settings. The Discord parts of Admin → Settings live here now.
 
 - **Set up:** put the server ID in Admin → Discord server, press **Add the bot to the server** (Administrator), drag the
   bot's role to the top of the role list, and in the Discord Developer Portal → Bot switch on **Server Members Intent**

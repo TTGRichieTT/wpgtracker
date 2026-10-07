@@ -8,7 +8,7 @@ import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem } from './discordbot.js';
 import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap } from './discordserver.js';
-import { refreshPosts, decideHeld } from './discordmod.js';
+import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
@@ -468,9 +468,9 @@ admin.get('/discord-server', role('admin'), async (_req, res) => {
     mod: {
       timeout_at: Number(await setting('discord_warn_timeout_at')) || 3,
       kick_at: Number(await setting('discord_warn_kick_at')) || 5,
-      spam_filter: (await setting('discord_spam_filter')) === 'true',
       blocked_words: (await setting('discord_blocked_words')) || '',
     },
+    switches: Object.fromEntries(await Promise.all(SWITCHES.map(async (k) => [k, (await setting(k)) !== 'false']))),
     held: guild ? await q("SELECT discord_id, user_name, updated_at FROM discord_entries WHERE guild_id=$1 AND status='held' ORDER BY updated_at", [guild]) : [],
     cases: guild ? await q('SELECT * FROM discord_cases WHERE guild_id=$1 ORDER BY id DESC LIMIT 40', [guild]) : [],
     tickets: guild ? (await one("SELECT COUNT(*)::int AS n FROM discord_tickets WHERE guild_id=$1 AND status='open'", [guild])).n : 0,
@@ -500,10 +500,12 @@ admin.put('/discord-server', role('admin'), async (req, res) => {
       .map((l) => { const [qq, ...a] = l.split('|'); return `${qq.trim().slice(0, 45)} | ${a.join('|').trim()}`; }).slice(0, 30).join('\n');
   }
   const m = b.mod;
+  if (b.switches && typeof b.switches === 'object') {
+    for (const k of SWITCHES) if (k in b.switches) values[k] = bool(b.switches[k]) ? 'true' : 'false';
+  }
   if (m && typeof m === 'object') {
     values.discord_warn_timeout_at = String(Math.min(50, Math.max(1, int(m.timeout_at) || 3)));
     values.discord_warn_kick_at = String(Math.min(50, Math.max(1, int(m.kick_at) || 5)));
-    values.discord_spam_filter = bool(m.spam_filter) ? 'true' : 'false';
     values.discord_blocked_words = str(m.blocked_words, 8000);
   }
   for (const [k, v] of Object.entries(values)) {

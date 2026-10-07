@@ -338,6 +338,8 @@ export async function syncRoles() {
       count.set(p.app_id, (count.get(p.app_id) || 0) + 1);
       names.set(p.app_id, p.name || `Steam app ${p.app_id}`);
     }
+    // Game roles switched off: no game roles (the ones made before are removed below).
+    if ((await setting('discord_game_roles')) === 'false') count.clear();
     const keepGames = new Set([...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_GAME_ROLES).map(([id]) => id));
     let created = 0;
     let deleted = 0;

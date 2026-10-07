@@ -15,6 +15,14 @@ import { discordFetch, sendToChannel } from './discordbot.js';
 import { guildId, loadMap, saveMap, allMembers, saveSetting, scheduleSync } from './discordserver.js';
 
 const flagOn = async (k) => (await setting(k)) === 'true';
+// Every on / off switch for the bot (Admin → Discord). All on to start with.
+export const SWITCHES = [
+  'discord_mod_commands', 'discord_dm_members',
+  'discord_automod_slurs', 'discord_automod_spam', 'discord_automod_mentions', 'discord_automod_links', 'discord_automod_words',
+  'discord_filter_repeats', 'discord_filter_flood', 'discord_filter_caps',
+  'discord_log_joins', 'discord_log_messages', 'discord_log_members', 'discord_log_bans',
+  'discord_welcome_posts', 'discord_raid_alarm', 'discord_tickets', 'discord_role_buttons', 'discord_game_roles', 'discord_raise_verification',
+];
 export const entryOn = () => flagOn('discord_entry_enabled');
 const num = async (k, d) => { const n = Number(await setting(k)); return Number.isFinite(n) && n > 0 ? n : d; };
 
@@ -55,6 +63,7 @@ async function addCase(guild, user, action, reason, mod, minutes = 0) {
   return row.id;
 }
 async function dm(userId, content) {
+  if (!(await flagOn('discord_dm_members'))) return false;
   try {
     const c = await discordFetch('/users/@me/channels', 'POST', { recipient_id: userId });
     await discordFetch(`/channels/${c.id}/messages`, 'POST', { content, allowed_mentions: { parse: [] } });
@@ -222,6 +231,12 @@ export const MOD_COMMANDS = {
     },
   },
 };
+
+// Moderator commands can be switched off as a whole (Admin → Discord → Filters & moderation).
+for (const c of Object.values(MOD_COMMANDS)) {
+  const run = c.run;
+  c.run = async (...args) => ((await flagOn('discord_mod_commands')) ? run(...args) : { content: 'Moderator commands are switched off in the WPG app (Admin → Discord).' });
+}
 
 // Lock: members (every role overwrite except staff, plus @everyone) can't send; unlock puts the overwrites back.
 async function lockChannel(body, lock, reason) {
@@ -410,6 +425,7 @@ async function onRoleButton(body) {
   const pick = String(body.data.custom_id).slice('wpg:role:'.length);
   const user = body.member?.user;
   if (body.guild_id !== c.guild || !user) return { now: ephemeral('This button only works on the WPG server.') };
+  if (!(await flagOn('discord_role_buttons'))) return { now: ephemeral('Role buttons are switched off right now.') };
   if (pick === '18+' && !body.member.roles.includes(c.role('manual:18+'))) {
     return { now: ephemeral('The 18+ role opens the 18+ chat. **Only take it if you are 18 or older.**', {
       components: [{ type: 1, components: [{ type: 2, style: 4, label: "I'm 18 or older", custom_id: 'wpg:role18:yes' }] }],
@@ -434,6 +450,7 @@ async function onTicket(body) {
   const c = await ctx();
   const user = body.member?.user;
   if (body.guild_id !== c.guild || !user) return { now: ephemeral('This button only works on the WPG server.') };
+  if (!(await flagOn('discord_tickets'))) return { now: ephemeral('Tickets are switched off right now: message a staff member instead.') };
   return {
     now: { type: 5, data: { flags: EPHEMERAL } },
     later: async () => {
@@ -541,21 +558,29 @@ async function setupAutoMod({ guild, map, roleIds, apply, say }) {
   const words = String((await setting('discord_blocked_words')) || '').split(/[\n,]/).map((w) => w.trim()).filter(Boolean).slice(0, 900).map((w) => (w.includes('*') ? w : `*${w}*`).slice(0, 60));
   const actions = (msg) => [{ type: 1, metadata: { custom_message: msg } }, ...(log ? [{ type: 2, metadata: { channel_id: log } }] : [])];
   const RULES = [
-    { name: 'WPG: slurs and sexual content', trigger_type: 4, trigger_metadata: { presets: [2, 3] }, actions: actions('That language isn\'t allowed on the WPG server.') },
-    { name: 'WPG: spam', trigger_type: 3, actions: actions('That looks like spam.') },
-    { name: 'WPG: mass mentions', trigger_type: 5, trigger_metadata: { mention_total_limit: 6, mention_raid_protection_enabled: true }, actions: actions('Too many mentions in one message.') },
-    { name: 'WPG: invites and scam links', trigger_type: 1, trigger_metadata: { keyword_filter: SCAM_WORDS }, actions: actions('Invite links and scam links aren\'t allowed. Ask staff if you want to share something.') },
-    ...(words.length ? [{ name: 'WPG: blocked words', trigger_type: 1, trigger_metadata: { keyword_filter: words }, actions: actions('That word isn\'t allowed on the WPG server.') }] : []),
+    { key: 'discord_automod_slurs', name: 'WPG: slurs and sexual content', trigger_type: 4, trigger_metadata: { presets: [2, 3] }, actions: actions('That language isn\'t allowed on the WPG server.') },
+    { key: 'discord_automod_spam', name: 'WPG: spam', trigger_type: 3, actions: actions('That looks like spam.') },
+    { key: 'discord_automod_mentions', name: 'WPG: mass mentions', trigger_type: 5, trigger_metadata: { mention_total_limit: 6, mention_raid_protection_enabled: true }, actions: actions('Too many mentions in one message.') },
+    { key: 'discord_automod_links', name: 'WPG: invites and scam links', trigger_type: 1, trigger_metadata: { keyword_filter: SCAM_WORDS }, actions: actions('Invite links and scam links aren\'t allowed. Ask staff if you want to share something.') },
+    ...(words.length ? [{ key: 'discord_automod_words', name: 'WPG: blocked words', trigger_type: 1, trigger_metadata: { keyword_filter: words }, actions: actions('That word isn\'t allowed on the WPG server.') }] : []),
   ];
-  for (const r of RULES) {
+  for (const { key, ...r } of RULES) {
     const have = existing.find((x) => x.name === r.name);
     const body = { ...r, event_type: 1, enabled: true, exempt_roles: exempt };
+    // Switched off in the app: turn our rule off on Discord (kept, so switching back on is instant).
+    if (!(await flagOn(key))) {
+      if (have?.enabled) { say(`Turn off AutoMod: ${r.name.slice(5)}`); if (apply) await discordFetch(`/guilds/${guild}/auto-moderation/rules/${have.id}`, 'PATCH', { enabled: false }).catch(() => {}); }
+      continue;
+    }
     if (!have) {
       // Discord allows only one spam / preset / mention rule per server: skip ours if another bot already has one.
       const clash = [3, 4, 5].includes(r.trigger_type) && existing.find((x) => x.trigger_type === r.trigger_type);
       if (clash) { say(`AutoMod: kept the server's existing "${clash.name}" rule (only one of that kind is allowed)`); continue; }
       say(`Set up AutoMod: ${r.name.slice(5)}`);
       if (apply) await discordFetch(`/guilds/${guild}/auto-moderation/rules`, 'POST', body).catch((e) => say(`Couldn't set up AutoMod "${r.name}": ${e.message}`));
+    } else if (!have.enabled) {
+      say(`Turn on AutoMod: ${r.name.slice(5)}`);
+      if (apply) await discordFetch(`/guilds/${guild}/auto-moderation/rules/${have.id}`, 'PATCH', { trigger_metadata: r.trigger_metadata, actions: body.actions, exempt_roles: exempt, enabled: true }).catch(() => {});
     } else if (apply) {
       await discordFetch(`/guilds/${guild}/auto-moderation/rules/${have.id}`, 'PATCH', { trigger_metadata: r.trigger_metadata, actions: body.actions, exempt_roles: exempt, enabled: true }).catch(() => {});
     }
@@ -571,7 +596,7 @@ export async function setupModeration({ guild, info, map, roleIds, apply, say })
   await upsertPost(map, 'roles', map.channels?.['info:pick-roles'], ROLES_PANEL, apply, say, 'the role buttons in #pick-roles');
   await upsertPost(map, 'ticket', map.channels?.['info:contact-staff'], TICKET_PANEL, apply, say, 'the Contact staff button in #contact-staff');
   await setupAutoMod({ guild, map, roleIds, apply, say });
-  if ((info.verification_level ?? 0) < 2 || (info.explicit_content_filter ?? 0) < 2) {
+  if ((await flagOn('discord_raise_verification')) && ((info.verification_level ?? 0) < 2 || (info.explicit_content_filter ?? 0) < 2)) {
     say("Raise Discord's own checks: verified email, account older than 5 minutes, scan media from everyone");
     if (apply) await discordFetch(`/guilds/${guild}`, 'PATCH', { verification_level: Math.max(2, info.verification_level || 0), explicit_content_filter: 2 }).catch((e) => say(`Couldn't change the verification level: ${e.message}`));
   }
@@ -609,7 +634,8 @@ async function notice(channel, content) {
 }
 
 async function spamCheck(d, c) {
-  if (!(await flagOn('discord_spam_filter'))) return;
+  const [repeats, flood, caps] = await Promise.all(['discord_filter_repeats', 'discord_filter_flood', 'discord_filter_caps'].map(flagOn));
+  if (!repeats && !flood && !caps) return;
   const roles = d.member?.roles || [];
   if (roles.includes(c.role('admin')) || roles.includes(c.role('mod'))) return;
   const uid = d.author.id;
@@ -620,14 +646,14 @@ async function spamCheck(d, c) {
   list.push({ id: d.id, channel: d.channel_id, norm: n, at: now });
   recentMsgs.set(uid, list);
   const dups = n ? list.filter((x) => x.norm === n) : [];
-  if (dups.length >= 3) {
+  if (repeats && dups.length >= 3) {
     for (const x of dups) { selfDeleted.add(x.id); await discordFetch(`/channels/${x.channel}/messages/${x.id}`, 'DELETE').catch(() => {}); }
     recentMsgs.set(uid, []);
     await notice(d.channel_id, `<@${uid}> please don't repeat the same message.`);
     await addCase(c.guild, d.author, 'spam', 'Same message 3 times in 30 seconds', null);
     return;
   }
-  if (list.filter((x) => x.at > now - 8000).length >= 6) {
+  if (flood && list.filter((x) => x.at > now - 8000).length >= 6) {
     recentMsgs.set(uid, []);
     await timeoutMember(c.guild, uid, 2).catch(() => {});
     await notice(d.channel_id, `<@${uid}> slow down: you've been muted for 2 minutes.`);
@@ -635,7 +661,7 @@ async function spamCheck(d, c) {
     return;
   }
   const letters = content.replace(/[^a-zA-Z]/g, '');
-  if (letters.length >= 15 && letters.replace(/[^A-Z]/g, '').length / letters.length > 0.8) {
+  if (caps && letters.length >= 15 && letters.replace(/[^A-Z]/g, '').length / letters.length > 0.8) {
     selfDeleted.add(d.id);
     await discordFetch(`/channels/${d.channel_id}/messages/${d.id}`, 'DELETE').catch(() => {});
     await notice(d.channel_id, `<@${uid}> easy on the caps lock, please.`);
@@ -663,28 +689,28 @@ async function onEvent({ t, d }) {
       const old = cache.get(d.id);
       if (!old || d.content === undefined || d.content === old.content) return;
       remember(d.id, { ...old, content: d.content });
-      if (d.channel_id === logCh) return;
+      if (d.channel_id === logCh || !(await flagOn('discord_log_messages'))) return;
       await modLog(c.guild, { color: COLOR.amber, title: '✏️ Message edited', description: `<@${old.author.id}> in <#${d.channel_id}> · [jump](https://discord.com/channels/${c.guild}/${d.channel_id}/${d.id})`, fields: [{ name: 'Before', value: (old.content || '(empty)').slice(0, 1000) }, { name: 'After', value: (d.content || '(empty)').slice(0, 1000) }] });
       return;
     }
     case 'MESSAGE_DELETE': {
       const old = cache.get(d.id);
       cache.delete(d.id);
-      if (selfDeleted.delete(d.id) || !old || d.channel_id === logCh) return;
+      if (selfDeleted.delete(d.id) || !old || d.channel_id === logCh || !(await flagOn('discord_log_messages'))) return;
       await modLog(c.guild, { color: COLOR.red, title: '🗑️ Message deleted', description: `<@${old.author.id}> in <#${d.channel_id}>`, fields: [{ name: 'Message', value: (old.content || '(no text)').slice(0, 1000) }, ...(old.attachments?.length ? [{ name: 'Attachments', value: old.attachments.join('\n').slice(0, 1000) }] : [])] });
       return;
     }
     case 'MESSAGE_DELETE_BULK': {
       const mine = (d.ids || []).filter((id) => selfDeleted.delete(id)).length;
-      if (d.ids.length - mine > 0) await modLog(c.guild, { color: COLOR.red, title: '🗑️ Messages bulk deleted', description: `${d.ids.length - mine} message(s) in <#${d.channel_id}>` });
+      if (d.ids.length - mine > 0 && (await flagOn('discord_log_messages'))) await modLog(c.guild, { color: COLOR.red, title: '🗑️ Messages bulk deleted', description: `${d.ids.length - mine} message(s) in <#${d.channel_id}>` });
       return;
     }
     case 'GUILD_MEMBER_ADD': {
       memberCache.set(d.user.id, { nick: d.nick, roles: d.roles || [], until: null });
       if (d.user.bot) return;
       const age = Date.now() - createdAt(d.user.id);
-      await modLog(c.guild, { color: COLOR.green, title: '📥 Joined', description: `<@${d.user.id}> (${nameOf(d.user)}) · account ${ago(age)} old${age < 7 * 86400000 ? ' ⚠️ new account' : ''}` });
-      if (c.ch('start:welcome')) {
+      if (await flagOn('discord_log_joins')) await modLog(c.guild, { color: COLOR.green, title: '📥 Joined', description: `<@${d.user.id}> (${nameOf(d.user)}) · account ${ago(age)} old${age < 7 * 86400000 ? ' ⚠️ new account' : ''}` });
+      if (c.ch('start:welcome') && (await flagOn('discord_welcome_posts'))) {
         await discordFetch(`/channels/${c.ch('start:welcome')}/messages`, 'POST', {
           content: `👋 Welcome <@${d.user.id}>! Read the rules in ${c.ch('start:rules') ? `<#${c.ch('start:rules')}>` : '#rules'} and press the button under them to get in.`,
           allowed_mentions: { users: [d.user.id] },
@@ -694,7 +720,7 @@ async function onEvent({ t, d }) {
       const now = Date.now();
       joins = joins.filter((x) => x > now - 60000);
       joins.push(now);
-      if (joins.length >= 10 && raidUntil < now) {
+      if (joins.length >= 10 && raidUntil < now && (await flagOn('discord_raid_alarm'))) {
         raidUntil = now + 15 * 60000;
         if (c.ch('staff:staff-chat')) {
           await discordFetch(`/channels/${c.ch('staff:staff-chat')}/messages`, 'POST', {
@@ -707,7 +733,7 @@ async function onEvent({ t, d }) {
     }
     case 'GUILD_MEMBER_REMOVE': {
       memberCache.delete(d.user.id);
-      if (!d.user.bot) await modLog(c.guild, { color: COLOR.grey, title: '📤 Left', description: `<@${d.user.id}> (${nameOf(d.user)})` });
+      if (!d.user.bot && (await flagOn('discord_log_joins'))) await modLog(c.guild, { color: COLOR.grey, title: '📤 Left', description: `<@${d.user.id}> (${nameOf(d.user)})` });
       return;
     }
     case 'GUILD_MEMBER_UPDATE': {
@@ -721,14 +747,14 @@ async function onEvent({ t, d }) {
       const removed = old.roles.filter((r) => !d.roles.includes(r) && !managed.has(r));
       if (added.length) lines.push(`Roles added: ${added.map((r) => `<@&${r}>`).join(' ')}`);
       if (removed.length) lines.push(`Roles removed: ${removed.map((r) => `<@&${r}>`).join(' ')}`);
-      if (lines.length) await modLog(c.guild, { color: COLOR.blue, title: '👤 Member updated', description: `<@${d.user.id}>\n${lines.join('\n')}` });
+      if (lines.length && (await flagOn('discord_log_members'))) await modLog(c.guild, { color: COLOR.blue, title: '👤 Member updated', description: `<@${d.user.id}>\n${lines.join('\n')}` });
       return;
     }
     case 'GUILD_BAN_ADD':
-      await modLog(c.guild, { color: COLOR.red, title: '🔨 Banned', description: `<@${d.user.id}> (${nameOf(d.user)})` });
+      if (await flagOn('discord_log_bans')) await modLog(c.guild, { color: COLOR.red, title: '🔨 Banned', description: `<@${d.user.id}> (${nameOf(d.user)})` });
       return;
     case 'GUILD_BAN_REMOVE':
-      await modLog(c.guild, { color: COLOR.green, title: '♻️ Unbanned', description: `<@${d.user.id}> (${nameOf(d.user)})` });
+      if (await flagOn('discord_log_bans')) await modLog(c.guild, { color: COLOR.green, title: '♻️ Unbanned', description: `<@${d.user.id}> (${nameOf(d.user)})` });
       return;
     default:
   }
