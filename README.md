@@ -312,11 +312,11 @@ They were cut from the WPG Discord career card. The mountain background is `publ
 - **How it's counted:** Steam shows the match's running profit / loss (e.g. **+$4,500 Profit**, **-$10,793 Loss**),
   which goes back to $0 when the next match starts. Each match's result is its last figure before it resets (or
   before they leave Wardogs); loading screens and menus in between don't split a match.
-- **Where it shows:** next to "🎮 WARDOGS" across the app, on their profile (this match or the last one, and tonight's
-  total), the **Tonight's money** leaderboard (last 12 hours, the match in progress included) and **/money** in
+- **Where it shows:** next to "🎮 WARDOGS" across the app, on their profile (this match or the last one, and the last
+  24 hours' total), the **24-hour money** leaderboard (last 24 hours, the match in progress included) and **/money** in
   Discord (WPG members).
 - **Discord live board:** one message in the live match money channel (Admin → Steam bot) that the bot keeps up to
-  date: who's in a match with their running profit / loss, and tonight's top earners. Optional post for a big match
+  date: who's in a match with their running profit / loss, and the last 24 hours' top earners. Optional post for a big match
   (off until you switch it on, with the amount).
 
 ### Profile frames and seasons (Admin → Frames & seasons)

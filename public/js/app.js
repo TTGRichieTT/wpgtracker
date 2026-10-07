@@ -114,7 +114,7 @@ export function avatar(u, cls = '') {
   return `<span class="av-wrap${framed}"><img class="avatar ${cls}" src="${esc(u?.avatar || FALLBACK_AVATAR)}" alt="" loading="lazy" referrerpolicy="no-referrer">${u?.frame ? frameSVG(u.frame) : ''}<span class="dot ${on ? 'on' : ''}" data-online="${u?.id}"></span></span>`;
 }
 export function rolePill(u) {
-  const dev = (u.developer ? ' <span class="pill dev">Developer</span>' : '') + (u.membership === 'pmc' ? ' <span class="pill pmc">PMC</span>' : '');
+  const dev = (u.developer ? ' <span class="pill dev">Creator</span>' : '') + (u.membership === 'pmc' ? ' <span class="pill pmc">PMC</span>' : '');
   if (u.status === 'pending') return `<span class="pill pending">Pending</span>${dev}`;
   if (u.status === 'banned') return `<span class="pill banned">Banned</span>${dev}`;
   if (u.role === 'admin') return `<span class="pill admin">Admin</span>${dev}`;
@@ -1209,7 +1209,7 @@ async function viewChat(main, [idParam], alive) {
     const u = state.users.get(m.user_id) || { name: 'Unknown', id: m.user_id };
     const canDel = m.user_id === state.me.id || isStaff();
     return `<div class="msg${mentionsMe(m.body) && m.user_id !== state.me.id ? ' mention-me' : ''}" data-id="${m.id}"><a href="#/u/${u.id}">${avatar(u)}</a><div class="grow">
-      <div><a class="who" href="#/u/${u.id}" style="color:${isPmc(u) ? '#ffb347' : esc(u.rank?.color || 'var(--text)')}">${isPmc(u) ? '[PMC] ' : u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Developer</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
+      <div><a class="who" href="#/u/${u.id}" style="color:${isPmc(u) ? '#ffb347' : esc(u.rank?.color || 'var(--text)')}">${isPmc(u) ? '[PMC] ' : u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Creator</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
       <div class="body">${renderBody(m.body, rankById)}</div></div>
       ${canDel ? `<button class="btn ghost small del" data-del="${m.id}" title="Delete" aria-label="Delete">${icon('trash')}</button>` : ''}</div>`;
   };
@@ -1889,7 +1889,7 @@ async function serverBoardHtml(sort, serverId) {
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'wpg';
   const tag = state.settings.clan_tag || 'WPG';
-  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['tonight', "Tonight's money"], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['tonight', '24-hour money'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
   // WPG rank: everyone's WPG XP and rank (from the Discord bot, or the app once switched over in Admin → WPG XP).
   if (by === 'wpg') {
     const d = await api('wpg-ranking');
@@ -1955,7 +1955,7 @@ async function viewLeaderboard(main) {
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h', gold: 'gold', unlocks: 'unlocks' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
-    ${by === 'tonight' ? '<p class="muted small" style="margin:-4px 0 12px">Match money over the last 12 hours, live from Steam, for members who switched on <b>Live match money</b> on their profile.</p>' : ''}
+    ${by === 'tonight' ? '<p class="muted small" style="margin:-4px 0 12px">Match money over the last 24 hours, live from Steam, for members who switched on <b>Live match money</b> on their profile.</p>' : ''}
     ${['worth', 'cash', 'level', 'gold', 'unlocks'].includes(by) ? `<p class="muted small" style="margin:-4px 0 12px">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>. Members it hasn't found show —.</p>` : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">

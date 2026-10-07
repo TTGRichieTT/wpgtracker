@@ -798,7 +798,7 @@ bus.on('tracker:relink', async (a) => {
 });
 
 // Live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now with the match's
-// running profit / loss, and tonight's (last 12 hours) totals. Used by /money and the live board.
+// running profit / loss, and the last 24 hours' totals. Used by /money and the live board.
 const signedMoney = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
 async function moneyEmbed({ live = false } = {}) {
   const { TONIGHT_ROWS } = await import('./steambot.js');
@@ -818,14 +818,14 @@ async function moneyEmbed({ live = false } = {}) {
     color: GOLD,
     fields: [
       { name: '🎮 In a match now', value: now.map((r) => `**${cleanName(r.name)}** · ${r.text}`).join('\n').slice(0, 1000) || 'Nobody right now.' },
-      { name: "🌙 Tonight's money (last 12 hours)", value: tonight.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — **${signedMoney(r.total)}** (${matches(r)})`).join('\n').slice(0, 1000) || 'No matches yet tonight.' },
+      { name: '📅 Last 24 hours', value: tonight.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — **${signedMoney(r.total)}** (${matches(r)})`).join('\n').slice(0, 1000) || 'No matches in the last 24 hours.' },
     ],
     footer: { text: `${live ? 'Updates by itself · ' : ''}Live from Steam · members who switched on Live match money in WPG Barracks` },
     ...(live ? { timestamp: new Date().toISOString() } : {}),
   };
 }
 const moneyButtons = () => [{ type: 1, components: [
-  { type: 2, style: 5, label: "Tonight's money", url: `${SITE()}/#/leaderboard?by=tonight` },
+  { type: 2, style: 5, label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` },
   { type: 2, style: 5, label: 'Switch it on in WPG Barracks', url: `${SITE()}/#/u/me` },
 ] }];
 async function cmdMoney() {
@@ -873,7 +873,7 @@ const COMMANDS = {
   server: { run: cmdServer, description: 'WPG server stats: kills, K/D, matches, playtime' },
   progress: { run: cmdProgress, description: 'Next unlocks for each class' },
   leaderboard: { run: cmdLeaderboard, description: 'Top 10 leaderboards' },
-  money: { run: cmdMoney, description: "Live Wardogs match money: who's in a match and tonight's totals" },
+  money: { run: cmdMoney, description: "Live Wardogs match money: who's in a match and the last 24 hours' totals" },
   serverboard: { run: cmdServerBoard, description: 'The WPG server leaderboard (top 14)' },
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
@@ -1314,7 +1314,7 @@ bus.on('announce', async (a) => {
         const key = String((await setting('discord_money_channel')) || '').trim() ? 'discord_money_channel' : 'discord_post_channel';
         await postToChannel({
           content: `💰 **${u.persona_name}**${mentionFor(u)} just made **+$${num(a.money)}** profit in one Wardogs match!`,
-          components: [{ type: 1, components: [{ type: 2, style: 5, label: "Tonight's money", url: `${SITE()}/#/leaderboard?by=tonight` }] }],
+          components: [{ type: 1, components: [{ type: 2, style: 5, label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` }] }],
         }, key);
       }
     } else if (a.type === 'frame' && (await flag('discord_post_frames'))) {

@@ -9,7 +9,7 @@
 //  - Friends' changes arrive by themselves; members who haven't accepted yet are asked about every minute while
 //    Steam says they're playing Wardogs.
 //  - The latest line shows next to "Playing Wardogs" across the app; every match result is kept for the
-//    "Tonight's money" leaderboard and Discord (/money); staff see the raw values in Admin → Steam bot.
+//    "24-hour money" leaderboard and Discord (/money, live board); staff see the raw values in Admin → Steam bot.
 // Login: STEAM_BOT_USERNAME and STEAM_BOT_PASSWORD (+ STEAM_BOT_SHARED_SECRET for a mobile authenticator) in the
 // host's settings. The first login is done with steam-session and kept open while staff type the emailed Steam
 // Guard code in Admin → Steam bot (restarting the login with the code would make Steam email a new one, forever).
@@ -68,7 +68,7 @@ export function parseLine(text) {
   return { money, result: money > 0 ? 'profit' : money < 0 ? 'loss' : '' };
 }
 
-// A finished match: its final profit / loss, kept for "Tonight's money" (a match that ends on exactly $0 isn't kept).
+// A finished match: its final profit / loss, kept for "24-hour money" (a match that ends on exactly $0 isn't kept).
 async function finishMatch(userId, money) {
   if (!money) return;
   const result = money > 0 ? 'profit' : 'loss';
@@ -393,10 +393,10 @@ export function startSteamBotLoops() {
 }
 
 // ---------- What the app shows ----------
-// Tonight = the last 12 hours: every finished match, plus the one in progress.
-export const TONIGHT_SQL = "at > now() - interval '12 hours'";
-export const TONIGHT_ROWS = `SELECT user_id, money, true AS done FROM presence_results WHERE at > now() - interval '12 hours'
-  UNION ALL SELECT user_id, open_money, false FROM live_presence WHERE opted_in AND open_money IS NOT NULL AND updated_at > now() - interval '12 hours'`;
+// Money is tracked over the last 24 hours: every finished match, plus the one in progress.
+export const TONIGHT_SQL = "at > now() - interval '24 hours'";
+export const TONIGHT_ROWS = `SELECT user_id, money, true AS done FROM presence_results WHERE at > now() - interval '24 hours'
+  UNION ALL SELECT user_id, open_money, false FROM live_presence WHERE opted_in AND open_money IS NOT NULL AND updated_at > now() - interval '24 hours'`;
 export async function liveFor(userId) {
   const [row, tonight, last] = await Promise.all([
     one('SELECT * FROM live_presence WHERE user_id=$1', [userId]),

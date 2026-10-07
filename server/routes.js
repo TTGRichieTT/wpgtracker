@@ -337,7 +337,7 @@ api.get('/leaderboard', member, async (req, res) => {
         WHERE u.status='active' ORDER BY score DESC NULLS LAST, u.xp DESC LIMIT 100`,
     );
   } else if (by === 'tonight') {
-    // Match money read from Steam over the last 12 hours (members who switched live match money on; steambot.js).
+    // Match money read from Steam over the last 24 hours (members who switched live match money on; steambot.js).
     const { TONIGHT_ROWS } = await import('./steambot.js');
     rows = await q(
       `SELECT u.*, SUM(t.money)::int AS score FROM users u JOIN (${TONIGHT_ROWS}) t ON t.user_id = u.id
