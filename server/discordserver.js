@@ -695,7 +695,8 @@ export function startBotCleanup({ kick = [], strip = true, undo = false, order =
 // ---------- Staff roles (Discord control → Server & roles → Staff roles) ----------
 // The server's own Owner, Admin and Moderator roles, chosen by ID: Owner and Admin get Administrator, Moderator
 // the moderator permissions; they go straight under the bot in that order (and stay there on every build); the
-// layout uses Admin and Moderator for the staff channels. giveTo: a Discord user id that gets Owner and Admin.
+// layout uses Admin and Moderator for the staff channels. giveTo: a Discord user id that gets Administrator.
+// The Owner role is never given by the app: only the server owner gives it by hand.
 const MOD_PERMS = bits('KICK', 'BAN', 'MANAGE_MESSAGES', 'TIMEOUT', 'MUTE', 'DEAFEN', 'MOVE', 'NICKNAMES', 'AUDIT_LOG', 'MANAGE_THREADS', 'EVERYONE');
 export async function staffRoles() {
   const guild = await guildId();
@@ -742,7 +743,7 @@ export async function fixStaffRoles({ owner, admin, mod, giveTo = '' }) {
     } else log.push('The roles were already in order.');
   }
   if (giveTo) {
-    for (const id of [owner, admin]) {
+    for (const id of [admin]) {
       await discordFetch(`/guilds/${guild}/members/${giveTo}/roles/${id}`, 'PUT')
         .then(() => log.push(`Gave you "${byId.get(id).name}"`))
         .catch((e) => log.push(`Couldn't give you "${byId.get(id).name}": ${/404/.test(e.message) ? "your linked Discord account isn't on the server" : e.message}`));
@@ -885,7 +886,6 @@ export async function syncRoles() {
         linked++;
         if (u.status === 'active') {
           if (u.role === 'admin' || isOwner(u)) want.add(rid('admin'));
-          if (isOwner(u) && live.has(map.fixed?.owner)) want.add(map.fixed.owner);
           else if (u.role === 'mod') want.add(rid('mod'));
           if (u.membership !== 'pmc') want.add(rid('wpg'));
           else want.add(rid('pmc')); // PMC guest: Wardogs
