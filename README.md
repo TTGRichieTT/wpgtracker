@@ -163,11 +163,11 @@ PMC guests can't see or use them.
   14 days; admins see them at the bottom of the Situation rooms page and can open each on its map (read only).
 - New maps: rooms use the same map files as the Arty map (`public/maps`).
 
-## 4d. Discord control panel (Admin → Discord)
+## 4d. Discord control (its own page: menu → Discord control, admins)
 
 The bot builds the WPG Discord layout and keeps members' roles in step with the app.
 
-Everything the WPG Discord bot does is on one page, in sections: **Bot** (setup checklist, connection, test post, card
+Everything the WPG Discord bot does is on one page (menu → **Discord control**), each part a drop-down section that stays open or closed as you left it: **Bot** (setup checklist, connection, test post, card
 previews), **Server & roles**, **Entry & rules**, **Filters & moderation**, **Logs & extras**, **Posts & channels**
 and **Cases**. Each bot feature has its own on / off switch (e.g. the offensive language filter, each spam filter, the
 moderator commands, DMs to members, each kind of mod log, welcome posts, raid alarm, tickets, role buttons, game roles).

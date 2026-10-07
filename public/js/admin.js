@@ -23,7 +23,7 @@ const TABS = [
   { key: 'wpgxp', label: 'WPG XP', group: 'Game' },
   { key: 'frames', label: 'Frames & seasons', group: 'Game' },
   { key: 'settings', label: 'Settings', group: 'App' },
-  { key: 'discord-server', label: 'Discord', group: 'App' },
+  { key: 'discord-server', label: 'Discord (own page)', group: 'App' },
   { key: 'channels', label: 'Chat channels', group: 'App' },
   { key: 'steambot', label: 'Steam bot', group: 'App' },
   { key: 'profile-fields', label: 'Profile fields', group: 'App' },
@@ -206,7 +206,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'audit') return auditTab(body);
   if (tab.key === 'cleanup') return cleanupTab(body);
   if (tab.key === 'cheatwatch') return cheatTab(body);
-  if (tab.key === 'discord-server') return discordServerTab(body);
+  if (tab.key === 'discord-server') { location.hash = `#/discord${query().get('s') ? `?s=${encodeURIComponent(query().get('s'))}` : ''}`; return; }
   if (tab.key === 'recruitment') return (await import('./combat.js')).recruitmentTab(body);
   if (tab.key === 'units') return (await import('./combat.js')).unitsTab(body);
   if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
@@ -652,12 +652,37 @@ const DISCORD_POSTS = [
   ]],
 ];
 
+// The Discord control page (#/discord, admins): each part is a drop-down section; the ones left open stay open.
+const OPEN_KEY = 'wpg.discord.open';
+const openSections = () => { try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || '["bot"]')); } catch { return new Set(['bot']); } };
+export async function viewDiscordControl(main) {
+  if (state.me.role !== 'admin') {
+    main.innerHTML = '<div class="panel empty">Admins only.</div>';
+    return;
+  }
+  main.innerHTML = `<h1>${icon('discord', 'width="26" height="26" style="vertical-align:-4px;color:var(--accent)"')} Discord control</h1>
+    <p class="muted small" style="margin-top:-6px">Everything the WPG Discord bot does. Tap a section to open it. These control the bot, not Discord's own settings.</p>
+    <div id="dcBody"><div class="spinner"></div></div>`;
+  const wanted = query().get('s');
+  if (wanted) { const o = openSections(); o.add(wanted); try { localStorage.setItem(OPEN_KEY, JSON.stringify([...o])); } catch { /* storage blocked */ } }
+  return discordServerTab(main.querySelector('#dcBody'));
+}
+
 async function discordServerTab(body) {
-  const sec = DISCORD_SECTIONS.some(([k]) => k === query().get('s')) ? query().get('s') : 'bot';
   const d = await api('admin/discord-server');
   const s = d.sync || {};
   const when = (iso) => { try { return timeAgo(iso); } catch { return ''; } };
-  const nav = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">${DISCORD_SECTIONS.map(([k, l]) => `<a class="btn small${k === sec ? ' primary' : ' ghost'}" href="#/admin/discord-server?s=${k}">${esc(l)}</a>`).join('')}</div>`;
+  const open = openSections();
+  const onCount = (groups) => { const keys = groups.flatMap(([, list]) => list.map(([k]) => k)); return `${keys.filter((k) => d.switches[k]).length} of ${keys.length} on`; };
+  const summary = {
+    bot: d.gateway.connected ? `✅ connected${d.gateway.limited ? ' (limited)' : ''}` : '⚠️ not connected',
+    server: d.guild_id ? `${s.at ? (s.ok ? '✅ roles in step' : '⚠️ sync problem') : 'not synced yet'}` : 'no server set',
+    entry: `${d.entry.enabled ? 'on' : 'off'}${d.held.length ? ` · ${d.held.length} waiting` : ''}`,
+    filters: onCount(DISCORD_SWITCHES.filters),
+    logs: `${onCount(DISCORD_SWITCHES.logs)}${d.tickets ? ` · ${d.tickets} open ticket${d.tickets === 1 ? '' : 's'}` : ''}`,
+    posts: 'channels for automatic posts',
+    cases: d.cases.length ? `${d.cases.length} recent` : 'none yet',
+  };
   const status = `<p class="small" style="margin:0 0 10px">${d.gateway.connected
     ? `✅ Bot connected to Discord${d.gateway.since ? ` since ${esc(when(d.gateway.since))}` : ''}${d.gateway.limited ? ' <b>(limited: see below)</b>' : ''}`
     : '⚠️ The bot isn\'t connected to Discord yet (it starts a few seconds after the app does, once the bot token is set).'}
@@ -735,7 +760,25 @@ async function discordServerTab(body) {
           <b>#${c.id}</b> ${esc(c.action)}${c.minutes ? ` ${c.minutes} min` : ''} · <b>${esc(c.user_name)}</b> <span class="muted">(${esc(c.user_id)})</span> · by ${esc(c.mod_name)} · ${esc(when(c.created_at))}${c.reason ? `<br><span class="muted">${esc(c.reason)}</span>` : ''}</div>`).join('')}</div>` : '<p class="muted small" style="margin:0">None yet.</p>'}
         <p class="muted small" style="margin:10px 0 0">In Discord, staff can use /cases on a member, and /unwarn with a case number to remove a warning.</p></div>`,
   };
-  body.innerHTML = `${nav}<div class="stack">${html[sec]()}</div>`;
+  body.innerHTML = `<div class="stack">${DISCORD_SECTIONS.map(([k, label]) => `<details class="panel dc-sec" data-sec="${k}"${open.has(k) ? ' open' : ''}>
+      <summary><b>${esc(label)}</b><span class="muted small">${esc(summary[k])}</span></summary>
+      <div class="dc-in">${html[k]()}</div></details>`).join('')}</div>`;
+  // Remember which sections are open; load the slow ones (bot checklist, post settings) when first opened.
+  const loaded = new Set();
+  const load = (k) => {
+    if (loaded.has(k)) return;
+    loaded.add(k);
+    if (k === 'bot') discordBotPanel(body.querySelector('#discordBot'));
+    if (k === 'posts') loadPosts();
+  };
+  body.querySelectorAll('details.dc-sec').forEach((el) => {
+    if (el.open) load(el.dataset.sec);
+    el.addEventListener('toggle', () => {
+      const o = openSections();
+      if (el.open) { o.add(el.dataset.sec); load(el.dataset.sec); } else o.delete(el.dataset.sec);
+      try { localStorage.setItem(OPEN_KEY, JSON.stringify([...o])); } catch { /* storage blocked */ }
+    });
+  });
   const reload = () => discordServerTab(body);
   const switches = (form) => Object.fromEntries([...form.querySelectorAll('[data-sw]')].map((el) => [el.dataset.sw, el.checked]));
   const pushPosts = async () => {
@@ -745,8 +788,7 @@ async function discordServerTab(body) {
   body.querySelector('#dsReconnect')?.addEventListener('click', async () => {
     try { await api('admin/discord-server/reconnect', { method: 'POST', body: {} }); toast('Reconnecting', 'Give it a few seconds, then reopen this page.'); } catch (x) { fail(x); }
   });
-  if (sec === 'bot') discordBotPanel(body.querySelector('#discordBot'));
-  if (sec === 'server') {
+  {
     const out = body.querySelector('#dsOut');
     const show = (title, lines) => { out.innerHTML = `<b>${esc(title)}</b>${lines.length ? `<ul style="margin:6px 0 0;padding-left:18px;max-height:320px;overflow:auto">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="muted" style="margin:4px 0 0">Nothing to change: the server already matches.</p>'}`; };
     body.querySelector('#dsForm').onsubmit = async (e) => {
@@ -783,7 +825,7 @@ async function discordServerTab(body) {
       } catch (x) { fail(x); e.target.disabled = false; }
     };
   }
-  if (sec === 'entry') {
+  {
     body.querySelector('#dsEntry').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
@@ -800,7 +842,7 @@ async function discordServerTab(body) {
       };
     });
   }
-  if (sec === 'filters') {
+  {
     body.querySelector('#dsMod').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
@@ -811,7 +853,7 @@ async function discordServerTab(body) {
       } catch (x) { fail(x); }
     };
   }
-  if (sec === 'logs') {
+  {
     body.querySelector('#dsLogs').onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -822,7 +864,7 @@ async function discordServerTab(body) {
       } catch (x) { fail(x); }
     };
   }
-  if (sec === 'posts') {
+  async function loadPosts() {
     const st = await api('admin/settings');
     const box = body.querySelector('#dsPostsBox');
     const input = ([k, label, type]) => {
@@ -977,7 +1019,7 @@ async function settingsTab(body) {
       ${extra.length ? `<div class="panel"><div class="panel-title">Other</div><div class="form-grid">${extra.map((k) => input([k, k])).join('')}</div></div>` : ''}
       <div class="row"><button class="btn primary">Save settings</button><button type="button" class="btn" id="syncAll">${icon('refresh')} Sync everyone's stats now (Steam + Wardogs + medals)</button></div>
     </form>
-    <p class="muted small" style="margin-top:16px">Discord bot settings (posts, channels, filters, entry check, server layout) are in <a href="#/admin/discord-server">Admin → Discord</a>.</p>
+    <p class="muted small" style="margin-top:16px">Discord bot settings (posts, channels, filters, entry check, server layout) are on the <a href="#/discord">Discord control</a> page.</p>
     <div class="panel" id="wardogsTest" style="margin-top:16px">
       <div class="panel-title">${icon('target')} wardogs.tools connection <span class="sub">global Wardogs stats</span></div>
       <p class="muted small" style="margin:0 0 10px">Asks wardogs.tools right now for the developer's example player and for you, and shows exactly what it answers. Only the key's length and first/last 3 characters are shown.</p>
