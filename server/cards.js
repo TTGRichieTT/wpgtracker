@@ -11,6 +11,7 @@ import {
 import { rankBadge, wpgBadge } from '../public/js/insignia.js';
 import { frameSVG } from '../public/js/frameart.js';
 import { frameImageBuffer } from './frames.js';
+import { isTrackerRule } from './trackstats.js';
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const HEAD_H = 246; // the design's header art (logo, WARDOGS, soldier, slogans)
@@ -21,7 +22,7 @@ const money = (n) => `$${fmt(Math.round(Number(n) || 0))}`;
 // "SERGEANT VII" -> "Sergeant VII" style is for chat; the cards use capitals like the design.
 const upper = (s) => String(s || '').toUpperCase();
 // Automatic medals for class / career levels are worked out from wardogs.tools stats.
-const trackerMedal = (m) => /^(class|career):/i.test(m?.auto_rule || '');
+const trackerMedal = (m) => isTrackerRule(m?.auto_rule);
 function playtime(secs) {
   const m = Math.floor((Number(secs) || 0) / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;

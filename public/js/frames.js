@@ -227,7 +227,8 @@ function frameEditor(d, f, done) {
     </div>
     ${placement ? '<p class="muted small">A season placing frame, made by the app when the season ended. You can change its look and name.</p>' : ended ? '<p class="muted small">From a season that has ended: members keep it, but it can\'t be earned any more. You can change its look and wording.</p>' : `
     <div class="row">
-      <label class="field grow"><span>Unlocked by</span><select name="metric">${metrics.map(([k, x]) => `<option value="${k}" ${v.metric === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></label>
+      <label class="field grow"><span>Unlocked by</span><select name="metric">${Object.entries(metrics.reduce((g, [k, x]) => { (g[x.source || 'Other'] ||= []).push([k, x]); return g; }, {}))
+        .map(([src, list]) => `<optgroup label="${esc(src)}">${list.map(([k, x]) => `<option value="${k}" ${v.metric === k ? 'selected' : ''}>${esc(x.label)}${x.scope === 'season' ? ' (season frames)' : x.scope === 'clan' ? ' (clan frames)' : ''}</option>`).join('')}</optgroup>`).join('')}</select></label>
       <label class="field"><span id="targetLbl">Target</span><input type="number" name="target" min="0" step="any" value="${esc(v.target)}"></label>
     </div>
     <div class="row">
@@ -272,6 +273,7 @@ function frameEditor(d, f, done) {
       const x = d.metrics[form.metric.value] || {};
       m.el.querySelector('#targetLbl').textContent = form.metric.value === 'officer' ? 'Rank order (Admin → Ranks)' : `Target${x.unit ? ` (${x.unit})` : ''}`;
       help.textContent = x.scope === 'season' ? 'Counts this season only, so it can only be a Season frame.' : x.scope === 'clan' ? 'Follows membership, unit or rank live, so it is a Clan frame (WPG members only).' : x.yesno ? 'Yes or no: no target needed.' : '';
+      if (x.source) help.textContent = `${help.textContent} Data: ${x.source}.`.trim();
     }
   };
   form.addEventListener('input', prev);

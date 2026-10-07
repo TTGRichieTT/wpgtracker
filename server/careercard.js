@@ -5,6 +5,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createCanvas, loadImage, GlobalFonts } from '@napi-rs/canvas';
+import { isTrackerRule } from './trackstats.js';
 
 const ASSETS = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets');
 export const W = 1536;
@@ -502,7 +503,7 @@ export async function renderCareerCard(d) {
   // New band: medals and Steam achievements, lined up with the panels above.
   medalsPanel(g, 28, SPLIT + 12, 794, BAND - 24, d.medals || []);
   await achievementsPanel(g, 834, SPLIT + 12, 674, BAND - 24, d.achievements || { earned: [], total: 0 });
-  if (d.official || d.worldRank || (d.medals || []).some((m) => /^(class|career):/i.test(m.auto_rule || ''))) dataCredit(g, W, FOOT_Y + FOOT);
+  if (d.official || d.worldRank || (d.medals || []).some((m) => isTrackerRule(m.auto_rule))) dataCredit(g, W, FOOT_Y + FOOT);
 
   return canvas.encode('jpeg', 90);
 }

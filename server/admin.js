@@ -5,7 +5,8 @@ import { bus } from './bus.js';
 import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
-import { giveAutoMedalsToAll } from './medals.js';
+import { giveAutoMedalsToAll, cleanRule } from './medals.js';
+import { MEDAL_STATS } from './trackstats.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
 import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup, restoreStaff, staffRoles, fixStaffRoles, dropOwnerRole } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
@@ -220,10 +221,8 @@ const RESOURCES = {
       colors: (v) => str(v, 200).split(',').map((c) => color(c.trim(), '#888888')).slice(0, 7).join(','),
       sort_order: (v) => int(v),
       auto_rule: (v) => {
-        const r = str(v, 60).toLowerCase().replace(/\s+/g, '');
-        if (r && !/^(class:(recon|assault|medic|support|driver|pilot):\d{1,3}|career:\d{1,3}|hours:\d{1,5})$/.test(r)) {
-          throw new HttpError(400, 'Automatic rule must look like class:assault:20, career:50 or hours:300 (or be empty).');
-        }
+        const r = cleanRule(str(v, 80));
+        if (r === null) throw new HttpError(400, 'Pick a stat and a target for the automatic rule (or leave it as given by hand).');
         return r;
       },
     },
@@ -427,6 +426,9 @@ function dbError(e) {
 }
 
 // ---------- Settings (admins) ----------
+// The tracked stats an automatic medal can use (Admin → Medals).
+admin.get('/tracked-stats', role('admin'), (_req, res) => res.json(MEDAL_STATS));
+
 admin.get('/settings', role('admin'), async (_req, res) => {
   const s = await getSettings();
   res.json(Object.fromEntries(Object.entries(s).filter(([k]) => !k.startsWith('_'))));

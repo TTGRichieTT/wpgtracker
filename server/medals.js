@@ -2,9 +2,12 @@
 //   class:<recon|assault|medic|support|driver|pilot>:<level>  — class level from global Wardogs stats
 //   career:<level>                                            — overall Wardog level
 //   hours:<hours>                                             — hours played in tracked Steam games
+//   stat:<stat>:<target>                                      — any tracked stat (trackstats.js): WPG server kills,
+//                                                               headshots, K/D, wardogs.tools gold, Steam achievements…
 // Medals are never taken away automatically.
 import { q, one } from './db.js';
 import { bus } from './bus.js';
+import { MEDAL_STATS, statsFor as trackedStats, reached } from './trackstats.js';
 
 export const CLASSES = [
   ['recon', 'Recon', '#c62828'],
@@ -47,6 +50,7 @@ export function starterMedals() {
 
 export function ruleMet(rule, s) {
   const [kind, a, b] = String(rule || '').trim().toLowerCase().split(':');
+  if (kind === 'stat') return !!s.tracked && !!MEDAL_STATS[a] && reached(a, b, s.tracked);
   if (kind === 'class') return (s.classes[a] ?? -1) >= Number(b);
   if (kind === 'career') return (s.career ?? -1) >= Number(a);
   if (kind === 'hours') return s.hours >= Number(a);
@@ -69,12 +73,26 @@ async function statsFor(userId) {
   return { classes, career: career === null || career === undefined ? null : Number(career) || 0, hours: mins.m / 60 };
 }
 
+// A rule string is valid: class / career / hours, or stat:<a stat medals can use>:<target>. Returns it cleaned, or null.
+export function cleanRule(v) {
+  const r = String(v || '').toLowerCase().replace(/\s+/g, '');
+  if (!r) return '';
+  if (/^(class:(recon|assault|medic|support|driver|pilot):\d{1,3}|career:\d{1,3}|hours:\d{1,5})$/.test(r)) return r;
+  const m = r.match(/^stat:([a-z_]+):(\d{1,9}(\.\d{1,2})?)$/);
+  return m && MEDAL_STATS[m[1]] ? r : null;
+}
+
 // Gives any automatic medals this member now qualifies for. Returns the new medal names.
 export async function giveAutoMedals(userId, { notify = true } = {}) {
   const rules = await q("SELECT id, name, auto_rule FROM awards WHERE auto_rule <> ''");
   if (!rules.length) return [];
   const held = new Set((await q('SELECT award_id FROM user_awards WHERE user_id=$1', [userId])).map((r) => r.award_id));
   const s = await statsFor(userId);
+  // Tracked stats are only worked out when a medal uses one (they take a few lookups).
+  if (rules.some((r) => r.auto_rule.startsWith('stat:') && !held.has(r.id))) {
+    const user = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [userId]);
+    s.tracked = user ? await trackedStats(user) : null;
+  }
   const won = [];
   for (const r of rules) {
     if (held.has(r.id) || !ruleMet(r.auto_rule, s)) continue;

@@ -16,6 +16,7 @@ import { shownFrames, frameLookFor, TRACKER_METRICS, framesFor } from './frames.
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
+import { isTrackerRule } from './trackstats.js';
 
 const API = process.env.DISCORD_API_URL || 'https://discord.com/api/v10'; // overridable for local tests only
 const WPG_APP_ID = '1555526462319366165';
@@ -129,8 +130,8 @@ function withTrackerButton(out) {
   } else out.components = [...(out.components || []), { type: 1, components: [TRACKER_BUTTON] }];
   return out;
 }
-// Automatic medals for class / career levels are worked out from wardogs.tools stats.
-const trackerMedal = (m) => /^(class|career):/i.test(m?.auto_rule || '');
+// Automatic medals for class / career levels (and other wardogs.tools stats) are worked out from wardogs.tools.
+const trackerMedal = (m) => isTrackerRule(m?.auto_rule);
 
 // Everything on the career card for one member.
 async function careerData(u) {
