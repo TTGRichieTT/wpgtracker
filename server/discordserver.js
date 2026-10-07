@@ -752,6 +752,19 @@ export async function fixStaffRoles({ owner, admin, mod, giveTo = '' }) {
   return { log };
 }
 
+// Takes the Owner role (Staff roles) off one member: people can't remove a role that's as high as their own.
+export async function dropOwnerRole(discordId) {
+  const guild = await guildId();
+  const map = await loadMap(guild);
+  const owner = map.fixed?.owner;
+  if (!owner) throw new Error('Save the Staff roles first.');
+  const m = await discordFetch(`/guilds/${guild}/members/${discordId}`).catch(() => null);
+  if (!m) throw new Error("Your linked Discord account isn't on the server.");
+  if (!m.roles.includes(owner)) return { log: ["You don't have the Owner role."] };
+  await discordFetch(`/guilds/${guild}/members/${discordId}/roles/${owner}`, 'DELETE');
+  return { log: ['Took the Owner role off you.'] };
+}
+
 // ---------- Old staff back (Discord control → Server & roles → Roles) ----------
 // From the last Tidy up backup: everyone who had a staff role then (one with Administrator, or kick / ban / timeout /
 // manage messages / manage roles…) gets that role back if it still exists, plus the layout's Admin (they had
