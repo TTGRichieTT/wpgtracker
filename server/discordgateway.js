@@ -6,6 +6,13 @@
 import { bus } from './bus.js';
 import { discordFetch, botReady } from './discordbot.js';
 
+// Node 22+ has WebSocket built in; Node 20 (Render's) doesn't, so use the ws package there.
+let WS = globalThis.WebSocket || null;
+async function socketClass() {
+  if (!WS) WS = (await import('ws')).default;
+  return WS;
+}
+
 const GUILDS = 1 << 0;
 const GUILD_MEMBERS = 1 << 1;
 const GUILD_MODERATION = 1 << 2;
@@ -27,6 +34,18 @@ let retry = 0;
 
 async function connect() {
   if (!botReady()) return;
+  try {
+    await openSocket();
+  } catch (e) {
+    // Never let a connection problem take the app down: note it and try again later.
+    state.problem = `Couldn't connect to Discord: ${e.message}`;
+    ws = null;
+    later();
+  }
+}
+
+async function openSocket() {
+  const Socket = await socketClass();
   let url = resumeUrl;
   if (!url) {
     try {
@@ -37,10 +56,12 @@ async function connect() {
     }
   }
   const token = String(process.env.DISCORD_BOT_TOKEN || '').trim().replace(/^Bot\s+/i, '');
-  ws = new WebSocket(`${url}/?v=10&encoding=json`);
-  ws.onmessage = (ev) => {
+  ws = new Socket(`${url}/?v=10&encoding=json`);
+  // A bad message from Discord is logged, never allowed to crash the app.
+  ws.onmessage = (ev) => { try { onMessage(ev); } catch (e) { console.warn('[gateway] message', e.message); } };
+  const onMessage = (ev) => {
     let msg;
-    try { msg = JSON.parse(ev.data); } catch { return; }
+    try { msg = JSON.parse(String(ev.data)); } catch { return; }
     if (msg.s !== null && msg.s !== undefined) seq = msg.s;
     if (msg.op === 10) {
       clearInterval(beat);
@@ -109,6 +130,6 @@ export function reconnectGateway() {
 }
 
 export function startGateway() {
-  if (!botReady() || typeof WebSocket === 'undefined') return;
+  if (!botReady()) return;
   setTimeout(connect, 5000);
 }

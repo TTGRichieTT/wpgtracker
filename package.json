@@ -26,6 +26,7 @@
     "socket.io": "^4.8.4",
     "steam-session": "^1.9.4",
     "steam-totp": "^2.1.2",
-    "steam-user": "^5.3.0"
+    "steam-user": "^5.3.0",
+    "ws": "^8.22.0"
   }
 }
