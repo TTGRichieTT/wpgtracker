@@ -183,6 +183,30 @@ The bot builds the WPG Discord layout and keeps members' roles in step with the 
   Content Creator, Partner, Military Vet and 18+ are given by hand. Roles on members who haven't linked are never
   taken away; unlinking takes the app's roles off again.
 
+### Entry check, rules and moderation (same page)
+
+The bot also does what mod bots like Carl-bot, Captcha.bot and Ticket Tool did. It keeps a live connection to Discord,
+so switch on **Server Members Intent** and **Message Content Intent** in the Developer Portal → Bot, then press
+**Reconnect** on the page.
+
+- **Entry check:** new joiners only see #welcome and #rules. Under the rules (edited on the page, then **Update the rules
+  post**) is an **I've read the rules, let me in** button: type a 5-letter code and answer one yes / no question → they
+  get **Wardogs**. Accounts younger than 7 days wait for staff (Let in / Kick buttons in #staff-chat or on the page). 3
+  wrong tries = removed; anyone not in after 24 hours is removed (both told they can rejoin). Members already on the
+  server when it was switched on are never affected. 10 joins in a minute pauses entry for 15 minutes and pings staff.
+  Discord's own verification level (verified email, account 5+ minutes old) and media scanning are switched on too.
+- **AutoMod (Discord's own, set up by the bot):** slurs and sexual content, spam, mass mentions, invite and scam links
+  and the page's extra blocked words. Staff are exempt; alerts go to #mod-log.
+- **Spam filter:** the same message 3 times in 30 seconds is removed, 6 messages in 8 seconds = 2-minute mute, caps-lock
+  shouting is removed.
+- **Commands (staff only):** /warn /timeout /untimeout /kick /ban /unban /purge /slowmode /lock /unlock /cases /unwarn.
+  Members are told by DM. Warnings count for 30 days: 3 = 1-hour timeout, 5 = kick (changeable). Staff can't be targeted.
+- **#mod-log:** joins (with account age), leaves, edited and deleted messages, role and nickname changes, bans, every
+  case, purges, locks and ticket transcripts. Every case is also listed on the page.
+- **#pick-roles:** buttons for PC, Xbox, PlayStation, Switch and 18+ (asks them to confirm they're 18+).
+- **#contact-staff:** a button that opens a private ticket channel with staff; closing it posts the transcript to #mod-log.
+- **#welcome:** a welcome post for each new joiner pointing them at #rules.
+
 ## 5. How stats and XP work
 
 - **Global Wardogs stats** come from [wardogs.tools](https://wardogs.tools)'s player stats API, with the private key

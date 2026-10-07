@@ -13,6 +13,7 @@ import { q, one, setting, clearSettingsCache } from './db.js';
 import { bus } from './bus.js';
 import { discordFetch } from './discordbot.js';
 import { isOwner } from './util.js';
+import { setupModeration, entryOn, entryFreePass } from './discordmod.js';
 
 const P = {
   KICK: 1n << 1n, BAN: 1n << 2n, ADMIN: 1n << 3n, ADD_REACTIONS: 1n << 6n, AUDIT_LOG: 1n << 7n, PRIORITY: 1n << 8n,
@@ -36,7 +37,7 @@ const colorInt = (hex) => parseInt(String(hex || '#000000').replace('#', ''), 16
 const titleCase = (s) => String(s).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 const shortName = (s) => String(s).split(' — ')[0].trim().slice(0, 100);
 
-async function saveSetting(key, value) {
+export async function saveSetting(key, value) {
   await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [key, value]);
   clearSettingsCache();
 }
@@ -45,11 +46,11 @@ async function readJson(key) {
 }
 export const guildId = async () => String((await setting('discord_build_server_id')) || '').trim();
 // Which Discord ids the app made or adopted on that server: { guild, roles: {key: id}, games: {appId: id}, channels: {key: id} }
-async function loadMap(guild) {
+export async function loadMap(guild) {
   const m = await readJson('_discord_server_map');
   return m.guild === guild ? { roles: {}, games: {}, channels: {}, ...m } : { guild, roles: {}, games: {}, channels: {} };
 }
-const saveMap = (m) => saveSetting('_discord_server_map', JSON.stringify(m));
+export const saveMap = (m) => saveSetting('_discord_server_map', JSON.stringify(m));
 
 // ---------- What the server should have ----------
 async function roleSpec() {
@@ -67,6 +68,8 @@ async function roleSpec() {
   for (const name of ['Content Creator', 'Partner', 'Military Vet']) list.push({ key: `manual:${name}`, name, color: '#9b59b6', manual: true });
   list.push({ key: 'wardogs', name: 'Wardogs', color: '#3ddc84', hoist: true });
   list.push({ key: 'manual:18+', name: '18+', color: '#636e72', manual: true });
+  // Picked by members themselves with the buttons in #pick-roles.
+  for (const name of ['PC', 'Xbox', 'PlayStation', 'Switch']) list.push({ key: `manual:${name}`, name, color: '#95a5a6', manual: true });
   return { list, units, command };
 }
 
@@ -83,10 +86,12 @@ function channelSpec(units, command) {
   return [
     { key: 'start', name: '👋 START HERE', ow: { everyone: READ_ONLY }, channels: [
       t('welcome', 'Welcome to Wasted Prodigy Gamers.', { welcome: true }),
-      t('rules', 'Server rules.'),
+      t('rules', 'Read the rules, then press the button under them to get in.'),
     ] },
     { key: 'info', name: '📢 INFORMATION', ow: gated('wardogs', { wardogs: READ_ONLY }), channels: [
       t('announcements', 'News from WPG staff.', { type: NEWS }),
+      t('pick-roles', 'Pick your platforms (and 18+) with the buttons.'),
+      t('contact-staff', 'Need staff? Press the button for a private ticket.'),
       t('our-servers', 'The WPG game servers.'), t('free-games', 'Free games going.'), t('wardogs-rules', 'Rules on the WPG Wardogs servers.'), t('socials', 'WPG on other sites.'),
     ] },
     { key: 'community', name: '💬 COMMUNITY', ow: gated('wardogs'), channels: [
@@ -117,13 +122,15 @@ function channelSpec(units, command) {
       t('staff-chat', 'Staff only.'), t('mod-log', 'Moderation notes.'), t('warcon-admin-log', 'WarCon admin log.'),
       t('app-admin-log', 'Cheat-watch alerts and reports from the WPG app.', { post: 'discord_staff_channel' }),
     ] },
+    // Private ticket channels are made in here when someone presses Contact staff.
+    { key: 'tickets', name: '🎫 TICKETS', ow: { everyone: { deny: ['VIEW'] }, ...staff }, channels: [] },
   ];
 }
 
 const WELCOME = `**Welcome to Wasted Prodigy Gamers!** 🐺
 
-You'll get the **Wardogs** role within a couple of minutes of joining, which opens the server.
-Already in the WPG app? Type **/link** in #app-help to connect your Discord. Your clan, unit, faction and game roles then follow your app profile automatically.`;
+Read the rules in #rules and press the button under them to get in: that gives you the **Wardogs** role, which opens the server.
+Already in the WPG app? Type **/link** in #app-help afterwards to connect your Discord. Your clan, unit, faction and game roles then follow your app profile automatically.`;
 
 // ---------- Build (preview or for real) ----------
 const building = { running: false, log: [], done: null, error: null, at: null };
@@ -240,6 +247,8 @@ export async function buildServer({ apply = false, usePosts = false } = {}) {
       bus.emit('config:changed', 'settings');
     }
   }
+  // Rules post with the entry button, role and ticket buttons, AutoMod and Discord's verification level.
+  await setupModeration({ guild, info, map, roleIds, apply, say });
   if (apply) {
     map.roles = Object.fromEntries(Object.entries(roleIds).filter(([, id]) => !String(id).startsWith('new:')));
     await saveMap(map);
@@ -269,7 +278,7 @@ export function startBuild(opts) {
 }
 
 // ---------- Role sync ----------
-async function allMembers(guild) {
+export async function allMembers(guild) {
   const out = [];
   let after = '0';
   for (;;) {
@@ -352,10 +361,15 @@ export async function syncRoles() {
     let added = 0;
     let removed = 0;
     let linked = 0;
+    // With the entry check on, Wardogs is only for people who passed it (or were let in, or joined before it
+    // was switched on, or linked the app). Nobody loses Wardogs for not having done it.
+    const gate = await entryOn();
+    const passed = gate ? await entryFreePass(guild) : null;
     for (const m of members) {
       if (m.user.bot || m.pending) continue;
-      const want = new Set([rid('wardogs')]);
       const u = byDiscord.get(m.user.id);
+      const want = new Set();
+      if (!gate || u || m.roles.includes(rid('wardogs')) || passed(m)) want.add(rid('wardogs'));
       if (u) {
         linked++;
         if (u.status === 'active') {

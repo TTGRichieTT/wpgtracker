@@ -125,6 +125,45 @@ export const userGames = pgTable('user_games', {
   updated_at: now(),
 }, (t) => [primaryKey({ name: 'user_games_pkey', columns: [t.user_id, t.app_id] })]);
 
+// Discord moderation: every warning, timeout, kick, ban and automatic action (Admin → Discord server, /cases).
+export const discordCases = pgTable('discord_cases', {
+  id: serial().primaryKey(),
+  guild_id: text().notNull(),
+  user_id: text().notNull(),
+  user_name: text().notNull().default(''),
+  action: text().notNull(), // warn | timeout | untimeout | kick | ban | unban | spam | auto-timeout | auto-kick | entry-kick
+  reason: text().notNull().default(''),
+  mod_id: text().notNull().default(''),
+  mod_name: text().notNull().default(''),
+  minutes: integer().notNull().default(0),
+  removed: boolean().notNull().default(false),
+  created_at: now(),
+}, (t) => [index('discord_cases_user_idx').on(t.guild_id, t.user_id)]);
+
+// The Discord entry check (rules button): who passed, who is held for staff (new accounts) and failed tries.
+export const discordEntries = pgTable('discord_entries', {
+  discord_id: text().primaryKey(),
+  guild_id: text().notNull(),
+  user_name: text().notNull().default(''),
+  status: text().notNull().default('started'), // started | passed | held | let_in | kicked
+  attempts: integer().notNull().default(0),
+  created_at: now(),
+  updated_at: now(),
+});
+
+// Private "contact staff" ticket channels.
+export const discordTickets = pgTable('discord_tickets', {
+  id: serial().primaryKey(),
+  guild_id: text().notNull(),
+  channel_id: text().notNull().default(''),
+  user_id: text().notNull(),
+  user_name: text().notNull().default(''),
+  status: text().notNull().default('open'),
+  closed_by: text().notNull().default(''),
+  created_at: now(),
+  closed_at: timestamp({ withTimezone: true }),
+});
+
 // Every Steam game a member has played for 10+ hours (any game, not only the tracked ones), with its name.
 // Used for the show-only game roles on Discord (Admin → Discord server).
 export const steamPlaytime = pgTable('steam_playtime', {
