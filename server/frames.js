@@ -402,9 +402,8 @@ async function seedFrames() {
 
 // ---------- What members see ----------
 const fmtN = (n) => Number(n || 0).toLocaleString('en-GB');
-framesRouter.get('/users/:id/frames', member, async (req, res) => {
-  const user = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
-  if (!user) throw new HttpError(404, 'Member not found.');
+// A member's frames for their profile and Discord's /frames: earned and still to earn, by group.
+export async function framesFor(user) {
   const season = await currentSeason();
   const next = await nextSeason();
   const m = await metricsFor(user, season);
@@ -435,12 +434,18 @@ framesRouter.get('/users/:id/frames', member, async (req, res) => {
       progress: unlocked || def.yesno || group === 'past' ? null : { value: Math.min(Number(m[f.metric]) || 0, Number(f.target)), target: Number(f.target), unit: def.unit || '' },
     });
   }
-  res.json({
+  return {
     season: season ? { number: season.number, name: season.name, start_at: season.start_at } : null,
     next: next ? { number: next.number, start_at: next.start_at } : null,
-    selected: user.frame_id, mine: user.id === req.user.id,
+    selected: user.frame_id,
     groups: out,
-  });
+  };
+}
+
+framesRouter.get('/users/:id/frames', member, async (req, res) => {
+  const user = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
+  if (!user) throw new HttpError(404, 'Member not found.');
+  res.json({ ...(await framesFor(user)), mine: user.id === req.user.id });
 });
 
 framesRouter.put('/me/frame', member, async (req, res) => {
