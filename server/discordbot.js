@@ -204,7 +204,7 @@ async function freshWardogs(user) {
   }
   if (refreshError) return `${CREDIT} · Could not refresh stats: ${refreshError}.`;
   if (ws?.ranks?.source !== 'wardogs.tools' || !ws.official) return `${CREDIT} · **${user.persona_name}** isn't on wardogs.tools yet (they link their Wardogs account there).`;
-  if (ws.ranks?.state && ws.ranks.state !== 'active') return `${CREDIT} · wardogs.tools has stopped updating **${user.persona_name}** (${ws.ranks.state}): they link their account there again.`;
+  if (ws.ranks?.state && ws.ranks.state !== 'active') return `${CREDIT} · wardogs.tools has stopped updating **${user.persona_name}** (${ws.ranks.state}): relink at <https://wardogs.tools/account>.`;
   return CREDIT;
 }
 
@@ -766,6 +766,107 @@ bus.on('recruit', async (a) => {
   }
 });
 
+// wardogs.tools stopped updating a member (ranking.js): ask them to relink, by Discord direct message. If their DMs
+// are closed, WPG members are asked in the automatic posts channel instead (with a mention).
+bus.on('tracker:relink', async (a) => {
+  try {
+    const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
+    if (!u?.discord_id || !TOKEN()) return;
+    const { RELINK_URL } = await import('./ranking.js');
+    const why = a.state && !['missing', 'unsynced'].includes(a.state) ? ` (wardogs.tools says your account is **${a.state}**)` : '';
+    const embed = {
+      color: 0xf5a524,
+      title: `🔗 ${a.reminder ? 'Reminder: relink' : 'Relink'} your Wardogs account on wardogs.tools`,
+      description: `wardogs.tools has stopped updating your Wardogs stats${why}, so your level, cash and class levels in WPG Barracks are out of date.\n\n`
+        + `**1.** Open [wardogs.tools/account](${RELINK_URL}), sign in and link your Wardogs account again.\n`
+        + `**2.** Then press **Check now** on your profile in WPG Barracks.`,
+      footer: { text: 'Data provided by wardogs.tools · WPG Barracks' },
+    };
+    const buttons = [{ type: 1, components: [
+      { type: 2, style: 5, label: 'Relink on wardogs.tools', url: RELINK_URL },
+      { type: 2, style: 5, label: 'Open my profile', url: `${SITE()}/#/u/${u.id}` },
+    ] }];
+    try {
+      const dm = await discordFetch('/users/@me/channels', 'POST', { recipient_id: u.discord_id });
+      await discordFetch(`/channels/${dm.id}/messages`, 'POST', { embeds: [embed], components: buttons });
+    } catch (e) {
+      if (!isWpgMember(u)) throw e;
+      await postToChannel({ content: `<@${u.discord_id}> please relink your Wardogs account on wardogs.tools.`, embeds: [embed], components: buttons, allowed_mentions: { users: [u.discord_id] } });
+    }
+  } catch (e) {
+    problem('Relink message', e.message);
+  }
+});
+
+// Live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now with the match's
+// running profit / loss, and the last 24 hours' totals. Used by /money and the live board.
+const signedMoney = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
+async function moneyEmbed({ live = false } = {}) {
+  const { TONIGHT_ROWS } = await import('./steambot.js');
+  const [now, tonight] = await Promise.all([
+    q(`SELECT u.persona_name AS name, lp.text, lp.money FROM live_presence lp JOIN users u ON u.id = lp.user_id
+        WHERE lp.opted_in AND lp.in_game AND lp.text <> '' AND u.status='active' AND u.membership <> 'pmc'
+          AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.money DESC NULLS LAST LIMIT 15`),
+    q(`SELECT u.persona_name AS name, SUM(t.money)::int AS total, COUNT(*) FILTER (WHERE t.done)::int AS matches, BOOL_OR(NOT t.done) AS playing
+         FROM (${TONIGHT_ROWS}) t JOIN users u ON u.id = t.user_id
+        WHERE u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 10`),
+  ]);
+  const medal = ['🥇', '🥈', '🥉'];
+  const matches = (r) => `${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`;
+  return {
+    title: live ? '💰 Live match money' : '💰 Wardogs match money',
+    url: `${SITE()}/#/leaderboard?by=tonight`,
+    color: GOLD,
+    fields: [
+      { name: '🎮 In a match now', value: now.map((r) => `**${cleanName(r.name)}** · ${r.text}`).join('\n').slice(0, 1000) || 'Nobody right now.' },
+      { name: '📅 Last 24 hours', value: tonight.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — **${signedMoney(r.total)}** (${matches(r)})`).join('\n').slice(0, 1000) || 'No matches in the last 24 hours.' },
+    ],
+    footer: { text: `${live ? 'Updates by itself · ' : ''}Live from Steam · members who switched on Live match money in WPG Barracks` },
+    ...(live ? { timestamp: new Date().toISOString() } : {}),
+  };
+}
+const moneyButtons = () => [{ type: 1, components: [
+  { type: 2, style: 5, label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` },
+  { type: 2, style: 5, label: 'Switch it on in WPG Barracks', url: `${SITE()}/#/u/me` },
+] }];
+async function cmdMoney() {
+  return { embeds: [await moneyEmbed()], components: moneyButtons() };
+}
+
+// The live board: one message in the live match money channel that the bot keeps editing (at most once a minute, and
+// only when something changed, or every 10 minutes to refresh its time). Remembered across restarts; if it's deleted
+// (or the channel changes), a new one is posted.
+const BOARD_KEY = '_money_board_msg';
+let boardLast = { body: '', at: 0 };
+let boardDirty = true;
+bus.on('money:changed', () => { boardDirty = true; });
+export async function updateMoneyBoard() {
+  if (!TOKEN() || !(await flag('discord_money_board'))) return;
+  const channel = String((await setting('discord_money_channel')) || '').trim();
+  if (!/^\d{15,22}$/.test(channel)) return;
+  const embed = await moneyEmbed({ live: true });
+  const body = JSON.stringify(embed.fields);
+  if (!boardDirty && body === boardLast.body && Date.now() - boardLast.at < 10 * 60 * 1000) return;
+  const payload = { embeds: [embed], components: moneyButtons() };
+  const saved = String((await one('SELECT value FROM settings WHERE key=$1', [BOARD_KEY]))?.value || '');
+  const [savedChannel, savedId] = saved.split(':');
+  let posted = false;
+  if (savedChannel === channel && savedId) {
+    try {
+      await discordFetch(`/channels/${channel}/messages/${savedId}`, 'PATCH', payload);
+      posted = true;
+    } catch (e) {
+      if (!/ 404|10008|Unknown Message/.test(e.message)) throw e; // deleted: post a new one below
+    }
+  }
+  if (!posted) {
+    const msg = await discordFetch(`/channels/${channel}/messages`, 'POST', payload);
+    await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [BOARD_KEY, `${channel}:${msg.id}`]);
+  }
+  boardLast = { body, at: Date.now() };
+  boardDirty = false;
+}
+
 const COMMANDS = {
   stats: { run: cmdStats, description: 'Wardogs stats: level, cash, worth, classes, world ranks' },
   rank: { run: cmdRank, description: 'WPG rank + WPG XP, and clan rank' },
@@ -773,6 +874,7 @@ const COMMANDS = {
   server: { run: cmdServer, description: 'WPG server stats: kills, K/D, matches, playtime' },
   progress: { run: cmdProgress, description: 'Next unlocks for each class' },
   leaderboard: { run: cmdLeaderboard, description: 'Top 10 leaderboards' },
+  money: { run: cmdMoney, description: "Live Wardogs match money: who's in a match and the last 24 hours' totals" },
   serverboard: { run: cmdServerBoard, description: 'The WPG server leaderboard (top 14)' },
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
@@ -1206,6 +1308,16 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'giveaway' && (await flag('discord_post_giveaways'))) {
       const { giveawayChannelKey } = await import('./giveaways.js');
       await postToChannel(await giveawayPost(a), await giveawayChannelKey());
+    } else if (a.type === 'bigwin' && (await flag('discord_post_big_wins'))) {
+      const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
+      if (isWpgMember(u)) {
+        // The live match money channel (Admin → Steam bot), else the channel for the other automatic posts.
+        const key = String((await setting('discord_money_channel')) || '').trim() ? 'discord_money_channel' : 'discord_post_channel';
+        await postToChannel({
+          content: `💰 **${u.persona_name}**${mentionFor(u)} just made **+$${num(a.money)}** profit in one Wardogs match!`,
+          components: [{ type: 1, components: [{ type: 2, style: 5, label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` }] }],
+        }, key);
+      }
     } else if (a.type === 'frame' && (await flag('discord_post_frames'))) {
       const [u, f] = await Promise.all([one('SELECT * FROM users WHERE id=$1', [a.userId]), one('SELECT * FROM frames WHERE id=$1', [a.frameId])]);
       if (isWpgMember(u) && f) await postToChannel(await framePost(u, f));
@@ -1238,4 +1350,6 @@ export function startDiscordBot() {
     }
   };
   setTimeout(attempt, 60 * 1000);
+  // The live match money board (once a minute; it only edits when something changed).
+  setInterval(() => updateMoneyBoard().catch((e) => problem('Live money board', e.message)), 60 * 1000);
 }

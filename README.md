@@ -316,6 +316,29 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   Admin → Giveaways (empty = the channel for the other automatic posts). **Draw someone else** / **Give to the next
   player** hands an unclaimed prize on. Members see everything on the **Giveaways** page.
 
+### Live match money from Steam (Admin → Steam bot)
+
+- While someone plays Wardogs, Steam shows their friends a line under their name, e.g. **-$10,793 Loss**. The app
+  reads it through a separate **WPG Barracks Steam account** (the bot) that members friend.
+- **Setup:** make a new Steam account (never anyone's own, and don't play on it). In Render → Environment add
+  `STEAM_BOT_USERNAME` and `STEAM_BOT_PASSWORD` (and `STEAM_BOT_SHARED_SECRET` only if it uses the Steam mobile
+  authenticator), then restart. If Steam emails a Steam Guard code, staff get a notification: type it in
+  **Admin → Steam bot**. After the first login the sign-in is remembered (encrypted), so restarts need no code.
+- **Members switch it on** on their profile (**Show my live match money**), then press **Add the bot on Steam**: their
+  own single-use Steam quick invite link (a new Steam account can't send friend requests, but quick links always
+  work). The bot also tries sending a request and accepts members' requests; members already on its friends list are
+  switched on by themselves; anyone who isn't an app member is removed. Switching it off, or unfriending the bot,
+  stops it.
+- **How it's counted:** Steam shows the match's running profit / loss (e.g. **+$4,500 Profit**, **-$10,793 Loss**),
+  which goes back to $0 when the next match starts. Each match's result is its last figure before it resets (or
+  before they leave Wardogs); loading screens and menus in between don't split a match.
+- **Where it shows:** next to "🎮 WARDOGS" across the app, on their profile (this match or the last one, and the last
+  24 hours' total), the **24-hour money** leaderboard (last 24 hours, the match in progress included) and **/money** in
+  Discord (WPG members).
+- **Discord live board:** one message in the live match money channel (Admin → Steam bot) that the bot keeps up to
+  date: who's in a match with their running profit / loss, and the last 24 hours' top earners. Optional post for a big match
+  (off until you switch it on, with the amount).
+
 ### Profile frames and seasons (Admin → Frames & seasons)
 
 - **Frames** are borders around a member's picture, earned from what they do. Each member picks one unlocked frame

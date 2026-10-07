@@ -25,6 +25,7 @@ const TABS = [
   { key: 'settings', label: 'Settings', group: 'App' },
   { key: 'discord-server', label: 'Discord server', group: 'App' },
   { key: 'channels', label: 'Chat channels', group: 'App' },
+  { key: 'steambot', label: 'Steam bot', group: 'App' },
   { key: 'profile-fields', label: 'Profile fields', group: 'App' },
   { key: 'cleanup', label: 'Clean up', group: 'App' },
   { key: 'audit', label: 'Audit log', mod: true, group: 'App' },
@@ -212,6 +213,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'wpgxp') return (await import('./wpgxp.js')).wpgXpAdminTab(body);
   if (tab.key === 'giveaways') return (await import('./giveaways.js')).giveawaysAdminTab(body);
   if (tab.key === 'frames') return (await import('./frames.js')).framesAdminTab(body);
+  if (tab.key === 'steambot') return (await import('./live.js')).steamBotAdminTab(body);
   return resourceTab(body, tab.key);
 }
 
@@ -684,6 +686,7 @@ const SETTINGS = [
   ]],
   ['Stats syncing', [
     ['tracker_enabled', 'Get global Wardogs stats from the keyed wardogs.tools player API (level, rank, cash, gold, worth, classes and rates)', 'check'],
+    ['tracker_relink_prompts', 'When wardogs.tools stops updating a member, ask them to relink (in the app and by Discord message, reminded every 3 days, 3 times at most)', 'check'],
     ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
   ]],
   ['Discord bot (automatic posts)', [
@@ -785,7 +788,7 @@ async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
   // Settings with their own page aren't repeated here (saving them from a one-line box would lose their line breaks).
-  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames', 'discord_build_server_id', 'discord_sync_roles', 'discord_game_role_hours']); // Admin → Recruitment / Giveaways / Frames
+  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames', 'steam_bot_enabled', 'discord_post_big_wins', 'big_win_amount', 'discord_money_channel', 'discord_money_board', 'discord_build_server_id', 'discord_sync_roles', 'discord_game_role_hours']); // Admin → Recruitment / Giveaways / Frames / Steam bot / Discord server
   const extra = Object.keys(s).filter((k) => !known.has(k) && !ELSEWHERE.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';

@@ -5,6 +5,7 @@
 // "Data provided by wardogs.tools" and a link.
 import { flag, q, one } from './db.js';
 import { noteLevelDrop } from './frames.js';
+import { bus } from './bus.js';
 
 const API = 'https://wardogs.tools/api/player/stats';
 const LOCATE = 'https://wardogs.tools/api/leaderboards/locate';
@@ -167,13 +168,57 @@ function shape(data) {
   };
 }
 
-async function saveMissing(userId, state) {
+// lost: they were linked before, so wardogs.tools no longer finding them means the link broke (relink).
+async function saveMissing(userId, state, lost = false) {
   await q(
     `INSERT INTO wardogs_stats (user_id, official, official_synced, ranks, ranks_synced)
      VALUES ($1,NULL,NULL,$2,now())
      ON CONFLICT (user_id) DO UPDATE SET official=NULL, official_synced=NULL, ranks=EXCLUDED.ranks, ranks_synced=now()`,
-    [userId, JSON.stringify({ source: 'wardogs.tools', state })],
+    [userId, JSON.stringify({ source: 'wardogs.tools', state, ...(lost ? { lost: true } : {}) })],
   );
+}
+
+// When wardogs.tools stops updating a member (its sync status isn't "active", or a linked account can't be found
+// any more), they're asked to relink at wardogs.tools/account: in the app and by Discord message, then reminded
+// every 3 days, 3 times at most. Once it's updating them again they're thanked and the reminders reset.
+// wardogs.tools can only read stats once the game is closed, so nobody is asked while they're playing, or until
+// it has stayed stopped for a day (a status that sorts itself out never bothers them).
+export const RELINK_URL = 'https://wardogs.tools/account';
+const RELINK_EVERY_MS = 3 * 24 * 60 * 60 * 1000;
+const RELINK_MAX = 3;
+const RELINK_WAIT_MS = 24 * 60 * 60 * 1000;
+async function relinkCheck(user, needs, state) {
+  const row = await one('SELECT relink_prompts, relink_prompted_at, relink_since FROM wardogs_stats WHERE user_id=$1', [user.id]);
+  const asked = row?.relink_prompts || 0;
+  if (!needs) {
+    if (row?.relink_since) await q('UPDATE wardogs_stats SET relink_since=NULL WHERE user_id=$1', [user.id]);
+    if (asked > 0) {
+      await q('UPDATE wardogs_stats SET relink_prompts=0, relink_prompted_at=NULL WHERE user_id=$1', [user.id]);
+      bus.emit('notify', user.id, { title: 'Wardogs stats updating again', body: 'Thanks for relinking: wardogs.tools is updating your stats again.', link: `#/u/${user.id}` });
+      bus.emit('user:changed', user.id);
+    }
+    return;
+  }
+  // Start the clock the first time; only ask once it has stayed stopped for a day and they're not playing.
+  if (!row?.relink_since) {
+    await q('UPDATE wardogs_stats SET relink_since=now() WHERE user_id=$1', [user.id]);
+    return;
+  }
+  if (Date.now() - new Date(row.relink_since).getTime() < RELINK_WAIT_MS) return;
+  const { playingNow } = await import('./playing.js');
+  const p = playingNow()[user.id];
+  if (p && (/wardogs/i.test(p.game || '') || String(p.appId) === '1867240')) return;
+  const last = row?.relink_prompted_at ? new Date(row.relink_prompted_at).getTime() : 0;
+  if (asked >= RELINK_MAX || (asked > 0 && Date.now() - last < RELINK_EVERY_MS)) return;
+  if (!(await flag('tracker_relink_prompts'))) return;
+  await q('UPDATE wardogs_stats SET relink_prompts=$2, relink_prompted_at=now() WHERE user_id=$1', [user.id, asked + 1]);
+  bus.emit('notify', user.id, {
+    title: 'Relink your Wardogs account',
+    body: 'wardogs.tools has stopped updating your Wardogs stats. Relink your account at wardogs.tools/account, then press Check now on your profile.',
+    link: `#/u/${user.id}`,
+  });
+  bus.emit('user:changed', user.id);
+  bus.emit('tracker:relink', { userId: user.id, state, reminder: asked > 0 });
 }
 
 const NOT_FOUND_REASON = 'Not found on wardogs.tools yet: sign in there and link your Wardogs account, or add your in-game name (Name#1234) in Edit profile';
@@ -221,8 +266,10 @@ export async function syncRanks(user, { force = false } = {}) {
   }
   if (!data?.player || !data?.stats) {
     const state = data?.player ? 'unsynced' : 'missing';
-    await saveMissing(user.id, state);
-    return { ok: false, state, reason: state === 'missing' ? NOT_FOUND_REASON : NO_STATS_REASON };
+    const lost = saved?.ranks?.source === 'wardogs.tools' && (!!saved.official || !!saved.ranks.lost);
+    await saveMissing(user.id, state, lost);
+    await relinkCheck(user, lost, state).catch((e) => console.warn('[tracker] relink', e.message));
+    return { ok: false, state, lost, reason: lost ? 'wardogs.tools can\'t find your account any more: relink it at wardogs.tools/account' : state === 'missing' ? NOT_FOUND_REASON : NO_STATS_REASON };
   }
 
   const { official, ranks } = shape(data);
@@ -236,6 +283,7 @@ export async function syncRanks(user, { force = false } = {}) {
      ON CONFLICT (user_id) DO UPDATE SET official=EXCLUDED.official, official_synced=now(), ranks=EXCLUDED.ranks, ranks_synced=now()`,
     [user.id, JSON.stringify(official), JSON.stringify(ranks)],
   );
+  await relinkCheck(user, !!ranks.state && ranks.state !== 'active', ranks.state).catch((e) => console.warn('[tracker] relink', e.message));
   return { ok: true, official: true, state: ranks.state };
 }
 

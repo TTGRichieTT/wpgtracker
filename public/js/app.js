@@ -114,7 +114,7 @@ export function avatar(u, cls = '') {
   return `<span class="av-wrap${framed}"><img class="avatar ${cls}" src="${esc(u?.avatar || FALLBACK_AVATAR)}" alt="" loading="lazy" referrerpolicy="no-referrer">${u?.frame ? frameSVG(u.frame) : ''}<span class="dot ${on ? 'on' : ''}" data-online="${u?.id}"></span></span>`;
 }
 export function rolePill(u) {
-  const dev = (u.developer ? ' <span class="pill dev">Developer</span>' : '') + (u.membership === 'pmc' ? ' <span class="pill pmc">PMC</span>' : '');
+  const dev = (u.developer ? ' <span class="pill dev">Creator</span>' : '') + (u.membership === 'pmc' ? ' <span class="pill pmc">PMC</span>' : '');
   if (u.status === 'pending') return `<span class="pill pending">Pending</span>${dev}`;
   if (u.status === 'banned') return `<span class="pill banned">Banned</span>${dev}`;
   if (u.role === 'admin') return `<span class="pill admin">Admin</span>${dev}`;
@@ -154,9 +154,12 @@ export function badgeFor(u, size) {
 const rankName = (u) => (isPmc(u) ? 'PMC · Guest' : u?.rank ? u.rank.name : 'No rank');
 // "Playing …" tag from Steam; Wardogs is highlighted. Kept live by the 'playing' socket event.
 const isWardogs = (p) => (p && /wardogs/i.test(p.game) ? 1 : 0);
+// "🎮 WARDOGS · -$10,793 Loss": the game, plus live match money from Steam for members who switched it on
+// (Wardogs only: other games just show their name).
+const playingHtml = (p) => (p ? `🎮 ${esc(p.game || '')}${p.live?.text && isWardogs(p) ? ` · <b class="live-money${p.live.money > 0 ? ' up' : p.live.money < 0 ? ' down' : ''}">${esc(p.live.text)}</b>` : ''}` : '');
 export function playingTag(u) {
   const p = state.playing[u?.id];
-  return `<span class="playing-tag${isWardogs(p) ? ' wd' : ''}" data-playing="${u?.id}"${p ? '' : ' hidden'}>🎮 ${esc(p?.game || '')}</span>`;
+  return `<span class="playing-tag${isWardogs(p) ? ' wd' : ''}" data-playing="${u?.id}"${p ? '' : ' hidden'}>${playingHtml(p)}</span>`;
 }
 export function userLine(u, meta = '') {
   return `<div class="user-line">${avatar(u)}${badgeFor(u, 34)}
@@ -206,6 +209,7 @@ async function boot() {
   }
   if (state.me.status === 'pending') return renderPending();
   renderShell();
+  renderRelinkBar();
   connectSocket();
   window.addEventListener('hashchange', route);
   route();
@@ -234,6 +238,7 @@ function applyMe(me) {
   state.trackerLinked = !!me.tracker_linked;
   state.trackerState = me.tracker_state || null;
   state.trackerPolledAt = me.tracker_polled_at || null;
+  state.trackerRelink = !!me.tracker_relink;
   state.wpgServer = me.wpg_server || null;
   state.discordLinked = !!me.discord_linked;
   state.realSteam = !!me.real_steam;
@@ -244,6 +249,7 @@ async function refreshMe() {
   try {
     applyMe(await api('me'));
     updateNav();
+    renderRelinkBar();
     emitLive('me', state.me);
   } catch (e) {
     if (e.status === 401 || e.status === 403) location.reload();
@@ -363,6 +369,7 @@ function renderShell() {
           <button class="btn ghost small" id="menuBtn" aria-label="Menu">${icon('menu')}</button>
           <img src="/img/icon-192.png" alt=""><div class="title" id="topTitle">${esc(s.clan_name || 'WPG')}</div>
         </header>
+        <div id="relinkBar"></div>
         <main class="main" id="main"></main>
         <div class="main footer-wrap">${footerArt()}</div>
       </div>
@@ -432,7 +439,7 @@ function connectSocket() {
       const p = state.playing[t.dataset.playing];
       t.hidden = !p;
       t.classList.toggle('wd', !!isWardogs(p));
-      t.textContent = p ? `🎮 ${p.game}` : '';
+      t.innerHTML = playingHtml(p);
     });
     emitLive('playing', map);
   });
@@ -649,15 +656,38 @@ async function syncMine(e) {
 // Fetch stats only from the owner's ID-based API, and credit the source wherever those stats appear.
 const TRACKER_URL = 'https://wardogs.tools';
 export const trackerCredit = () => `<p class="muted small" style="margin:10px 0 0">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>`;
-const needsTracker = () => state.realSteam && !state.trackerLinked;
-const staleLink = () => state.trackerLinked && state.trackerState && state.trackerState !== 'active';
+// Where members (re)link their Wardogs account on wardogs.tools.
+const RELINK_URL = 'https://wardogs.tools/account';
+const relinkBtn = (cls = 'btn') => `<a class="${cls}" href="${RELINK_URL}" target="_blank" rel="noopener">${icon('refresh')} Relink on wardogs.tools</a>`;
+const needsTracker = () => state.realSteam && !state.trackerLinked && !state.trackerRelink;
+// wardogs.tools has stopped updating them (its status isn't active, or their linked account can't be found any more).
+const staleLink = () => state.trackerRelink; // the server waits a day and never asks mid-game (ranking.js)
 function staleCardHtml() {
   const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
+  const why = state.trackerLinked
+    ? `wardogs.tools says your account is <b>${esc(state.trackerState)}</b>, so your numbers here are getting old.`
+    : "wardogs.tools can't find your Wardogs account any more, so your stats here have stopped.";
   return `<div class="panel glow tracker-card" style="border-color:#f5a524">
-    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Your Wardogs stats stopped updating${since ? ` (last read${since})` : ''}</div>
-    <p style="margin:0 0 10px">wardogs.tools says your account is <b>${esc(state.trackerState)}</b>, so your numbers here are getting old. Open wardogs.tools, sign in and link your Wardogs account again, then press <b>Check now</b>.</p>
-    <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open wardogs.tools</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
+    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Relink your Wardogs account${since && state.trackerLinked ? ` (last read${since})` : ''}</div>
+    <p style="margin:0 0 10px">${why} Open <b>wardogs.tools/account</b>, sign in and link your Wardogs account again, then press <b>Check now</b>.</p>
+    <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
+    <div class="row">${relinkBtn('btn primary')}<button class="btn" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
   </div>`;
+}
+// A slim bar on every page while they need to relink (can be hidden until the next visit).
+function renderRelinkBar() {
+  const el = document.getElementById('relinkBar');
+  if (!el) return;
+  let hidden = false;
+  try { hidden = sessionStorage.getItem('wpg.relinkHidden') === '1'; } catch { /* storage blocked */ }
+  el.innerHTML = state.trackerRelink && !hidden
+    ? `<div class="relink-bar tracker-card"><span>${icon('refresh', 'width="16" height="16"')} <b>wardogs.tools has stopped updating your Wardogs stats.</b> Relink your account to keep them up to date.</span>
+        <span class="row" style="gap:8px">${relinkBtn('btn small primary')}<button class="btn small" type="button" data-tracker-check>Check now</button><button class="btn small ghost" type="button" data-relink-hide aria-label="Hide">✕</button></span></div>`
+    : '';
+  el.querySelector('[data-relink-hide]')?.addEventListener('click', () => {
+    try { sessionStorage.setItem('wpg.relinkHidden', '1'); } catch { /* storage blocked */ }
+    el.innerHTML = '';
+  });
 }
 
 function trackerCardHtml() {
@@ -687,6 +717,13 @@ document.addEventListener('click', async (e) => {
   if (status) status.textContent = 'Looking…';
   try {
     const r = await api('me/tracker-check', { method: 'POST', body: {} });
+    // Found, but wardogs.tools still isn't updating them: the relink hasn't gone through yet.
+    if (r.linked && r.state && r.state !== 'active') {
+      const msg = `wardogs.tools still says your account is ${r.state}. Relink it at wardogs.tools/account, then check again.`;
+      if (status) status.textContent = msg;
+      else toast('Not updating yet', msg);
+      return;
+    }
     if (r.linked) {
       toast('Wardogs stats found!', 'Your global stats are on your career profile now.', { link: `#/u/${state.me.id}` });
       await refreshMe();
@@ -756,6 +793,7 @@ function formatStat(def, v) {
 }
 
 async function viewProfile(main, [id]) {
+  if (id === 'me') id = state.me.id;
   const [p, defs, fields, unlockList] = await Promise.all([api(`users/${Number(id)}`), api('stat-defs'), api('profile-fields'), api('unlocks').catch(() => [])]);
   const u = p.user;
   const mine = u.id === state.me.id;
@@ -876,8 +914,10 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('target')} Wardogs <span class="sub">(global stats)</span></div>
           ${off && wr?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${wr.state && wr.state !== 'active' ? '#f5a524' : 'var(--muted)'}">Last polled ${esc(fmtDate(wr.polled_at))} ${esc(new Date(wr.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${wr.state ? ` · ${esc(wr.state)}` : ''}</p>` : ''}
+          ${mine && staleLink() ? `<p class="small" style="margin:0 0 10px;color:#f5a524">${icon('refresh', 'width="14" height="14" style="vertical-align:-2px"')} wardogs.tools has stopped updating your stats: relink your account, then press Check now.</p>` : ''}
           ${officialHtml}
           ${off || wr?.position || wr?.level ? trackerCredit() : ''}
+          ${mine && state.realSteam ? `<div class="row tracker-card" style="margin-top:10px;gap:8px">${relinkBtn(staleLink() ? 'btn small primary' : 'btn small')}<button class="btn small" type="button" data-tracker-check>${icon('refresh')} Check now</button><span class="muted small" data-tracker-status></span></div>` : ''}
         </div>
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
@@ -923,6 +963,7 @@ async function viewProfile(main, [id]) {
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>
+      <div id="liveBox"></div>
       <div id="framesBox"></div>
     </div>`;
 
@@ -936,6 +977,11 @@ async function viewProfile(main, [id]) {
     };
   });
   onLive('me', () => { if (mine) route(); });
+  // Live match money from Steam (switched on by the member).
+  import('./live.js').then((m) => {
+    const box = document.getElementById('liveBox');
+    if (box) m.profileLivePanel(box, u);
+  }).catch(() => {});
   // Profile frames: what they've unlocked, progress on the rest, and (on your own) which one to show.
   import('./frames.js').then((m) => {
     const box = document.getElementById('framesBox');
@@ -1163,7 +1209,7 @@ async function viewChat(main, [idParam], alive) {
     const u = state.users.get(m.user_id) || { name: 'Unknown', id: m.user_id };
     const canDel = m.user_id === state.me.id || isStaff();
     return `<div class="msg${mentionsMe(m.body) && m.user_id !== state.me.id ? ' mention-me' : ''}" data-id="${m.id}"><a href="#/u/${u.id}">${avatar(u)}</a><div class="grow">
-      <div><a class="who" href="#/u/${u.id}" style="color:${isPmc(u) ? '#ffb347' : esc(u.rank?.color || 'var(--text)')}">${isPmc(u) ? '[PMC] ' : u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Developer</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
+      <div><a class="who" href="#/u/${u.id}" style="color:${isPmc(u) ? '#ffb347' : esc(u.rank?.color || 'var(--text)')}">${isPmc(u) ? '[PMC] ' : u.rank ? `[${esc(u.rank.abbr)}] ` : ''}${esc(u.name)}</a>${u.developer ? ' <span class="pill dev">Creator</span>' : ''}<span class="time">${fmtTime(m.created_at)}</span></div>
       <div class="body">${renderBody(m.body, rankById)}</div></div>
       ${canDel ? `<button class="btn ghost small del" data-del="${m.id}" title="Delete" aria-label="Delete">${icon('trash')}</button>` : ''}</div>`;
   };
@@ -1843,7 +1889,7 @@ async function serverBoardHtml(sort, serverId) {
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'wpg';
   const tag = state.settings.clan_tag || 'WPG';
-  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['tonight', '24-hour money'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
   // WPG rank: everyone's WPG XP and rank (from the Discord bot, or the app once switched over in Admin → WPG XP).
   if (by === 'wpg') {
     const d = await api('wpg-ranking');
@@ -1909,12 +1955,13 @@ async function viewLeaderboard(main) {
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h', gold: 'gold', unlocks: 'unlocks' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
+    ${by === 'tonight' ? '<p class="muted small" style="margin:-4px 0 12px">Match money over the last 24 hours, live from Steam, for members who switched on <b>Live match money</b> on their profile.</p>' : ''}
     ${['worth', 'cash', 'level', 'gold', 'unlocks'].includes(by) ? `<p class="muted small" style="margin:-4px 0 12px">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>. Members it hasn't found show —.</p>` : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">
         <b style="font:700 22px var(--head);width:42px;text-align:center;color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">#${i + 1}</b>
         <div class="grow">${userLine(u)}</div>
-        <b style="font:700 18px var(--head)">${u.score === null || u.score === undefined ? '—' : by === 'cash' || by === 'worth' ? fmtMoney(u.score) : `${fmtNum(u.score)} <span class="muted small">${unit}</span>`}</b>
+        <b style="font:700 18px var(--head)">${u.score === null || u.score === undefined ? '—' : by === 'tonight' ? `<span style="color:${u.score < 0 ? 'var(--red)' : 'var(--green)'}">${u.score < 0 ? '-' : '+'}${fmtMoney(Math.abs(u.score))}</span>` : by === 'cash' || by === 'worth' ? fmtMoney(u.score) : `${fmtNum(u.score)} <span class="muted small">${unit}</span>`}</b>
       </a>`).join('') || '<p class="empty">No data yet.</p>'}</div>`;
 }
 

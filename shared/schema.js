@@ -187,9 +187,52 @@ export const wardogsStats = pgTable('wardogs_stats', {
   official_synced: timestamp({ withTimezone: true }),
   server: jsonb(),
   server_synced: timestamp({ withTimezone: true }),
-  // API rank metadata: { source, socialId, displayName, position, total, bracket, change, polled_at, state }
+  // API rank metadata: { source, socialId, displayName, position, total, bracket, change, polled_at, state, lost? }
   ranks: jsonb(),
   ranks_synced: timestamp({ withTimezone: true }),
+  // wardogs.tools stopped updating them: how many times they've been asked to relink, and when last (ranking.js).
+  relink_prompts: integer().notNull().default(0),
+  relink_prompted_at: timestamp({ withTimezone: true }),
+  relink_since: timestamp({ withTimezone: true }), // when wardogs.tools first stopped updating them (prompts wait 24h)
+});
+
+// ---------- Live match money from Steam (steambot.js) ----------
+// Each member who switched it on: the bot's friendship with them and their latest Wardogs status line from Steam.
+// friend: none | requested | friends | blocked
+export const livePresence = pgTable('live_presence', {
+  user_id: integer().primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  steam_id: text().notNull().default(''),
+  opted_in: boolean().notNull().default(false),
+  friend: text().notNull().default('none'),
+  in_game: boolean().notNull().default(false),
+  text: text().notNull().default(''), // e.g. "-$10,793 Loss"
+  money: integer(),
+  result: text().notNull().default(''), // win | loss | ''
+  raw: jsonb().notNull().default({}),
+  seen_at: timestamp({ withTimezone: true }),
+  updated_at: timestamp({ withTimezone: true }),
+  // The running profit / loss of the match in progress (Steam shows the match total; it goes back to $0 when the next
+  // match starts). Saved as that match's result when it resets, or when they leave Wardogs.
+  open_money: integer(),
+  invite_link: text().notNull().default(''), // their own single-use Steam quick invite link to add the bot
+  invite_expires: timestamp({ withTimezone: true }),
+});
+// Every finished match read from Steam (for "Tonight's money"): its final profit / loss. result: profit | loss
+export const presenceResults = pgTable('presence_results', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  money: integer().notNull().default(0),
+  result: text().notNull().default(''),
+  text: text().notNull().default(''),
+  at: now(),
+}, (t) => [index('presence_results_at_idx').on(t.at)]);
+// Every change of status line, raw, kept 3 days (for staff checking what Wardogs sends).
+export const presenceLog = pgTable('presence_log', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  text: text().notNull().default(''),
+  raw: jsonb().notNull().default({}),
+  at: now(),
 });
 
 export const wardogsApiCache = pgTable('wardogs_api_cache', {

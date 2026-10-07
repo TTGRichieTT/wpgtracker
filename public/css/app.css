@@ -380,6 +380,13 @@ h1 { font-size: 34px; margin-bottom: 14px; }
 .nav a.active { background: linear-gradient(90deg, rgba(41,182,246,.28), rgba(41,182,246,.02)); box-shadow: inset 3px 0 0 var(--accent), 0 0 18px rgba(41,182,246,.12); }
 .sidebar-art { margin-top: 10px; text-align: center; }
 .sidebar-art .script { font-size: 22px; }
+.playing-tag .live-money { font-weight: 700; }
+.playing-tag .live-money.up { color: var(--green); }
+.playing-tag .live-money.down { color: var(--red); }
+.tile .val.bad { color: var(--red); }
+.relink-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 12px 24px 0; padding: 10px 14px; border: 1px solid #f5a524; border-radius: 10px; background: rgba(30, 21, 6, .94); color: #ffd79a; box-shadow: 0 0 14px rgba(245, 165, 36, .18); }
+.relink-bar svg { vertical-align: -3px; }
+@media (max-width: 760px) { .relink-bar { margin: 10px 12px 0; } }
 .social-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0 0; }
 .social-row:empty { display: none; }
 .btn.facebook-btn { background: linear-gradient(180deg, #2d88ff, #1659c7); border-color: #5aa2ff; color: #fff; box-shadow: 0 0 16px rgba(24,119,242,.35); }

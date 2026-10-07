@@ -39,7 +39,8 @@ api.get('/me', signedIn, async (req, res) => {
   const tracker = await one(
     `SELECT (official IS NOT NULL AND ranks->>'source'='wardogs.tools') AS linked,
             CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'state' END AS state,
-            CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'polled_at' END AS polled_at
+            CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'polled_at' END AS polled_at,
+            (ranks->>'source'='wardogs.tools' AND ranks->>'lost' = 'true') AS lost, relink_prompts
        FROM wardogs_stats WHERE user_id=$1`,
     [req.user.id],
   );
@@ -58,6 +59,9 @@ api.get('/me', signedIn, async (req, res) => {
     // API-provided status (for example, active or paused); missing/unsynced are lookup outcomes.
     tracker_state: tracker?.state || null,
     tracker_polled_at: tracker?.polled_at || null,
+    // wardogs.tools has stopped updating them for a day (status not active, or a linked account no longer found)
+    // and they've been asked to relink (ranking.js); cleared as soon as it's updating them again.
+    tracker_relink: !!tracker && tracker.relink_prompts > 0 && ((tracker.linked && !!tracker.state && tracker.state !== 'active') || !!tracker.lost),
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', ...(await rankProgress(prog?.xp)) },
     real_steam: /^\d{17}$/.test(req.user.steam_id),
     discord_linked: !!req.user.discord_id,
@@ -335,6 +339,13 @@ api.get('/leaderboard', member, async (req, res) => {
       `SELECT u.*, CASE WHEN ws.ranks->>'source'='wardogs.tools' THEN (ws.official->>'${key}')::bigint END AS score FROM users u
          LEFT JOIN wardogs_stats ws ON ws.user_id = u.id
         WHERE u.status='active' ORDER BY score DESC NULLS LAST, u.xp DESC LIMIT 100`,
+    );
+  } else if (by === 'tonight') {
+    // Match money read from Steam over the last 24 hours (members who switched live match money on; steambot.js).
+    const { TONIGHT_ROWS } = await import('./steambot.js');
+    rows = await q(
+      `SELECT u.*, SUM(t.money)::int AS score FROM users u JOIN (${TONIGHT_ROWS}) t ON t.user_id = u.id
+        WHERE u.status='active' GROUP BY u.id ORDER BY score DESC LIMIT 100`,
     );
   } else if (by === 'hours') {
     rows = await q(
