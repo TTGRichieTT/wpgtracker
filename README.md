@@ -198,6 +198,17 @@ own artwork around their picture; locked ones dimmed with a lock and a progress 
 or name option): what they've earned with the date, the frame they're wearing, and the next few still to earn with
 progress, by Permanent, Clan, this season and past seasons.
 
+**Tidy up an existing server** (Server & roles): for the old WPG Discord. **Scan** changes nothing and lists every role
+with its member count and what will happen to it. Kept: roles with 5+ members, staff / owner roles, the layout's roles
+(matched by name, e.g. WarDogs = Wardogs, WPG Community = the PMC role, 🛡️|Administrator = Admin), divider roles and bots'
+roles; the rest are ticked for removal (untick any to keep them). Kept roles that aren't staff lose risky permissions.
+Channels keep their names, places and messages; they're matched to the layout by name (emoji and brackets ignored) and
+get exactly the layout's permissions (single-member and bot overwrites kept); channels not in the layout take their
+category's. Missing layout channels and roles are added and the roles put in order under dividers. Bots are left alone.
+A full backup (roles, channels, permissions, everyone's roles) is made first and can be downloaded. To test on a copy of
+the real server, put the real server's ID in "Count members from another server". **WPG Community** is the PMC role:
+the app gives it to linked PMC guests and takes it off anyone with WPG Member.
+
 ### Entry check, rules and moderation (same page)
 
 The bot also does what mod bots like Carl-bot, Captcha.bot and Ticket Tool did. It keeps a live connection to Discord,

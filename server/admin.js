@@ -7,7 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, tidyScan, startTidy, lastBackup } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -455,6 +455,7 @@ admin.get('/discord-server', role('admin'), async (_req, res) => {
     invite_url: `https://discord.com/oauth2/authorize?client_id=${discordAppId()}&scope=bot%20applications.commands&permissions=8${guild ? `&guild_id=${guild}&disable_guild_select=true` : ''}`,
     portal_url: `https://discord.com/developers/applications/${discordAppId()}/bot`,
     build: buildStatus(),
+    backup_at: (await lastBackup())?.at || null,
     sync: await lastSync(),
     gateway: gatewayStatus(),
     entry: {
@@ -540,6 +541,31 @@ admin.put('/discord-server/commands', role('admin'), async (req, res) => {
   await audit(req.user.id, 'discord.commands', '', out);
   const r = await registerCommands().catch((e) => ({ ok: false, reason: e.message }));
   res.json({ ok: true, discord: r });
+});
+
+// Tidy up an existing server: scan (nothing changes), then apply the chosen removals with a backup first.
+admin.post('/discord-server/tidy/scan', role('admin'), async (req, res) => {
+  try {
+    res.json(await tidyScan({ countFrom: str(req.body?.count_from, 30).trim() }));
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+});
+admin.post('/discord-server/tidy', role('admin'), async (req, res) => {
+  const remove = Array.isArray(req.body?.remove) ? req.body.remove.map((x) => String(x)).filter((x) => /^\d{15,22}$/.test(x)) : [];
+  try {
+    startTidy({ remove, countFrom: str(req.body?.count_from, 30).trim() });
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+  await audit(req.user.id, 'discord.server.tidy', await guildId(), { remove });
+  res.json({ ok: true });
+});
+admin.get('/discord-server/backup', role('admin'), async (_req, res) => {
+  const b = await lastBackup();
+  if (!b) throw new HttpError(404, 'No backup yet: one is made each time Tidy up runs.');
+  res.setHeader('Content-Disposition', `attachment; filename="discord-backup-${b.guild}-${String(b.at).slice(0, 10)}.json"`);
+  res.json(b);
 });
 
 admin.post('/discord-server/posts', role('admin'), async (_req, res) => {
