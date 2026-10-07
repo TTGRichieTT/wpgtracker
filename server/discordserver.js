@@ -87,7 +87,8 @@ async function roleSpec() {
 
 // Categories and channels. Overwrites name roles by key ('everyone' = @everyone); allow / deny are permission names.
 function channelSpec(units, command) {
-  const staff = { mod: { allow: [...TALK, 'MANAGE_MESSAGES', 'MUTE', 'MOVE'] } };
+  // Admin has Administrator anyway; it's named here too so staff channels stay open to it if that's ever taken off.
+  const staff = { admin: { allow: [...TALK, 'MANAGE_MESSAGES', 'MUTE', 'MOVE'] }, mod: { allow: [...TALK, 'MANAGE_MESSAGES', 'MUTE', 'MOVE'] } };
   const gated = (who, extra = {}) => ({ everyone: { deny: ['VIEW'] }, [who]: { allow: TALK }, ...staff, ...extra });
   const leadersOnly = {
     wpg: { deny: ['VIEW'] }, leader: { allow: TALK },
@@ -682,6 +683,41 @@ export function startBotCleanup({ kick = [], strip = true, undo = false, order =
     .finally(() => { building.running = false; scheduleSync(3000); });
 }
 
+// ---------- Old staff back (Discord control → Server & roles → Roles) ----------
+// From the last Tidy up backup: everyone who had a staff role then (one with Administrator, or kick / ban / timeout /
+// manage messages / manage roles…) gets that role back if it still exists, plus the layout's Admin (they had
+// Administrator) or Moderator role, which opens the staff channels. apply=false only lists what would happen.
+const STAFF_BITS = (1n << 1n) | (1n << 2n) | (1n << 4n) | (1n << 5n) | (1n << 13n) | (1n << 28n) | (1n << 40n);
+export async function restoreStaff({ apply = false } = {}) {
+  const guild = await guildId();
+  const b = await lastBackup();
+  if (!b || b.guild !== guild) throw new Error('No Tidy up backup for this server, so there is nothing to go by.');
+  const map = await loadMap(guild);
+  const [roles, members] = await Promise.all([discordFetch(`/guilds/${guild}/roles`), allMembers(guild)]);
+  const live = new Map(roles.map((r) => [r.id, r]));
+  const admin = live.has(map.roles.admin) ? map.roles.admin : null;
+  const mod = live.has(map.roles.mod) ? map.roles.mod : null;
+  const bots = new Set(members.filter((m) => m.user.bot).map((m) => m.user.id));
+  const staffRoles = new Map(b.roles.filter((r) => !r.managed && r.id !== guild
+    && ((BigInt(r.permissions || 0) & (1n << 3n | STAFF_BITS)) !== 0n || r.id === admin || r.id === mod)).map((r) => [r.id, r]));
+  const now = new Map(members.map((m) => [m.user.id, m]));
+  const out = [];
+  for (const old of b.members) {
+    const m = now.get(old.id);
+    if (!m || bots.has(old.id)) continue;
+    const had = old.roles.map((id) => staffRoles.get(id)).filter(Boolean);
+    if (!had.length) continue;
+    const want = new Set(had.filter((r) => live.has(r.id)).map((r) => r.id));
+    if (admin && had.some((r) => (BigInt(r.permissions || 0) & (1n << 3n)) !== 0n || r.id === admin)) want.add(admin);
+    else if (mod) want.add(mod);
+    const give = [...want].filter((id) => !m.roles.includes(id));
+    if (!give.length) continue;
+    out.push({ id: old.id, name: m.nick || m.user.global_name || m.user.username, had: had.map((r) => r.name), give: give.map((id) => live.get(id).name) });
+    if (apply) for (const id of give) await discordFetch(`/guilds/${guild}/members/${old.id}/roles/${id}`, 'PUT').catch(() => {});
+  }
+  return { backup_at: b.at, people: out };
+}
+
 // ---------- Role sync ----------
 export async function allMembers(guild) {
   const out = [];
@@ -812,10 +848,11 @@ export async function syncRoles() {
         have.delete(rid('pmc'));
         removed++;
       }
-      // Only linked members lose roles: the app knows exactly what they should have.
+      // Only linked members lose roles: the app knows exactly what they should have. Admin and Moderator are only
+      // ever given, never taken: staff made staff in Discord keep it even if the app has them as a member.
       if (!u) continue;
       for (const id of have) {
-        if (!managed.has(id) || want.has(id)) continue;
+        if (!managed.has(id) || want.has(id) || id === rid('admin') || id === rid('mod')) continue;
         await discordFetch(`/guilds/${guild}/members/${m.user.id}/roles/${id}`, 'DELETE').catch(() => {});
         removed++;
       }

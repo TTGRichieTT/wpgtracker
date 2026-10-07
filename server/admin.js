@@ -7,7 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup, restoreStaff } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -633,6 +633,17 @@ admin.post('/discord-server/build', role('admin'), async (req, res) => {
   }
   await audit(req.user.id, 'discord.server.build', await guildId(), { use_posts: bool(req.body?.use_posts) });
   res.json({ ok: true });
+});
+
+// Old staff back: list (apply false) or give back the staff roles people had at the last Tidy up backup.
+admin.post('/discord-server/restore-staff', role('admin'), async (req, res) => {
+  try {
+    const r = await restoreStaff({ apply: bool(req.body?.apply) });
+    if (bool(req.body?.apply)) await audit(req.user.id, 'discord.server.restore_staff', await guildId(), { people: r.people.length });
+    res.json(r);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
 });
 
 admin.post('/discord-server/sync', role('admin'), async (_req, res) => {
