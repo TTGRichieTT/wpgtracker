@@ -974,6 +974,97 @@ export function renderFrameUnlockCard(d) {
   }, { credit: !!d.credit });
 }
 
+// ---------- Live match money (/money and the board in the live match money channel) ----------
+// d: { live, updated, now: [{ name, avatar, text, money }], tonight: [{ name, avatar, total, matches, playing }] }
+const MONEY_RED = '#ff5d5d';
+const moneyColor = (n) => (n === null || n === undefined ? MUTED : n < 0 ? MONEY_RED : GREEN);
+const signed = (n) => `${n < 0 ? '-' : '+'}${money(Math.abs(n))}`;
+async function roundPic(g, img, x, y, s) {
+  g.save();
+  g.beginPath(); g.arc(x + s / 2, y + s / 2, s / 2, 0, Math.PI * 2); g.clip();
+  if (img) g.drawImage(img, x, y, s, s); else { g.fillStyle = BOX_FILL; g.fillRect(x, y, s, s); }
+  g.restore();
+  g.strokeStyle = 'rgba(56,170,235,0.8)';
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(x + s / 2, y + s / 2, s / 2, 0, Math.PI * 2); g.stroke();
+}
+export function renderMoneyCard(d) {
+  const now = (d.now || []).slice(0, 100);
+  const tonight = (d.tonight || []).slice(0, 100);
+  // Up to 12 each: the two lists side by side. More: one full-width list above the other, in 2 or 3 columns.
+  const wide = Math.max(now.length, tonight.length) > 12;
+  const PLACE = ['#e9c46a', '#cfd8e3', '#d08a4f'];
+  const cols = (n) => (n > 40 ? 3 : n > 12 ? 2 : 1);
+  const ROW = wide ? 44 : 62;
+  const listH = (n) => 78 + Math.max(1, Math.ceil(Math.max(1, n) / (wide ? cols(n) : 1))) * ROW + 16;
+  const sideH = Math.max(listH(now.length), listH(tonight.length), 78 + 3 * ROW + 16);
+  const bodyH = wide ? listH(now.length) + 16 + listH(tonight.length) : sideH;
+  return frame('LIVE MATCH MONEY', bodyH + 84, async (g, top) => {
+    const y = top + 6;
+    label(g, d.live ? `UPDATES BY ITSELF · LAST UPDATED ${upper(d.updated || '')}` : `AS OF ${upper(d.updated || '')}`, W / 2, y + 16, { align: 'center', size: 20, color: CYAN });
+    const py = y + 40;
+    // One list in a panel: x, y, width; rows laid out in columns.
+    const list = async (x, ty, w, h, rows, { icon: drawIcon, main, accent, right, empty, ranked }) => {
+      panel(g, x, ty, w, h);
+      drawIcon(g, x + 38, ty + 38);
+      title(g, x + 72, ty + 38, main, accent);
+      label(g, right, x + w - 28, ty + 40, { align: 'right', color: MUTED });
+      if (!rows.length) { label(g, empty, x + w / 2, ty + 112, { align: 'center', color: MUTED }); return; }
+      const c = wide ? cols(rows.length) : 1;
+      const perCol = Math.ceil(rows.length / c);
+      const cw = (w - 44 - (c - 1) * 12) / c;
+      const pic = wide ? 30 : 40;
+      const imgs = await Promise.all(rows.map((r) => icon(r.avatar)));
+      rows.forEach((r, i) => {
+        const cx = x + 22 + Math.floor(i / perCol) * (cw + 12);
+        const ry = ty + 78 + (i % perCol) * ROW;
+        g.fillStyle = BOX_FILL;
+        roundRect(g, cx, ry, cw, ROW - 8, 8);
+        g.fill();
+        let nx = cx + 10;
+        if (ranked) {
+          label(g, `#${i + 1}`, nx + 18, ry + (ROW - 8) / 2, { align: 'center', size: wide ? 18 : 24, color: PLACE[i] || MUTED });
+          nx += 40;
+        }
+        roundPic(g, imgs[i], nx, ry + (ROW - 8 - pic) / 2, pic);
+        nx += pic + 12;
+        const valueW = Math.min(wide ? 160 : 300, cw * 0.42);
+        const mid = ry + (ROW - 8) / 2;
+        if (ranked) {
+          bigValue(g, r.name, nx, wide ? mid : mid - 8, cw - (nx - cx) - valueW - 16, { size: wide ? 17 : 22, weight: 700 });
+          if (!wide) {
+            g.font = `600 14px ${VALUE_FONT}`;
+            g.fillStyle = MUTED;
+            g.textAlign = 'left';
+            g.textBaseline = 'middle';
+            g.fillText(`${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`, nx, mid + 12);
+          }
+          const tail = wide ? ` (${r.matches}${r.playing ? '+1' : ''})` : '';
+          bigValue(g, `${signed(r.total)}${tail}`, cx + cw - 12, mid, valueW, { size: wide ? 18 : 28, align: 'right', color: moneyColor(r.total) });
+        } else {
+          bigValue(g, r.name, nx, mid, cw - (nx - cx) - valueW - 16, { size: wide ? 17 : 24, weight: 700 });
+          const isMoney = r.money !== null && r.money !== undefined && /\$/.test(r.text || '');
+          bigValue(g, upper(r.text || 'In game'), cx + cw - 12, mid, valueW, { size: wide ? 15 : isMoney ? 24 : 18, align: 'right', font: LABEL_FONT, weight: 700, color: isMoney ? moneyColor(r.money) : MUTED });
+        }
+      });
+    };
+    const nowOpts = { icon: trophyIcon, main: 'IN A MATCH', accent: 'NOW', right: `${now.length} PLAYING`, empty: 'NOBODY IN A MATCH RIGHT NOW' };
+    const dayOpts = { icon: medalIcon, main: 'LAST', accent: '24 HOURS', right: `${tonight.length} PLAYER${tonight.length === 1 ? '' : 'S'} · TOTAL PROFIT / LOSS`, empty: 'NO MATCHES IN THE LAST 24 HOURS', ranked: true };
+    if (wide) {
+      await list(28, py, 1480, listH(now.length), now, nowOpts);
+      await list(28, py + listH(now.length) + 16, 1480, listH(tonight.length), tonight, dayOpts);
+    } else {
+      await list(28, py, 730, sideH, now, nowOpts);
+      await list(778, py, 730, sideH, tonight, dayOpts);
+    }
+    g.font = `600 15px ${VALUE_FONT}`;
+    g.fillStyle = MUTED;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('Live from Steam · WPG members who switched on Live match money in WPG Barracks', W / 2, py + bodyH + 22);
+  });
+}
+
 // ---------- /frames ----------
 // d: { name, avatar, frame (the one they wear), selected (its id), credit, rank (their clan rank: name, colour, insignia),
 //      groups: [{ label, frames: [{ ...look, unlocked, unlocked_at, progress{value,target,unit}, locked_reason }] }] }
