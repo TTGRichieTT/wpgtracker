@@ -974,6 +974,77 @@ export function renderFrameUnlockCard(d) {
   }, { credit: !!d.credit });
 }
 
+// ---------- Live match money (/money and the board in the live match money channel) ----------
+// d: { live, updated, now: [{ name, avatar, text, money }], tonight: [{ name, avatar, total, matches, playing }] }
+const MONEY_RED = '#ff5d5d';
+const moneyColor = (n) => (n === null || n === undefined ? MUTED : n < 0 ? MONEY_RED : GREEN);
+const signed = (n) => `${n < 0 ? '-' : '+'}${money(Math.abs(n))}`;
+async function roundPic(g, img, x, y, s) {
+  g.save();
+  g.beginPath(); g.arc(x + s / 2, y + s / 2, s / 2, 0, Math.PI * 2); g.clip();
+  if (img) g.drawImage(img, x, y, s, s); else { g.fillStyle = BOX_FILL; g.fillRect(x, y, s, s); }
+  g.restore();
+  g.strokeStyle = 'rgba(56,170,235,0.8)';
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(x + s / 2, y + s / 2, s / 2, 0, Math.PI * 2); g.stroke();
+}
+export function renderMoneyCard(d) {
+  const now = (d.now || []).slice(0, 10);
+  const tonight = (d.tonight || []).slice(0, 10);
+  const ROW = 62;
+  const rows = Math.max(3, now.length, tonight.length);
+  const bodyH = 96 + rows * ROW + 20;
+  return frame('LIVE MATCH MONEY', bodyH + 84, async (g, top) => {
+    const y = top + 6;
+    label(g, d.live ? `UPDATES BY ITSELF · LAST UPDATED ${upper(d.updated || '')}` : `AS OF ${upper(d.updated || '')}`, W / 2, y + 16, { align: 'center', size: 20, color: CYAN });
+    const py = y + 40;
+    // In a match now.
+    panel(g, 28, py, 730, bodyH);
+    trophyIcon(g, 66, py + 38);
+    title(g, 100, py + 38, 'IN A MATCH', 'NOW');
+    label(g, `${now.length} PLAYING`, 730, py + 40, { align: 'right', color: MUTED });
+    const nowImgs = await Promise.all(now.map((r) => icon(r.avatar)));
+    if (!now.length) label(g, 'NOBODY IN A MATCH RIGHT NOW', 393, py + 140, { align: 'center', color: MUTED });
+    now.forEach((r, i) => {
+      const ry = py + 78 + i * ROW;
+      g.fillStyle = BOX_FILL;
+      roundRect(g, 50, ry, 686, ROW - 10, 8);
+      g.fill();
+      roundPic(g, nowImgs[i], 60, ry + 6, 40);
+      bigValue(g, r.name, 114, ry + 26, 300, { size: 24, weight: 700 });
+      const isMoney = r.money !== null && r.money !== undefined && /\$/.test(r.text || '');
+      bigValue(g, isMoney ? upper(r.text) : upper(r.text || 'In game'), 722, ry + 26, 300, { size: isMoney ? 24 : 18, align: 'right', font: LABEL_FONT, weight: 700, color: isMoney ? moneyColor(r.money) : MUTED });
+    });
+    // Last 24 hours.
+    panel(g, 778, py, 730, bodyH);
+    medalIcon(g, 816, py + 38);
+    title(g, 850, py + 38, 'LAST', '24 HOURS');
+    label(g, 'TOTAL PROFIT / LOSS', 1480, py + 40, { align: 'right', color: MUTED });
+    const tImgs = await Promise.all(tonight.map((r) => icon(r.avatar)));
+    if (!tonight.length) label(g, 'NO MATCHES IN THE LAST 24 HOURS', 1143, py + 140, { align: 'center', color: MUTED });
+    const PLACE = ['#e9c46a', '#cfd8e3', '#d08a4f'];
+    tonight.forEach((r, i) => {
+      const ry = py + 78 + i * ROW;
+      g.fillStyle = BOX_FILL;
+      roundRect(g, 800, ry, 686, ROW - 10, 8);
+      g.fill();
+      label(g, `#${i + 1}`, 836, ry + 26, { align: 'center', size: 24, color: PLACE[i] || MUTED });
+      roundPic(g, tImgs[i], 866, ry + 6, 40);
+      bigValue(g, r.name, 920, ry + 18, 300, { size: 22, weight: 700 });
+      g.font = `600 14px ${VALUE_FONT}`;
+      g.fillStyle = MUTED;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(`${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`, 920, ry + 38);
+      bigValue(g, signed(r.total), 1472, ry + 26, 220, { size: 28, align: 'right', color: moneyColor(r.total) });
+    });
+    g.font = `600 15px ${VALUE_FONT}`;
+    g.fillStyle = MUTED;
+    g.textAlign = 'center';
+    g.fillText('Live from Steam · WPG members who switched on Live match money in WPG Barracks', W / 2, py + bodyH + 22);
+  });
+}
+
 // ---------- /frames ----------
 // d: { name, avatar, frame (the one they wear), selected (its id), credit, rank (their clan rank: name, colour, insignia),
 //      groups: [{ label, frames: [{ ...look, unlocked, unlocked_at, progress{value,target,unit}, locked_reason }] }] }

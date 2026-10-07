@@ -867,16 +867,20 @@ bus.on('tracker:relink', async (a) => {
 // Live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now with the match's
 // running profit / loss, and the last 24 hours' totals. Used by /money and the live board.
 const signedMoney = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
-async function moneyEmbed({ live = false } = {}) {
+async function moneyData() {
   const { TONIGHT_ROWS } = await import('./steambot.js');
   const [now, tonight] = await Promise.all([
-    q(`SELECT u.persona_name AS name, lp.text, lp.money FROM live_presence lp JOIN users u ON u.id = lp.user_id
+    q(`SELECT u.persona_name AS name, u.custom_avatar, u.avatar, lp.text, lp.money FROM live_presence lp JOIN users u ON u.id = lp.user_id
         WHERE lp.opted_in AND lp.in_game AND lp.text <> '' AND u.status='active' AND u.membership <> 'pmc'
           AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.money DESC NULLS LAST LIMIT 15`),
-    q(`SELECT u.persona_name AS name, SUM(t.money)::int AS total, COUNT(*) FILTER (WHERE t.done)::int AS matches, BOOL_OR(NOT t.done) AS playing
+    q(`SELECT u.persona_name AS name, MAX(u.custom_avatar) AS custom_avatar, MAX(u.avatar) AS avatar, SUM(t.money)::int AS total, COUNT(*) FILTER (WHERE t.done)::int AS matches, BOOL_OR(NOT t.done) AS playing
          FROM (${TONIGHT_ROWS}) t JOIN users u ON u.id = t.user_id
         WHERE u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 10`),
   ]);
+  return { now, tonight };
+}
+async function moneyEmbed({ live = false, data = null } = {}) {
+  const { now, tonight } = data || await moneyData();
   const medal = ['🥇', '🥈', '🥉'];
   const matches = (r) => `${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`;
   return {
@@ -895,8 +899,22 @@ const moneyButtons = () => [{ type: 1, components: [
   { type: 2, style: 5, label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` },
   { type: 2, style: 5, label: 'Switch it on in WPG Barracks', url: `${SITE()}/#/u/me` },
 ] }];
+// The picture card (WPG card art), with the text version if the picture can't be made.
+async function moneyPost({ live = false, data = null } = {}) {
+  const d = data || await moneyData();
+  const updated = new Date().toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit' });
+  const card = (r) => ({ ...r, name: cleanName(r.name), avatar: avatarOf(r) });
+  try {
+    const cards = await import('./cards.js');
+    const jpg = await cards.renderMoneyCard({ live, updated, now: d.now.map(card), tonight: d.tonight.map(card) });
+    return { files: [{ name: 'wpg-money.jpg', data: jpg, type: 'image/jpeg' }], components: moneyButtons() };
+  } catch (e) {
+    problem('/money picture (sent text instead)', e.message);
+    return { embeds: [await moneyEmbed({ live, data: d })], components: moneyButtons() };
+  }
+}
 async function cmdMoney() {
-  return { embeds: [await moneyEmbed()], components: moneyButtons() };
+  return moneyPost();
 }
 
 // The live board: one message in the live match money channel that the bot keeps editing (at most once a minute, and
@@ -910,23 +928,23 @@ export async function updateMoneyBoard() {
   if (!TOKEN() || !(await flag('discord_money_board'))) return;
   const channel = String((await setting('discord_money_channel')) || '').trim();
   if (!/^\d{15,22}$/.test(channel)) return;
-  const embed = await moneyEmbed({ live: true });
-  const body = JSON.stringify(embed.fields);
+  const data = await moneyData();
+  const body = JSON.stringify(data);
   if (!boardDirty && body === boardLast.body && Date.now() - boardLast.at < 10 * 60 * 1000) return;
-  const payload = { embeds: [embed], components: moneyButtons() };
+  const payload = await moneyPost({ live: true, data });
   const saved = String((await one('SELECT value FROM settings WHERE key=$1', [BOARD_KEY]))?.value || '');
   const [savedChannel, savedId] = saved.split(':');
   let posted = false;
   if (savedChannel === channel && savedId) {
     try {
-      await discordFetch(`/channels/${channel}/messages/${savedId}`, 'PATCH', payload);
+      await editMessage(channel, savedId, payload);
       posted = true;
     } catch (e) {
       if (!/ 404|10008|Unknown Message/.test(e.message)) throw e; // deleted: post a new one below
     }
   }
   if (!posted) {
-    const msg = await discordFetch(`/channels/${channel}/messages`, 'POST', payload);
+    const msg = await sendToChannel(channel, payload);
     await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [BOARD_KEY, `${channel}:${msg.id}`]);
   }
   boardLast = { body, at: Date.now() };
@@ -1276,6 +1294,16 @@ export async function sendToChannel(channel, { files, ...rest }) {
   files.forEach((x, i) => form.append(`files[${i}]`, new Blob([x.data], { type: x.type || 'image/jpeg' }), x.name));
   const res = await fetch(`${API}/channels/${channel}/messages`, { method: 'POST', headers: { Authorization: `Bot ${TOKEN()}` }, body: form, signal: AbortSignal.timeout(30000) });
   if (!res.ok) throw new Error(`Discord said ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+  return res.json().catch(() => null);
+}
+// Edits one of the bot's messages; with files, the old picture is swapped for the new one (and any embed removed).
+async function editMessage(channel, id, { files, ...rest }) {
+  if (!files?.length) return discordFetch(`/channels/${channel}/messages/${id}`, 'PATCH', { embeds: [], attachments: [], ...rest });
+  const form = new FormData();
+  form.append('payload_json', JSON.stringify({ embeds: [], content: '', ...rest, attachments: files.map((x, i) => ({ id: i, filename: x.name })) }));
+  files.forEach((x, i) => form.append(`files[${i}]`, new Blob([x.data], { type: x.type || 'image/jpeg' }), x.name));
+  const res = await fetch(`${API}/channels/${channel}/messages/${id}`, { method: 'PATCH', headers: { Authorization: `Bot ${TOKEN()}` }, body: form, signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`Discord PATCH message returned ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
   return res.json().catch(() => null);
 }
 // Posts to the channel in a setting: the public post channel, or the staff channel for cheat watch.
