@@ -439,7 +439,7 @@ async function cmdFrames(data, caller) {
     for (const l of lines) { if ((value + l).length > 1000) { value += '\n…'; break; } value += `${value ? '\n' : ''}${l}`; }
     fields.push({ name: `${label} (${got.length}/${list.length})`, value: value || '—' });
   }
-  const out = {
+  const text = () => ({
     embeds: [{
       ...header(f.user),
       title: `Frames (${earned.length}/${all.length})`,
@@ -449,9 +449,19 @@ async function cmdFrames(data, caller) {
       footer,
     }],
     components: [{ type: 1, components: [{ type: 2, style: 5, ...profileLink(f.user) }] }],
-  };
+  });
+  // The picture card: every frame's own art around their picture (text list if the picture can't be made).
+  const credit = earned.some((x) => x.source === 'wardogs.tools');
+  const out = await asPicture('frames', async (cards) => cards.renderFramesCard({
+    name: await cardName(f.user),
+    avatar: avatarOf(f.user),
+    frame: f.pub?.frame || null,
+    selected: d.selected,
+    credit,
+    groups: groups.map(([key, label]) => ({ label, frames: d.groups[key] || [] })),
+  }), text, profileLink(f.user));
   // Frames worked out from wardogs.tools stats are credited.
-  if (earned.some((x) => x.source === 'wardogs.tools')) {
+  if (credit) {
     out.content = `Class, Wardog level and cash frames: ${TRACKER_CREDIT}`;
     withTrackerButton(out);
   }

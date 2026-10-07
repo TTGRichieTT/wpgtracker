@@ -193,7 +193,8 @@ switches control the bot, not Discord's own server settings. The Discord parts o
   Content Creator, Partner, Military Vet and 18+ are given by hand. Roles on members who haven't linked are never
   taken away; unlinking takes the app's roles off again.
 
-**/frames** in Discord shows a member's profile frames as an achievement list (yours, or another member's with the member
+**/frames** in Discord shows a member's profile frames as a picture card (the WPG card art, every frame drawn with its
+own artwork around their picture; locked ones dimmed with a lock and a progress bar) and an achievement list (yours, or another member's with the member
 or name option): what they've earned with the date, the frame they're wearing, and the next few still to earn with
 progress, by Permanent, Clan, this season and past seasons.
 
