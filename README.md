@@ -169,7 +169,9 @@ The bot builds the WPG Discord layout and keeps members' roles in step with the 
 
 Everything the WPG Discord bot does is on one page (menu → **Discord control**), each part a drop-down section that stays open or closed as you left it: **Bot** (setup checklist, connection, test post, card
 previews), **Server & roles**, **Entry & rules**, **Filters & moderation**, **Logs & extras**, **Posts & channels**
-and **Cases**. Each bot feature has its own on / off switch (e.g. the offensive language filter, each spam filter, the
+and **Cases**. **Commands** sets who can use each bot command: everyone on Discord, PMC guests and up, WPG
+members and up, mods and admins, admins only, or off (removed from Discord). People count as their app rank once linked
+with /link; Discord admins count as admins and anyone who can kick / ban / time out as a mod. /link and /unlink stay open. Each bot feature has its own on / off switch (e.g. the offensive language filter, each spam filter, the
 moderator commands, DMs to members, each kind of mod log, welcome posts, raid alarm, tickets, role buttons, game roles).
 Switching an AutoMod filter off turns the bot's rule off on Discord; switching it back on turns it on again. These
 switches control the bot, not Discord's own server settings. The Discord parts of Admin → Settings live here now.

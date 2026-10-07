@@ -891,7 +891,47 @@ const WHO = [
   { type: 6, name: 'member', description: 'Which member (leave empty for yourself)', required: false },
   { type: 3, name: 'name', description: 'Or search by name', required: false },
 ];
-function commandDefinitions() {
+// ---------- Who can use each command (Discord control → Commands) ----------
+// Levels, lowest to highest. "pmc" = anyone linked to the app (PMC guests and up); "member" = WPG members and up.
+export const COMMAND_LEVELS = [
+  ['everyone', 'Everyone on Discord'], ['pmc', 'PMC guests and up (linked to the app)'], ['member', 'WPG members and up'],
+  ['mod', 'Mods and admins'], ['admin', 'Admins only'], ['off', 'Off (removed from Discord)'],
+];
+const LEVEL_RANK = { everyone: 0, pmc: 1, member: 2, mod: 3, admin: 4 };
+const defaultLevel = (name) => (MOD_COMMANDS[name] ? 'mod' : ['roster', 'unit'].includes(name) ? 'member' : 'everyone');
+export async function commandAccess() {
+  let saved = {};
+  try { saved = JSON.parse((await setting('discord_command_access')) || '{}') || {}; } catch { /* keep defaults */ }
+  return Object.fromEntries(Object.keys(allCommands()).map((n) => [n, LEVEL_RANK[saved[n]] !== undefined || saved[n] === 'off' ? saved[n] : defaultLevel(n)]));
+}
+export const commandList = () => Object.entries(allCommands()).map(([name, c]) => ({ name, description: c.description, moderator: !!MOD_COMMANDS[name], default: defaultLevel(name) }));
+// What the person running a command counts as: the higher of their app rank (if they linked Discord with /link)
+// and their Discord permissions (Administrator = admin; kick / ban / timeout = mod).
+async function callerRank(body) {
+  let rank = 0;
+  try {
+    const p = BigInt(body.member?.permissions || 0);
+    if (p & (1n << 3n)) rank = 4;
+    else if (p & ((1n << 1n) | (1n << 2n) | (1n << 40n))) rank = 3;
+  } catch { /* no permissions sent */ }
+  const id = String(body.member?.user?.id || body.user?.id || '');
+  const u = id ? await one('SELECT role, status, membership FROM users WHERE discord_id=$1', [id]) : null;
+  if (u && u.status === 'active') rank = Math.max(rank, u.role === 'admin' ? 4 : u.role === 'mod' ? 3 : u.membership === 'pmc' ? 1 : 2);
+  return rank;
+}
+// Hides a command in Discord from people who can't use it, where Discord can tell (staff levels).
+const MOD_PERMS = String((1n << 1n) | (1n << 2n) | (1n << 40n));
+function visibility(level, def) {
+  if (level === 'admin') return '8';
+  if (level === 'mod') return def.default_member_permissions || MOD_PERMS;
+  return null; // everyone / PMC / WPG members: Discord can't tell, so the bot checks when it's used
+}
+
+async function commandDefinitions() {
+  const access = await commandAccess();
+  return baseDefinitions().filter((d) => access[d.name] !== 'off').map((d) => ({ ...d, default_member_permissions: visibility(access[d.name], d) }));
+}
+function baseDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
     if (['stats', 'rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
@@ -958,7 +998,7 @@ export async function ensureEndpoint() {
 export async function registerCommands() {
   if (!botReady()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set in Render yet' };
   if (!appFromDiscord) await readApplication();
-  const done = await discordFetch(`/applications/${realAppId()}/commands`, 'PUT', commandDefinitions());
+  const done = await discordFetch(`/applications/${realAppId()}/commands`, 'PUT', await commandDefinitions());
   // An earlier version set commands up for the WPG server only; clear those so nothing shows twice.
   const guild = await guildId().catch(() => null);
   if (guild) await discordFetch(`/applications/${realAppId()}/guilds/${guild}/commands`, 'PUT', []).catch(() => {});
@@ -1084,6 +1124,15 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
   const name = body.data?.name;
   const cmd = allCommands()[name];
   const who = body.member?.user || body.user || {};
+  // Who may use it (Discord control → Commands): answered privately when they can't.
+  if (cmd) {
+    const level = (await commandAccess())[name];
+    if (level === 'off') return res.json({ type: 4, data: { content: 'That command is switched off.', flags: 64 } });
+    if ((await callerRank(body)) < LEVEL_RANK[level]) {
+      const label = COMMAND_LEVELS.find(([k]) => k === level)?.[1] || level;
+      return res.json({ type: 4, data: { content: `Sorry, /${name} is for ${/^[A-Z][a-z]/.test(label) ? label[0].toLowerCase() + label.slice(1) : label}.${level === 'pmc' || level === 'member' ? ' Link your Discord to the WPG app with /link first.' : ''}`, flags: 64 } });
+    }
+  }
   // Answer "thinking…" at once (Discord only waits 3 s), then fill in the real reply.
   res.json({ type: 5, data: cmd?.private ? { flags: 64 } : {} });
   let reply;
