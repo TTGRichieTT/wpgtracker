@@ -154,9 +154,11 @@ export function badgeFor(u, size) {
 const rankName = (u) => (isPmc(u) ? 'PMC · Guest' : u?.rank ? u.rank.name : 'No rank');
 // "Playing …" tag from Steam; Wardogs is highlighted. Kept live by the 'playing' socket event.
 const isWardogs = (p) => (p && /wardogs/i.test(p.game) ? 1 : 0);
+// "🎮 WARDOGS · -$10,793 Loss": the game, plus live match money from Steam for members who switched it on.
+const playingHtml = (p) => (p ? `🎮 ${esc(p.game || '')}${p.live?.text ? ` · <b class="live-money${p.live.money > 0 ? ' up' : p.live.money < 0 ? ' down' : ''}">${esc(p.live.text)}</b>` : ''}` : '');
 export function playingTag(u) {
   const p = state.playing[u?.id];
-  return `<span class="playing-tag${isWardogs(p) ? ' wd' : ''}" data-playing="${u?.id}"${p ? '' : ' hidden'}>🎮 ${esc(p?.game || '')}</span>`;
+  return `<span class="playing-tag${isWardogs(p) ? ' wd' : ''}" data-playing="${u?.id}"${p ? '' : ' hidden'}>${playingHtml(p)}</span>`;
 }
 export function userLine(u, meta = '') {
   return `<div class="user-line">${avatar(u)}${badgeFor(u, 34)}
@@ -436,7 +438,7 @@ function connectSocket() {
       const p = state.playing[t.dataset.playing];
       t.hidden = !p;
       t.classList.toggle('wd', !!isWardogs(p));
-      t.textContent = p ? `🎮 ${p.game}` : '';
+      t.innerHTML = playingHtml(p);
     });
     emitLive('playing', map);
   });
@@ -658,7 +660,7 @@ const RELINK_URL = 'https://wardogs.tools/account';
 const relinkBtn = (cls = 'btn') => `<a class="${cls}" href="${RELINK_URL}" target="_blank" rel="noopener">${icon('refresh')} Relink on wardogs.tools</a>`;
 const needsTracker = () => state.realSteam && !state.trackerLinked && !state.trackerRelink;
 // wardogs.tools has stopped updating them (its status isn't active, or their linked account can't be found any more).
-const staleLink = () => state.trackerRelink || (state.trackerLinked && state.trackerState && state.trackerState !== 'active');
+const staleLink = () => state.trackerRelink; // the server waits a day and never asks mid-game (ranking.js)
 function staleCardHtml() {
   const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
   const why = state.trackerLinked
@@ -790,6 +792,7 @@ function formatStat(def, v) {
 }
 
 async function viewProfile(main, [id]) {
+  if (id === 'me') id = state.me.id;
   const [p, defs, fields, unlockList] = await Promise.all([api(`users/${Number(id)}`), api('stat-defs'), api('profile-fields'), api('unlocks').catch(() => [])]);
   const u = p.user;
   const mine = u.id === state.me.id;
@@ -959,6 +962,7 @@ async function viewProfile(main, [id]) {
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>
+      <div id="liveBox"></div>
       <div id="framesBox"></div>
     </div>`;
 
@@ -972,6 +976,11 @@ async function viewProfile(main, [id]) {
     };
   });
   onLive('me', () => { if (mine) route(); });
+  // Live match money from Steam (switched on by the member).
+  import('./live.js').then((m) => {
+    const box = document.getElementById('liveBox');
+    if (box) m.profileLivePanel(box, u);
+  }).catch(() => {});
   // Profile frames: what they've unlocked, progress on the rest, and (on your own) which one to show.
   import('./frames.js').then((m) => {
     const box = document.getElementById('framesBox');
@@ -1879,7 +1888,7 @@ async function serverBoardHtml(sort, serverId) {
 async function viewLeaderboard(main) {
   const by = query().get('by') || 'wpg';
   const tag = state.settings.clan_tag || 'WPG';
-  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['kills', 'Server kills'], ['hours', 'Steam hours']];
+  const tabs = [['wpg', `${tag} rank`], ['server', `${tag} server`], ['xp', 'Clan XP'], ['level', 'Wardog level'], ['worth', 'Account worth'], ['cash', 'Cash held'], ['gold', 'Gold'], ['unlocks', 'Unlocks'], ['tonight', "Tonight's money"], ['kills', 'Server kills'], ['hours', 'Steam hours']];
   // WPG rank: everyone's WPG XP and rank (from the Discord bot, or the app once switched over in Admin → WPG XP).
   if (by === 'wpg') {
     const d = await api('wpg-ranking');
@@ -1945,12 +1954,13 @@ async function viewLeaderboard(main) {
   const unit = { xp: 'XP', level: 'LVL', kills: 'kills', hours: 'h', gold: 'gold', unlocks: 'unlocks' }[by] || '';
   main.innerHTML = `<h1>Leaderboard</h1>
     <div class="tabs">${tabs.map(([k, l]) => `<a href="#/leaderboard?by=${k}" class="${k === by ? 'active' : ''}">${l}</a>`).join('')}</div>
+    ${by === 'tonight' ? '<p class="muted small" style="margin:-4px 0 12px">Match money over the last 12 hours, live from Steam, for members who switched on <b>Live match money</b> on their profile.</p>' : ''}
     ${['worth', 'cash', 'level', 'gold', 'unlocks'].includes(by) ? `<p class="muted small" style="margin:-4px 0 12px">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>. Members it hasn't found show —.</p>` : ''}
     <div class="panel list">${list.map((u, i) => `
       <a class="item" href="#/u/${u.id}">
         <b style="font:700 22px var(--head);width:42px;text-align:center;color:${i === 0 ? 'var(--gold)' : i < 3 ? 'var(--accent2)' : 'var(--muted)'}">#${i + 1}</b>
         <div class="grow">${userLine(u)}</div>
-        <b style="font:700 18px var(--head)">${u.score === null || u.score === undefined ? '—' : by === 'cash' || by === 'worth' ? fmtMoney(u.score) : `${fmtNum(u.score)} <span class="muted small">${unit}</span>`}</b>
+        <b style="font:700 18px var(--head)">${u.score === null || u.score === undefined ? '—' : by === 'tonight' ? `<span style="color:${u.score < 0 ? 'var(--red)' : 'var(--green)'}">${u.score < 0 ? '-' : '+'}${fmtMoney(Math.abs(u.score))}</span>` : by === 'cash' || by === 'worth' ? fmtMoney(u.score) : `${fmtNum(u.score)} <span class="muted small">${unit}</span>`}</b>
       </a>`).join('') || '<p class="empty">No data yet.</p>'}</div>`;
 }
 

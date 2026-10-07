@@ -797,6 +797,33 @@ bus.on('tracker:relink', async (a) => {
   }
 });
 
+// /money: live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now, and
+// tonight's (last 12 hours) totals.
+async function cmdMoney() {
+  const signed = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
+  const [now, tonight] = await Promise.all([
+    q(`SELECT u.persona_name AS name, lp.text FROM live_presence lp JOIN users u ON u.id = lp.user_id
+        WHERE lp.opted_in AND lp.in_game AND lp.text <> '' AND u.status='active' AND u.membership <> 'pmc'
+          AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.updated_at DESC LIMIT 15`),
+    q(`SELECT u.persona_name AS name, SUM(pr.money)::int AS total, COUNT(*)::int AS matches FROM presence_results pr JOIN users u ON u.id = pr.user_id
+        WHERE pr.at > now() - interval '12 hours' AND u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 10`),
+  ]);
+  const medal = ['🥇', '🥈', '🥉'];
+  return {
+    embeds: [{
+      title: '💰 Wardogs match money',
+      url: `${SITE()}/#/leaderboard?by=tonight`,
+      color: GOLD,
+      fields: [
+        { name: '🎮 In a match now', value: now.map((r) => `**${cleanName(r.name)}** · ${r.text}`).join('\n').slice(0, 1000) || 'Nobody right now.' },
+        { name: "🌙 Tonight's money (last 12 hours)", value: tonight.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — **${signed(r.total)}** (${r.matches} match${r.matches === 1 ? '' : 'es'})`).join('\n').slice(0, 1000) || 'No matches yet tonight.' },
+      ],
+      footer: { text: 'Live from Steam · members who switched on live match money in WPG Barracks' },
+    }],
+    components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Switch it on in WPG Barracks', url: `${SITE()}/#/u/me` }] }],
+  };
+}
+
 const COMMANDS = {
   stats: { run: cmdStats, description: 'Wardogs stats: level, cash, worth, classes, world ranks' },
   rank: { run: cmdRank, description: 'WPG rank + WPG XP, and clan rank' },
@@ -804,6 +831,7 @@ const COMMANDS = {
   server: { run: cmdServer, description: 'WPG server stats: kills, K/D, matches, playtime' },
   progress: { run: cmdProgress, description: 'Next unlocks for each class' },
   leaderboard: { run: cmdLeaderboard, description: 'Top 10 leaderboards' },
+  money: { run: cmdMoney, description: "Live Wardogs match money: who's in a match and tonight's totals" },
   serverboard: { run: cmdServerBoard, description: 'The WPG server leaderboard (top 14)' },
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
@@ -1237,6 +1265,14 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'giveaway' && (await flag('discord_post_giveaways'))) {
       const { giveawayChannelKey } = await import('./giveaways.js');
       await postToChannel(await giveawayPost(a), await giveawayChannelKey());
+    } else if (a.type === 'bigwin' && (await flag('discord_post_big_wins'))) {
+      const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
+      if (isWpgMember(u)) {
+        await postToChannel({
+          content: `💰 **${u.persona_name}**${mentionFor(u)} just won **$${num(a.money)}** in one Wardogs match!`,
+          components: [{ type: 1, components: [{ type: 2, style: 5, label: "Tonight's money", url: `${SITE()}/#/leaderboard?by=tonight` }] }],
+        });
+      }
     } else if (a.type === 'frame' && (await flag('discord_post_frames'))) {
       const [u, f] = await Promise.all([one('SELECT * FROM users WHERE id=$1', [a.userId]), one('SELECT * FROM frames WHERE id=$1', [a.frameId])]);
       if (isWpgMember(u) && f) await postToChannel(await framePost(u, f));

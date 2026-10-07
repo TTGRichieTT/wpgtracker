@@ -21,6 +21,9 @@ const DEFAULT_SETTINGS = {
   accent_color: '#29b6f6',
   logo_url: '/img/brand/wpg-logo.webp',
   tracker_enabled: 'true',
+  steam_bot_enabled: 'true', // live match money from Steam (steambot.js; needs STEAM_BOT_USERNAME / PASSWORD)
+  discord_post_big_wins: 'false', // Discord post when a member wins big in one match (Admin → Steam bot)
+  big_win_amount: '50000',
   tracker_relink_prompts: 'true', // ask members to relink when wardogs.tools stops updating them (app + Discord)
   tracker_server: '',
   xp_per_server_kill: '2',

@@ -7,7 +7,18 @@ import { bus } from './bus.js';
 import { steamGet } from './steam.js';
 
 const playing = new Map(); // userId -> { game, appId }
-export const playingNow = () => Object.fromEntries(playing);
+// Live match money from Steam (steambot.js): userId -> { text, money, result }, shown with "Playing Wardogs".
+const live = new Map();
+export const playingNow = () => Object.fromEntries([...playing].map(([id, p]) => [id, live.has(id) ? { ...p, live: live.get(id) } : p]));
+let liveTimer = null;
+export function setLive(userId, value) {
+  if (value) live.set(userId, value);
+  else if (!live.delete(userId)) return;
+  changed = true;
+  // Pushed to everyone shortly after (several changes at once go out together).
+  clearTimeout(liveTimer);
+  liveTimer = setTimeout(flush, 1500);
+}
 
 // Wardogs (by name, or its Steam app id).
 const isWardogs = (p) => !!p && (/wardogs/i.test(p.game || '') || String(p.appId) === '1867240');
@@ -20,7 +31,7 @@ function setPlaying(userId, game, appId) {
   if (isWardogs(old) && !isWardogs(now)) bus.emit('wardogs:closed', userId);
   else if (!isWardogs(old) && isWardogs(now)) bus.emit('wardogs:started', userId);
   if (!now) {
-    if (old) { playing.delete(userId); changed = true; }
+    if (old) { playing.delete(userId); live.delete(userId); changed = true; }
     return;
   }
   if (old?.game === now.game && old?.appId === now.appId) return;

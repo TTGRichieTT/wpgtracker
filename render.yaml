@@ -32,6 +32,14 @@ services:
         sync: false
       - key: INGEST_KEY
         generateValue: true
+      # Live match money: the WPG Barracks Steam account (a separate account, never anyone's own).
+      - key: STEAM_BOT_USERNAME
+        sync: false
+      - key: STEAM_BOT_PASSWORD
+        sync: false
+      # Only if the bot account uses the Steam mobile authenticator (its shared_secret).
+      - key: STEAM_BOT_SHARED_SECRET
+        sync: false
       # Streams tab: live checks (optional, each platform works on its own).
       - key: TWITCH_CLIENT_ID
         sync: false

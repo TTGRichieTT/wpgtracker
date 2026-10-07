@@ -181,13 +181,17 @@ async function saveMissing(userId, state, lost = false) {
 // When wardogs.tools stops updating a member (its sync status isn't "active", or a linked account can't be found
 // any more), they're asked to relink at wardogs.tools/account: in the app and by Discord message, then reminded
 // every 3 days, 3 times at most. Once it's updating them again they're thanked and the reminders reset.
+// wardogs.tools can only read stats once the game is closed, so nobody is asked while they're playing, or until
+// it has stayed stopped for a day (a status that sorts itself out never bothers them).
 export const RELINK_URL = 'https://wardogs.tools/account';
 const RELINK_EVERY_MS = 3 * 24 * 60 * 60 * 1000;
 const RELINK_MAX = 3;
+const RELINK_WAIT_MS = 24 * 60 * 60 * 1000;
 async function relinkCheck(user, needs, state) {
-  const row = await one('SELECT relink_prompts, relink_prompted_at FROM wardogs_stats WHERE user_id=$1', [user.id]);
+  const row = await one('SELECT relink_prompts, relink_prompted_at, relink_since FROM wardogs_stats WHERE user_id=$1', [user.id]);
   const asked = row?.relink_prompts || 0;
   if (!needs) {
+    if (row?.relink_since) await q('UPDATE wardogs_stats SET relink_since=NULL WHERE user_id=$1', [user.id]);
     if (asked > 0) {
       await q('UPDATE wardogs_stats SET relink_prompts=0, relink_prompted_at=NULL WHERE user_id=$1', [user.id]);
       bus.emit('notify', user.id, { title: 'Wardogs stats updating again', body: 'Thanks for relinking: wardogs.tools is updating your stats again.', link: `#/u/${user.id}` });
@@ -195,6 +199,15 @@ async function relinkCheck(user, needs, state) {
     }
     return;
   }
+  // Start the clock the first time; only ask once it has stayed stopped for a day and they're not playing.
+  if (!row?.relink_since) {
+    await q('UPDATE wardogs_stats SET relink_since=now() WHERE user_id=$1', [user.id]);
+    return;
+  }
+  if (Date.now() - new Date(row.relink_since).getTime() < RELINK_WAIT_MS) return;
+  const { playingNow } = await import('./playing.js');
+  const p = playingNow()[user.id];
+  if (p && (/wardogs/i.test(p.game || '') || String(p.appId) === '1867240')) return;
   const last = row?.relink_prompted_at ? new Date(row.relink_prompted_at).getTime() : 0;
   if (asked >= RELINK_MAX || (asked > 0 && Date.now() - last < RELINK_EVERY_MS)) return;
   if (!(await flag('tracker_relink_prompts'))) return;
