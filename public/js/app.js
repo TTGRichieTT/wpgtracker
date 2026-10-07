@@ -812,6 +812,12 @@ async function viewProfile(main, [id]) {
 
   const customFields = fields.filter((f) => u.custom_fields?.[f.key]).map((f) => `<span class="pill">${esc(f.label)}: ${esc(u.custom_fields[f.key])}</span>`).join(' ');
 
+  // Steam friends: Steam doesn't let other sites send friend requests, so these open Steam itself. "Add on Steam"
+  // opens the Steam app on this computer with the request; "Steam profile" opens their profile (Add Friend is there,
+  // and on phones it opens in the Steam app).
+  const steamBtns = !mine && /^\d{17}$/.test(u.steam_id || '')
+    ? `<a class="btn" href="steam://friends/add/${u.steam_id}" title="Opens Steam on this computer and sends the friend request">${icon('friends')} Add on Steam</a><a class="btn ghost" href="https://steamcommunity.com/profiles/${u.steam_id}" target="_blank" rel="noopener" title="Their Steam profile: press Add Friend there">Steam profile</a>`
+    : '';
   const friendBtn = mine ? '' : {
     none: `<button class="btn" data-friend="add">${icon('friends')} Add friend</button>`,
     outgoing: `<button class="btn ghost" data-friend="remove">Request sent · Cancel</button>`,
@@ -888,7 +894,7 @@ async function viewProfile(main, [id]) {
         </div>
         ${u.bio ? `<p style="white-space:pre-wrap;margin:14px 0 0">${esc(u.bio)}</p>` : ''}
         <div class="row" style="margin-top:14px">
-          ${mine ? `<a class="btn" href="#/profile/edit">${icon('edit')} Edit profile</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button>` : `<a class="btn primary" href="#/messages/${u.id}">${icon('mail')} Message</a>${friendBtn}`}
+          ${mine ? `<a class="btn" href="#/profile/edit">${icon('edit')} Edit profile</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button>` : `<a class="btn primary" href="#/messages/${u.id}">${icon('mail')} Message</a>${friendBtn}${steamBtns}`}
           ${u.profile_url ? `<a class="btn ghost" href="${esc(u.profile_url)}" target="_blank" rel="noopener">${icon('steam')} Steam</a>` : ''}
           ${isStaff() ? `<a class="btn ghost" href="#/admin/users?edit=${u.id}">${icon('shield')} Admin edit</a>` : ''}
         </div>
