@@ -119,7 +119,7 @@ function channelSpec(units, command) {
     { key: 'app', name: '📱 WPG APP', ow: gated('wardogs', { wardogs: READ_ONLY }), channels: [
       t('go-live', 'Members going live (posted by the WPG app).', { post: 'discord_stream_channel' }),
       t('rank-ups', 'Promotions, medals and WPG rank-ups (posted by the WPG app).', { post: 'discord_post_channel' }),
-      t('leaderboards', 'Leaderboards from the WPG app.'),
+      t('leaderboards', 'The WPG server leaderboard, kept up to date by the WPG app.', { post: 'discord_leaderboard_channel' }),
       t('app-help', 'Questions about the WPG app. Type /link here to connect your Discord.', { aliases: ['wpg-app'], ow: { wardogs: { allow: TALK } } }),
     ] },
     { key: 'clan', name: '🎖 WPG CLAN', aliases: ['Competative play', 'Competitive play'], ow: gated('wpg'), channels: [
@@ -301,7 +301,7 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
     say('Set campfire-afk as the AFK channel');
   }
   if (usePosts) {
-    say('Point the app\'s Discord posts (go-live, rank-ups, staff alerts) and voice list at this server');
+    say('Point the app\'s Discord posts (go-live, rank-ups, live leaderboard, staff alerts) and voice list at this server');
     if (apply) {
       for (const [k, id] of Object.entries(posts)) await saveSetting(k, id);
       await saveSetting('discord_server_id', guild);

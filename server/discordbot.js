@@ -598,9 +598,13 @@ const SERVER_SORTS = {
 // Names are cleaned with cleanName (util.js): invisible-only names show as "Unknown player", never a Steam ID.
 // /serverboard: the WPG server leaderboard (same numbers as the app's WPG server board).
 async function cmdServerBoard(data) {
+  const d = await serverBoardData(SERVER_SORTS[option(data, 'sort')] ? option(data, 'sort') : 'wpgxp');
+  return d ? serverBoardPost(d) : { content: 'No WPG game server is set up yet.' };
+}
+// The board's numbers (also used by the live board in #leaderboards).
+async function serverBoardData(sortKey = 'wpgxp', limit = 14) {
   const server = await one("SELECT * FROM game_servers WHERE enabled = true AND rcon_url <> '' ORDER BY sort_order, id LIMIT 1");
-  if (!server) return { content: 'No WPG game server is set up yet.' };
-  const sortKey = SERVER_SORTS[option(data, 'sort')] ? option(data, 'sort') : 'wpgxp';
+  if (!server) return null;
   const [sortLabel, order] = SERVER_SORTS[sortKey];
   const rows = await q(
     `WITH board AS (
@@ -610,8 +614,8 @@ async function cmdServerBoard(data) {
      ), ranked AS (
        SELECT board.*, ROW_NUMBER() OVER (ORDER BY ${MAIN_ORDER})::int AS server_rank FROM board
      )
-     SELECT * FROM ranked ORDER BY ${order} LIMIT 14`,
-    [server.id],
+     SELECT * FROM ranked ORDER BY ${order} LIMIT $2`,
+    [server.id, limit],
   );
   // When the board last changed: the tracker's last check, else the latest activity on it.
   const st = await one(
@@ -619,19 +623,24 @@ async function cmdServerBoard(data) {
     [server.id],
   );
   const live = await liveMatch(server).catch(() => null);
+  return { sortKey, sortLabel, rows, at: st?.at || null, map: live?.map || '—', limit };
+}
+async function serverBoardPost({ sortKey, sortLabel, rows, at, map, limit }, { live = false } = {}) {
   const text = () => ({
     embeds: [{
       title: `🏆 WPG server leaderboard — by ${sortLabel}`,
       url: `${SITE()}/#/leaderboard?by=server`,
       color: GOLD,
       description: rows.map((r, i) => `**${i + 1}.** ${cleanName(r.name)} — ${num(r.wpg_xp)} WPG XP · ${num(r.kills)} kills · ${hours(r.playtime_s)}`).join('\n') || 'Nobody on the board yet.',
-      footer,
+      footer: live ? { text: 'Updates by itself · WPG Barracks' } : footer,
+      ...(live && at ? { timestamp: new Date(at).toISOString() } : {}),
     }],
   });
   return asPicture('serverboard', (cards) => cards.renderServerBoardCard({
     serverName: '[WPG] WASTED PRODIGY',
-    map: live?.map || '—',
-    updated: updatedText(st?.at),
+    max: limit,
+    map,
+    updated: updatedText(at),
     sortLabel: sortKey === 'wpgxp' ? '' : sortLabel,
     rows: rows.map((r) => ({
       name: cleanName(r.name), serverRank: r.server_rank, kills: r.kills, deaths: r.deaths, matches: r.matches,
@@ -931,24 +940,52 @@ export async function updateMoneyBoard() {
   const data = await moneyData();
   const body = JSON.stringify(data);
   if (!boardDirty && body === boardLast.body && Date.now() - boardLast.at < 10 * 60 * 1000) return;
-  const payload = await moneyPost({ live: true, data });
-  const saved = String((await one('SELECT value FROM settings WHERE key=$1', [BOARD_KEY]))?.value || '');
+  await keepMessage(BOARD_KEY, channel, await moneyPost({ live: true, data }));
+  boardLast = { body, at: Date.now() };
+  boardDirty = false;
+}
+
+// Edits the message remembered under key (setting "channel:message"), or posts a new one if it's gone or the
+// channel changed.
+async function keepMessage(key, channel, payload) {
+  const saved = String((await one('SELECT value FROM settings WHERE key=$1', [key]))?.value || '');
   const [savedChannel, savedId] = saved.split(':');
-  let posted = false;
   if (savedChannel === channel && savedId) {
     try {
       await editMessage(channel, savedId, payload);
-      posted = true;
+      return;
     } catch (e) {
       if (!/ 404|10008|Unknown Message/.test(e.message)) throw e; // deleted: post a new one below
     }
   }
-  if (!posted) {
-    const msg = await sendToChannel(channel, payload);
-    await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [BOARD_KEY, `${channel}:${msg.id}`]);
-  }
-  boardLast = { body, at: Date.now() };
-  boardDirty = false;
+  const msg = await sendToChannel(channel, payload);
+  await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [key, `${channel}:${msg.id}`]);
+}
+
+// The live leaderboard: the top 20 on every WPG server board (as /serverboard: by WPG XP, kills, K/D, wins, matches and playtime)
+// as pictures in one message in the leaderboards channel, which the bot edits when a board or the map changes
+// (checked every minute) and every 10 minutes to refresh its time.
+const LB_KEY = '_leaderboard_board_msg';
+let lbLast = { body: '', at: 0 };
+export async function updateLeaderboardBoard() {
+  if (!TOKEN()) return;
+  const channel = String((await setting('discord_leaderboard_channel')) || '').trim();
+  if (!/^\d{15,22}$/.test(channel)) return;
+  const boards = [];
+  for (const key of Object.keys(SERVER_SORTS)) boards.push(await serverBoardData(key, 20)); // top 20 on each
+  if (!boards[0]) return;
+  const body = JSON.stringify(boards.map((d) => [d.rows, d.map]));
+  if (body === lbLast.body && Date.now() - lbLast.at < 10 * 60 * 1000) return;
+  // One message: each board's picture (or its text version if the picture couldn't be made), one link button.
+  const posts = [];
+  for (const d of boards) posts.push(await serverBoardPost(d, { live: true }));
+  const payload = {
+    files: posts.flatMap((p, i) => (p.files || []).map((f) => ({ ...f, name: `wpg-leaderboard-${i + 1}-${boards[i].sortKey}.jpg` }))),
+    embeds: posts.flatMap((p) => p.embeds || []).slice(0, 10),
+    components: posts.find((p) => p.components)?.components,
+  };
+  await keepMessage(LB_KEY, channel, payload);
+  lbLast = { body, at: Date.now() };
 }
 
 const COMMANDS = {
@@ -1539,4 +1576,5 @@ export function startDiscordBot() {
   setTimeout(attempt, 60 * 1000);
   // The live match money board (once a minute; it only edits when something changed).
   setInterval(() => updateMoneyBoard().catch((e) => problem('Live money board', e.message)), 60 * 1000);
+  setInterval(() => updateLeaderboardBoard().catch((e) => problem('Live leaderboard', e.message)), 60 * 1000);
 }
