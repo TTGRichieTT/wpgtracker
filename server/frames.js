@@ -113,7 +113,8 @@ async function metricsFor(user, season) {
     real && season ? one('SELECT xp FROM season_start_xp WHERE season_id=$1 AND steam_id=$2', [season.id, sid]) : null,
     one('SELECT COALESCE(SUM(playtime_forever),0)::int mins FROM user_games WHERE user_id=$1', [user.id]),
     user.rank_id ? one('SELECT sort_order FROM ranks WHERE id=$1', [user.rank_id]) : null,
-    one('SELECT cu.name, cu.color FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id WHERE cp.user_id=$1', [user.id]),
+    one(`SELECT cu.name, cu.color, cu.roles, cp.role_id, prof.primary_role FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id
+           LEFT JOIN combat_profiles prof ON prof.user_id = cp.user_id WHERE cp.user_id=$1`, [user.id]),
   ]);
   const o = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
   // Tracker figures only count for a season once they've been synced since it started (a wipe resets them).
@@ -404,6 +405,12 @@ async function seedFrames() {
 
 // ---------- What members see ----------
 const fmtN = (n) => Number(n || 0).toLocaleString('en-GB');
+function unitPost(p) {
+  const position = (p.roles || []).find((r) => r.id === p.role_id)?.name || '';
+  const role = String(p.primary_role || '').trim();
+  return { position, unit_role: role && role.toLowerCase() !== position.toLowerCase() ? role : '' };
+}
+
 // A member's frames for their profile and Discord's /frames: earned and still to earn, by group.
 export async function framesFor(user) {
   const season = await currentSeason();
@@ -434,6 +441,8 @@ export async function framesFor(user) {
       source: TRACKER_METRICS.has(f.metric) ? 'wardogs.tools' : '',
       locked_reason: f.category === 'clan' && !isWpgMember(user) ? 'WPG members only' : '',
       progress: unlocked || def.yesno || group === 'past' ? null : { value: Math.min(Number(m[f.metric]) || 0, Number(f.target)), target: Number(f.target), unit: def.unit || '' },
+      // Unit frame: their Combat Command position in that unit, and their own role (recruitment profile) if they have one.
+      ...(f.metric === 'unit' && m.unitInfo ? unitPost(m.unitInfo) : {}),
     });
   }
   return {

@@ -1048,7 +1048,16 @@ export function renderFramesCard(d) {
         g.textBaseline = 'middle';
         const lines = wrapLines(g, upper(f.name), FT_W - 12, 2);
         lines.forEach((l, k) => g.fillText(l, tx + FT_W / 2, ty + size + 18 + k * 19));
-        const infoY = ty + size + 22 + lines.length * 19;
+        let infoY = ty + size + 22 + lines.length * 19;
+        // Unit frame: their Combat Command position (short form, e.g. "CO") and role.
+        if (f.position || f.unit_role) {
+          const pos = [f.position ? f.position.split(' — ')[0] : '', f.unit_role].filter(Boolean).join(' · ');
+          g.font = `700 14px ${LABEL_FONT}`;
+          let t = upper(pos);
+          while (t.length > 3 && g.measureText(t).width > FT_W - 10) t = `${t.slice(0, -2)}…`;
+          label(g, t, tx + FT_W / 2, infoY - 2, { align: 'center', size: 14, color: AMBER });
+          infoY += 18;
+        }
         if (f.unlocked) {
           const wearing = f.id === d.selected;
           label(g, `${f.unlocked_at ? shortDate(f.unlocked_at) : 'UNLOCKED'}${wearing ? ' · WEARING' : ''}`, tx + FT_W / 2, infoY, { align: 'center', size: 14, color: wearing ? CYAN : GREEN });

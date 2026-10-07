@@ -431,7 +431,7 @@ async function cmdFrames(data, caller) {
     const got = list.filter((x) => x.unlocked);
     const todo = list.filter((x) => !x.unlocked);
     const lines = [
-      ...got.map((x) => `🏅 **${x.name}**${x.id === d.selected ? ' · *wearing*' : ''}${when(x.unlocked_at)}`),
+      ...got.map((x) => `🏅 **${x.name}**${x.position ? ` (${x.position}${x.unit_role ? ` · ${x.unit_role}` : ''})` : x.unit_role ? ` (${x.unit_role})` : ''}${x.id === d.selected ? ' · *wearing*' : ''}${when(x.unlocked_at)}`),
       ...todo.slice(0, 4).map((x) => `🔒 ${x.name}${progress(x)}`),
       ...(todo.length > 4 ? [`…and ${todo.length - 4} more to earn`] : []),
     ];
