@@ -23,6 +23,7 @@ const TABS = [
   { key: 'wpgxp', label: 'WPG XP', group: 'Game' },
   { key: 'frames', label: 'Frames & seasons', group: 'Game' },
   { key: 'settings', label: 'Settings', group: 'App' },
+  { key: 'discord-server', label: 'Discord server', group: 'App' },
   { key: 'channels', label: 'Chat channels', group: 'App' },
   { key: 'profile-fields', label: 'Profile fields', group: 'App' },
   { key: 'cleanup', label: 'Clean up', group: 'App' },
@@ -204,6 +205,7 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'audit') return auditTab(body);
   if (tab.key === 'cleanup') return cleanupTab(body);
   if (tab.key === 'cheatwatch') return cheatTab(body);
+  if (tab.key === 'discord-server') return discordServerTab(body);
   if (tab.key === 'recruitment') return (await import('./combat.js')).recruitmentTab(body);
   if (tab.key === 'units') return (await import('./combat.js')).unitsTab(body);
   if (tab.key === 'streams') return (await import('./streams.js')).streamsAdminTab(body);
@@ -572,6 +574,88 @@ async function editUser(id, ranks, awards, reload) {
   });
 }
 
+// ---------- Discord server: build the layout, keep roles in step ----------
+async function discordServerTab(body) {
+  const d = await api('admin/discord-server');
+  const s = d.sync || {};
+  const when = (iso) => { try { return timeAgo(iso); } catch { return ''; } };
+  body.innerHTML = `<div class="stack">
+    <div class="panel"><div class="panel-title">${icon('discord')} Discord server</div>
+      <p class="muted small" style="margin-top:0">The bot builds the WPG layout (roles, categories, channels and who can see or talk in each) and keeps
+        members' roles in step with the app. Start on a test server, then switch the ID to the main server and build again:
+        it reuses what's already there by name and never deletes channels or roles it didn't make.</p>
+      <form id="dsForm" class="form-grid">
+        <label class="field"><span>Discord server ID (right-click the server → Copy Server ID)</span><input type="text" name="guild_id" value="${esc(d.guild_id)}" inputmode="numeric"></label>
+        <label class="field"><span>Game roles: hours played on Steam</span><input type="number" name="game_hours" min="10" value="${esc(d.game_hours)}"></label>
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" name="sync_roles" ${d.sync_roles ? 'checked' : ''}> Keep members' roles in step (every 2 minutes and straight after changes in the app)</label>
+        <div class="row" style="grid-column:1/-1"><button class="btn primary">Save</button></div>
+      </form>
+    </div>
+    <div class="panel"><div class="panel-title">1 · Add the bot</div>
+      <ol class="small" style="margin:0;padding-left:18px">
+        <li><a class="btn small" href="${esc(d.invite_url)}" target="_blank" rel="noopener">${icon('discord')} Add the bot to the server</a> (with Administrator, so it can make the roles and channels).</li>
+        <li style="margin-top:6px">In Discord → Server Settings → <b>Roles</b>, drag the bot's role to the <b>top</b>: it can only manage roles below its own.</li>
+        <li style="margin-top:6px">For role sync: <a href="${esc(d.portal_url)}" target="_blank" rel="noopener">Developer Portal → Bot</a> → turn on <b>Server Members Intent</b> → Save.</li>
+        <li style="margin-top:6px">Optional: switch on <b>Community</b> in Server Settings for a rules screen (members get Wardogs once they accept) and a real announcements channel.</li>
+      </ol>
+    </div>
+    <div class="panel"><div class="panel-title">2 · Build the layout</div>
+      <label class="check small"><input type="checkbox" id="dsPosts"> Also send the app's Discord posts here (go-live, rank-ups, staff alerts, voice list). Leave off on a test server.</label>
+      <div class="row" style="margin-top:10px"><button class="btn" id="dsPreview">Preview</button><button class="btn primary" id="dsBuild">Build server</button></div>
+      <div id="dsOut" class="small" style="margin-top:10px"></div>
+    </div>
+    <div class="panel"><div class="panel-title">3 · Roles</div>
+      <p class="small muted" style="margin-top:0">The app gives <b>Wardogs</b> to everyone on the server. For members who linked their Discord with <b>/link</b> it also manages
+        Admin / Moderator, WPG Member, Combat Command (CO, XO, Deputy), their unit, Unit Leader, their faction and a grey role for every Steam game
+        they've played ${esc(d.game_hours)}+ hours (show only). Content Creator, Partner, Military Vet and 18+ are given by hand. Roles on members who haven't
+        linked are never taken away.</p>
+      <div id="dsSync" class="small">${s.at ? `${s.ok ? '✅' : '⚠️'} Last sync ${esc(when(s.at))}: ${s.ok
+        ? `${s.members} on the server, ${s.linked} linked · ${s.added} roles given, ${s.removed} taken away · ${s.game_roles} game roles`
+        : `<span style="color:var(--red)">${esc(s.reason || 'failed')}</span>`}` : '<span class="muted">Not synced yet.</span>'}</div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="dsSyncNow">${icon('refresh')} Sync roles now</button></div>
+    </div>
+  </div>`;
+  const out = body.querySelector('#dsOut');
+  const show = (title, lines) => { out.innerHTML = `<b>${esc(title)}</b>${lines.length ? `<ul style="margin:6px 0 0;padding-left:18px;max-height:320px;overflow:auto">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="muted" style="margin:4px 0 0">Nothing to change: the server already matches.</p>'}`; };
+  body.querySelector('#dsForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api('admin/discord-server', { method: 'PUT', body: { guild_id: f.guild_id.value, game_hours: f.game_hours.value, sync_roles: f.sync_roles.checked } });
+      toast('Saved');
+      discordServerTab(body);
+    } catch (x) { fail(x); }
+  };
+  body.querySelector('#dsPreview').onclick = async () => {
+    out.innerHTML = '<div class="spinner"></div>';
+    try {
+      const r = await api('admin/discord-server/preview', { method: 'POST', body: { use_posts: body.querySelector('#dsPosts').checked } });
+      show(`Preview for ${r.server}: ${r.actions.length} change${r.actions.length === 1 ? '' : 's'}`, r.actions);
+    } catch (x) { out.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
+  };
+  body.querySelector('#dsBuild').onclick = async () => {
+    if (!(await confirmBox('Build the layout on this Discord server now?'))) return;
+    try {
+      await api('admin/discord-server/build', { method: 'POST', body: { use_posts: body.querySelector('#dsPosts').checked } });
+      const poll = async () => {
+        if (!document.body.contains(out)) return;
+        const st = (await api('admin/discord-server')).build;
+        show(st.running ? 'Building…' : st.error ? 'Build stopped' : 'Build finished', st.log);
+        if (st.running) setTimeout(poll, 1500);
+      };
+      poll();
+    } catch (x) { fail(x); }
+  };
+  body.querySelector('#dsSyncNow').onclick = async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await api('admin/discord-server/sync', { method: 'POST', body: {} });
+      if (!r.ok) toast('Not synced', r.reason); else toast('Roles synced', `${r.added} given, ${r.removed} taken away`);
+      discordServerTab(body);
+    } catch (x) { fail(x); e.target.disabled = false; }
+  };
+}
+
 // ---------- Settings ----------
 const SETTINGS = [
   ['General', [
@@ -701,7 +785,7 @@ async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
   // Settings with their own page aren't repeated here (saving them from a one-line box would lose their line breaks).
-  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames']); // Admin → Recruitment / Giveaways / Frames
+  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames', 'discord_build_server_id', 'discord_sync_roles', 'discord_game_role_hours']); // Admin → Recruitment / Giveaways / Frames
   const extra = Object.keys(s).filter((k) => !known.has(k) && !ELSEWHERE.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';

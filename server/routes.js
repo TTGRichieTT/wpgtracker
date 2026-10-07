@@ -72,6 +72,8 @@ api.post('/me/discord-link', member, async (req, res) => {
   const row = await one("DELETE FROM discord_link_codes WHERE code=$1 AND created_at > now() - interval '15 minutes' RETURNING *", [code]);
   if (!row) throw new HttpError(400, 'That code is wrong or has run out. Type /link in Discord again for a new one.');
   // One Discord account per member: take it off anyone else first.
+  const before = await one('SELECT discord_id FROM users WHERE id=$1', [req.user.id]);
+  if (before?.discord_id && before.discord_id !== row.discord_id) bus.emit('discord:unlinked', before.discord_id);
   await q("UPDATE users SET discord_id='' WHERE discord_id=$1 AND id<>$2", [row.discord_id, req.user.id]);
   await q('UPDATE users SET discord_id=$2 WHERE id=$1', [req.user.id, row.discord_id]);
   // Fill in the "Discord name" profile box if it's empty.
@@ -82,7 +84,9 @@ api.post('/me/discord-link', member, async (req, res) => {
   res.json({ ok: true, discord_name: row.discord_name });
 });
 api.delete('/me/discord-link', member, async (req, res) => {
+  const before = await one("SELECT discord_id FROM users WHERE id=$1 AND discord_id <> ''", [req.user.id]);
   await q("UPDATE users SET discord_id='' WHERE id=$1", [req.user.id]);
+  if (before) bus.emit('discord:unlinked', before.discord_id);
   bus.emit('user:changed', req.user.id);
   res.json({ ok: true });
 });

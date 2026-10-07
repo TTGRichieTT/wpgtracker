@@ -125,6 +125,16 @@ export const userGames = pgTable('user_games', {
   updated_at: now(),
 }, (t) => [primaryKey({ name: 'user_games_pkey', columns: [t.user_id, t.app_id] })]);
 
+// Every Steam game a member has played for 10+ hours (any game, not only the tracked ones), with its name.
+// Used for the show-only game roles on Discord (Admin → Discord server).
+export const steamPlaytime = pgTable('steam_playtime', {
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  app_id: integer().notNull(),
+  name: text().notNull().default(''),
+  minutes: integer().notNull().default(0),
+  updated_at: now(),
+}, (t) => [primaryKey({ name: 'steam_playtime_pkey', columns: [t.user_id, t.app_id] })]);
+
 export const awards = pgTable('awards', {
   id: serial().primaryKey(),
   name: text().notNull(),

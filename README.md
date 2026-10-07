@@ -163,6 +163,26 @@ PMC guests can't see or use them.
   14 days; admins see them at the bottom of the Situation rooms page and can open each on its map (read only).
 - New maps: rooms use the same map files as the Arty map (`public/maps`).
 
+## 4d. Discord server (Admin → Discord server)
+
+The bot builds the WPG Discord layout and keeps members' roles in step with the app.
+
+- **Set up:** put the server ID in Admin → Discord server, press **Add the bot to the server** (Administrator), drag the
+  bot's role to the top of the role list, and in the Discord Developer Portal → Bot switch on **Server Members Intent**
+  (needed to list the server's members). Optional: switch on Community for a rules screen.
+- **Build:** **Preview** lists what would be made; **Build server** makes it: roles (Admin, Moderator, CO / XO / Deputy,
+  Unit Leader, WPG Member, one per unit, Lonestar / Valkyra / Manticore, Content Creator, Partner, Military Vet,
+  Wardogs, 18+) and the categories Start here, Information, Community, Wardogs, WPG App, WPG Clan, Guild halls and
+  Staff, with who can see and talk in each. It reuses roles and channels that already exist by name and never deletes
+  anything it didn't make, so it's safe on the main server too. The **Also send the app's Discord posts here** box points
+  go-live, rank-up and staff-alert posts at the new channels; leave it off on a test server.
+- **Roles (when "Keep members' roles in step" is on, every 2 minutes and straight after changes in the app):**
+  everyone on the server gets **Wardogs** (after the rules screen, if there is one). Members who linked with **/link**
+  also get Admin / Moderator, WPG Member (not PMC guests), their Combat Command post or unit (and Unit Leader), their
+  faction, and a grey show-only role for every Steam game they've played for 100+ hours (the hours can be changed).
+  Content Creator, Partner, Military Vet and 18+ are given by hand. Roles on members who haven't linked are never
+  taken away; unlinking takes the app's roles off again.
+
 ## 5. How stats and XP work
 
 - **Global Wardogs stats** come from [wardogs.tools](https://wardogs.tools)'s player stats API, with the private key

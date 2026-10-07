@@ -7,6 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem } from './discordbot.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId } from './discordserver.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -440,6 +441,56 @@ admin.put('/settings', role('admin'), async (req, res) => {
   await audit(req.user.id, 'settings.edit', '', req.body);
   bus.emit('config:changed', 'settings');
   res.json({ ok: true });
+});
+
+// ---------- Discord server: build the layout and keep members' roles in step (admins) ----------
+admin.get('/discord-server', role('admin'), async (_req, res) => {
+  const guild = await guildId();
+  res.json({
+    guild_id: guild,
+    sync_roles: (await setting('discord_sync_roles')) === 'true',
+    game_hours: Number(await setting('discord_game_role_hours')) || 100,
+    invite_url: `https://discord.com/oauth2/authorize?client_id=${discordAppId()}&scope=bot%20applications.commands&permissions=8${guild ? `&guild_id=${guild}&disable_guild_select=true` : ''}`,
+    portal_url: `https://discord.com/developers/applications/${discordAppId()}/bot`,
+    build: buildStatus(),
+    sync: await lastSync(),
+  });
+});
+
+admin.put('/discord-server', role('admin'), async (req, res) => {
+  const b = req.body || {};
+  const guild = str(b.guild_id, 30).trim();
+  if (guild && !/^\d{15,22}$/.test(guild)) throw new HttpError(400, 'That isn\'t a Discord server ID (it\'s a long number).');
+  const hours = Math.min(10000, Math.max(10, int(b.game_hours) || 100));
+  const values = { discord_build_server_id: guild, discord_sync_roles: bool(b.sync_roles) ? 'true' : 'false', discord_game_role_hours: String(hours) };
+  for (const [k, v] of Object.entries(values)) {
+    await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
+  }
+  clearSettingsCache();
+  await audit(req.user.id, 'discord.server.settings', guild, values);
+  res.json({ ok: true });
+});
+
+admin.post('/discord-server/preview', role('admin'), async (req, res) => {
+  try {
+    res.json(await buildServer({ apply: false, usePosts: bool(req.body?.use_posts) }));
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+});
+
+admin.post('/discord-server/build', role('admin'), async (req, res) => {
+  try {
+    startBuild({ usePosts: bool(req.body?.use_posts) });
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+  await audit(req.user.id, 'discord.server.build', await guildId(), { use_posts: bool(req.body?.use_posts) });
+  res.json({ ok: true });
+});
+
+admin.post('/discord-server/sync', role('admin'), async (_req, res) => {
+  res.json(await syncRoles());
 });
 
 // ---------- Barracks Discord bot (admins) ----------
