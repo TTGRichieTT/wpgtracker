@@ -316,6 +316,10 @@ async function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+// Safety net: one background job going wrong (a Discord or Steam hiccup, an unexpected reply) must never take
+// the whole app down. Log it in full, so the cause shows in Render's logs, and keep running.
+process.on('unhandledRejection', (e) => console.error('[WPG] Background error (app kept running):', e?.stack || e));
+process.on('uncaughtException', (e) => console.error('[WPG] Unexpected error (app kept running):', e?.stack || e));
 
 const PORT = Number(process.env.PORT) || 3000;
 server.listen(PORT, '0.0.0.0', () => {
