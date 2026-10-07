@@ -725,7 +725,7 @@ async function discordServerTab(body) {
           <label class="field"><span>Owner role ID</span><input type="text" name="owner" inputmode="numeric" value="${esc(d.staff_roles.owner)}" required></label>
           <label class="field"><span>Administrator role ID</span><input type="text" name="admin" inputmode="numeric" value="${esc(d.staff_roles.admin)}" required></label>
           <label class="field"><span>Moderator role ID</span><input type="text" name="mod" inputmode="numeric" value="${esc(d.staff_roles.mod)}" required></label>
-          ${d.me_owner ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="give_me" ${d.me_linked ? 'checked' : 'disabled'}> Give me Owner and Administrator on Discord${d.me_linked ? '' : ' <span class="muted">(link your Discord first: type /link in Discord)</span>'}</label>` : ''}
+          ${d.me_owner ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="give_me" ${d.me_linked ? 'checked' : 'disabled'}> Give me Administrator on Discord${d.me_linked ? '' : ' <span class="muted">(link your Discord first: type /link in Discord)</span>'}</label>` : ''}
           <div class="row" style="grid-column:1/-1"><button class="btn primary">Save &amp; fix staff roles now</button></div>
         </form>
         <div id="dsStaffRolesOut" class="small" style="margin-top:8px"></div></div>

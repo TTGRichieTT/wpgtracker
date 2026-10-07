@@ -639,7 +639,7 @@ admin.post('/discord-server/build', role('admin'), async (req, res) => {
 });
 
 // Staff roles: the server's Owner / Admin / Moderator by ID; fixes their permissions and order (and gives the
-// main admin who asks Owner + Admin on their linked Discord).
+// main admin who asks Administrator on their linked Discord).
 admin.post('/discord-server/staff-roles', role('admin'), async (req, res) => {
   const id = (k) => str(req.body?.[k], 30).trim();
   const giveMe = bool(req.body?.give_me) && isOwner(req.user) ? String(req.user.discord_id || '') : '';
