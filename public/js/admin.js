@@ -642,6 +642,7 @@ const DISCORD_POSTS = [
   ]],
   ['Live match money', [
     ['discord_money_channel', 'Channel ID for the live money board and big wins (empty = the posts channel)'],
+    ['discord_leaderboard_channel', 'Channel ID for the live WPG server leaderboard (one message the bot keeps updating). Empty = off'],
     ['discord_money_board', 'Live money board (one message the bot keeps updating)', 'check'],
     ['discord_post_big_wins', 'Post big wins', 'check'],
     ['big_win_amount', 'A big win is at least …', 'number'],
@@ -714,7 +715,7 @@ async function discordServerTab(body) {
           <div class="row" style="grid-column:1/-1"><button class="btn primary">Save</button></div>
         </form></div>
       <div class="panel"><div class="panel-title">Build the layout</div>
-        <label class="check small"><input type="checkbox" id="dsPosts"> Also send the app's Discord posts here (go-live, rank-ups, staff alerts, voice list). Leave off on a test server.</label>
+        <label class="check small"><input type="checkbox" id="dsPosts"> Also send the app's Discord posts here (go-live, rank-ups, live leaderboard, staff alerts, voice list). Leave off on a test server.</label>
         <div class="row" style="margin-top:10px"><button class="btn" id="dsPreview">Preview</button><button class="btn primary" id="dsBuild">Build server</button></div>
         <div id="dsOut" class="small" style="margin-top:10px"></div></div>
       <div class="panel"><div class="panel-title">Staff roles</div>

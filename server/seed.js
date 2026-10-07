@@ -93,6 +93,7 @@ const DEFAULT_SETTINGS = {
   cheat_live_kills: '15',
   // Streams: Discord post when an approved streamer goes live (channel ID empty = no posts).
   discord_stream_channel: '',
+  discord_leaderboard_channel: '', // the live WPG server leaderboard (one message the bot keeps updating); empty = off
   discord_post_streams: 'true',
   // Recruitment: roles people can apply for (one per line) and where new applications are posted.
   combat_specialties: [
