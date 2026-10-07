@@ -726,7 +726,7 @@ async function discordServerTab(body) {
           <label class="field"><span>Administrator role ID</span><input type="text" name="admin" inputmode="numeric" value="${esc(d.staff_roles.admin)}" required></label>
           <label class="field"><span>Moderator role ID</span><input type="text" name="mod" inputmode="numeric" value="${esc(d.staff_roles.mod)}" required></label>
           ${d.me_owner ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="give_me" ${d.me_linked ? 'checked' : 'disabled'}> Give me Administrator on Discord${d.me_linked ? '' : ' <span class="muted">(link your Discord first: type /link in Discord)</span>'}</label>` : ''}
-          <div class="row" style="grid-column:1/-1"><button class="btn primary">Save &amp; fix staff roles now</button></div>
+          <div class="row" style="grid-column:1/-1"><button class="btn primary">Save &amp; fix staff roles now</button>${d.me_linked && d.staff_roles.owner ? '<button type="button" class="btn ghost" id="dsDropOwner">Take the Owner role off me</button>' : ''}</div>
         </form>
         <div id="dsStaffRolesOut" class="small" style="margin-top:8px"></div></div>
       <div class="panel"><div class="panel-title">Roles</div>
@@ -949,6 +949,16 @@ async function discordServerTab(body) {
         out.innerHTML = `<ul style="margin:0;padding-left:18px">${r.log.map((l) => `<li>${esc(l)}</li>`).join('') || '<li>Nothing needed changing.</li>'}</ul>`;
       } catch (x) { out.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
       f.querySelector('button').disabled = false;
+    };
+    const dropOwner = body.querySelector('#dsDropOwner');
+    if (dropOwner) dropOwner.onclick = async () => {
+      const out = body.querySelector('#dsStaffRolesOut');
+      dropOwner.disabled = true;
+      try {
+        const r = await api('admin/discord-server/staff-roles/drop-owner', { method: 'POST', body: {} });
+        out.innerHTML = `<ul style="margin:0;padding-left:18px">${r.log.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`;
+      } catch (x) { out.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
+      dropOwner.disabled = false;
     };
     const staffOut = body.querySelector('#dsStaffOut');
     const staffBtn = body.querySelector('#dsStaffBack');

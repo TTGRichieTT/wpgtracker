@@ -7,7 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup, restoreStaff, staffRoles, fixStaffRoles } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup, restoreStaff, staffRoles, fixStaffRoles, dropOwnerRole } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -646,6 +646,18 @@ admin.post('/discord-server/staff-roles', role('admin'), async (req, res) => {
   try {
     const r = await fixStaffRoles({ owner: id('owner'), admin: id('admin'), mod: id('mod'), giveTo: giveMe });
     await audit(req.user.id, 'discord.server.staff_roles', await guildId(), { owner: id('owner'), admin: id('admin'), mod: id('mod'), give_me: !!giveMe });
+    res.json(r);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+});
+
+// Takes the Owner role off the admin asking (on their linked Discord).
+admin.post('/discord-server/staff-roles/drop-owner', role('admin'), async (req, res) => {
+  if (!req.user.discord_id) throw new HttpError(400, 'Link your Discord first: type /link in Discord.');
+  try {
+    const r = await dropOwnerRole(String(req.user.discord_id));
+    await audit(req.user.id, 'discord.server.drop_owner', await guildId(), {});
     res.json(r);
   } catch (e) {
     throw new HttpError(400, e.message);
