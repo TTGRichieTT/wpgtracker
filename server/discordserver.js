@@ -178,6 +178,9 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
   const roleIds = {};
   const usedRoles = new Set();
   for (const spec of list) {
+    // Staff roles chosen in Server & roles → Staff roles always win.
+    const fixed = byId.get(map.fixed?.[spec.key]);
+    if (fixed && !removing.has(fixed.id) && !usedRoles.has(fixed.id)) { roleIds[spec.key] = fixed.id; usedRoles.add(fixed.id); continue; }
     // By name first (so a role keeps its meaning if the layout's names change), then the one used last time.
     const mapped = byId.get(map.roles[spec.key]);
     const found = existingRoles.find((r) => !r.managed && r.id !== guild && !removing.has(r.id) && !usedRoles.has(r.id) && sameName(r.name, [spec.name, ...(spec.aliases || [])]))
@@ -207,7 +210,10 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
     const isTop = (r) => !usedRoles.has(r.id) && (r.managed || botOnly.has(r.id) || (BigInt(r.permissions || 0) & (1n << 3n)) !== 0n);
     const head = below.filter(isTop).map((r) => r.id);
     const rest = below.filter((r) => !isTop(r) && !usedRoles.has(r.id)).map((r) => r.id);
-    const ids = [...head, ...list.map((s) => roleIds[s.key]), ...rest];
+    // Staff roles chosen: Owner, Admin, Moderator straight under the bot, then everything else.
+    const owner = map.fixed?.owner && pos.has(map.fixed.owner) ? map.fixed.owner : null;
+    const pinned = owner ? [owner, roleIds.admin, roleIds.mod] : [];
+    const ids = [...new Set([...pinned, ...head, ...list.map((s) => roleIds[s.key]), ...rest])];
     const isNew = ids.some((id) => String(id).startsWith('new:'));
     const ours = ids.filter((id) => pos.has(id) && pos.get(id) < top);
     const off = isNew || ours.some((id, i) => i > 0 && pos.get(id) > pos.get(ours[i - 1]));
@@ -380,6 +386,8 @@ export async function tidyScan({ countFrom = '' } = {}) {
   const used = new Set();
   const specFor = new Map();
   for (const spec of list) {
+    const fixed = roles.find((x) => x.id === map.fixed?.[spec.key] && !used.has(x.id));
+    if (fixed) { used.add(fixed.id); specFor.set(fixed.id, spec); continue; }
     const mapped = roles.find((x) => x.id === map.roles[spec.key] && !used.has(x.id) && !list.some((o) => o !== spec && sameName(x.name, [o.name, ...(o.aliases || [])])));
     const r = roles.find((x) => !x.managed && x.id !== guild && !used.has(x.id) && sameName(x.name, [spec.name, ...(spec.aliases || [])])) || mapped;
     if (r) { used.add(r.id); specFor.set(r.id, spec); }
@@ -397,6 +405,7 @@ export async function tidyScan({ countFrom = '' } = {}) {
     else if (mine.has(r.id)) reason = "This app's bot role";
     else if ((counts.get(r.id) || 0) > 0 && !humans.get(r.id)) reason = 'Only bots have it (kept so the bots keep working)';
     else if (spec?.divider) reason = 'Divider';
+    else if (r.id === map.fixed?.owner) reason = 'Owner role (Staff roles)';
     else if (spec) reason = `Used by the app: ${spec.name}`;
     else if (owner) reason = 'Server owner / admin role';
     else {
@@ -683,6 +692,65 @@ export function startBotCleanup({ kick = [], strip = true, undo = false, order =
     .finally(() => { building.running = false; scheduleSync(3000); });
 }
 
+// ---------- Staff roles (Discord control → Server & roles → Staff roles) ----------
+// The server's own Owner, Admin and Moderator roles, chosen by ID: Owner and Admin get Administrator, Moderator
+// the moderator permissions; they go straight under the bot in that order (and stay there on every build); the
+// layout uses Admin and Moderator for the staff channels. giveTo: a Discord user id that gets Owner and Admin.
+const MOD_PERMS = bits('KICK', 'BAN', 'MANAGE_MESSAGES', 'TIMEOUT', 'MUTE', 'DEAFEN', 'MOVE', 'NICKNAMES', 'AUDIT_LOG', 'MANAGE_THREADS', 'EVERYONE');
+export async function staffRoles() {
+  const guild = await guildId();
+  const map = await loadMap(guild);
+  return { owner: map.fixed?.owner || '', admin: map.fixed?.admin || map.roles.admin || '', mod: map.fixed?.mod || map.roles.mod || '' };
+}
+export async function fixStaffRoles({ owner, admin, mod, giveTo = '' }) {
+  const guild = await guildId();
+  if (!/^\d{15,22}$/.test(guild)) throw new Error('Set the Discord server ID first.');
+  const log = [];
+  const roles = await discordFetch(`/guilds/${guild}/roles`);
+  const byId = new Map(roles.map((r) => [r.id, r]));
+  for (const [what, id] of [['Owner', owner], ['Admin', admin], ['Moderator', mod]]) {
+    if (!byId.has(id)) throw new Error(`There's no role with the ID ${id || '(empty)'} (${what}) on the server.`);
+  }
+  if (new Set([owner, admin, mod]).size < 3) throw new Error('Owner, Admin and Moderator must be three different roles.');
+  const map = await loadMap(guild);
+  map.fixed = { owner, admin, mod };
+  map.roles = { ...map.roles, admin, mod };
+  await saveMap(map);
+  // Permissions: Owner and Admin = Administrator; Moderator keeps what it has plus the moderator set.
+  for (const [id, add] of [[owner, P.ADMIN], [admin, P.ADMIN], [mod, MOD_PERMS]]) {
+    const r = byId.get(id);
+    const have = BigInt(r.permissions || 0);
+    if ((have & add) === add) continue;
+    await discordFetch(`/guilds/${guild}/roles/${id}`, 'PATCH', { permissions: String(have | add) })
+      .then(() => log.push(`Gave "${r.name}" ${add === P.ADMIN ? 'Administrator (full admin)' : 'the moderator permissions'}`))
+      .catch((e) => log.push(`Couldn't change "${r.name}": ${e.message}`));
+  }
+  // Order: straight under the bot's own highest role: Owner, Admin, Moderator, then everything else as it was.
+  const me = await discordFetch('/users/@me');
+  const mine = await discordFetch(`/guilds/${guild}/members/${me.id}`);
+  const top = Math.max(0, ...mine.roles.map((id) => byId.get(id)?.position || 0));
+  const above = [owner, admin, mod].filter((id) => byId.get(id).position >= top);
+  if (above.length) {
+    log.push(`${above.map((id) => `"${byId.get(id).name}"`).join(', ')} ${above.length === 1 ? 'is' : 'are'} above the bot's own role, so the bot can't move ${above.length === 1 ? 'it' : 'them'}. In Discord drag the WPG Barracks role to the very top, then press this again.`);
+  } else {
+    const rest = roles.filter((r) => r.id !== guild && r.position < top && ![owner, admin, mod].includes(r.id)).sort((a, b) => b.position - a.position).map((r) => r.id);
+    const wanted = [owner, admin, mod, ...rest].map((id, i) => ({ id, position: Math.max(1, top - 1 - i) }));
+    if (wanted.some((w) => byId.get(w.id).position !== w.position)) {
+      await discordFetch(`/guilds/${guild}/roles`, 'PATCH', wanted)
+        .then(() => log.push(`Put the roles in order: WPG Barracks, ${byId.get(owner).name}, ${byId.get(admin).name}, ${byId.get(mod).name}, then the rest`))
+        .catch((e) => log.push(`Couldn't put the roles in order: ${e.message}`));
+    } else log.push('The roles were already in order.');
+  }
+  if (giveTo) {
+    for (const id of [owner, admin]) {
+      await discordFetch(`/guilds/${guild}/members/${giveTo}/roles/${id}`, 'PUT')
+        .then(() => log.push(`Gave you "${byId.get(id).name}"`))
+        .catch((e) => log.push(`Couldn't give you "${byId.get(id).name}": ${/404/.test(e.message) ? "your linked Discord account isn't on the server" : e.message}`));
+    }
+  }
+  return { log };
+}
+
 // ---------- Old staff back (Discord control → Server & roles → Roles) ----------
 // From the last Tidy up backup: everyone who had a staff role then (one with Administrator, or kick / ban / timeout /
 // manage messages / manage roles…) gets that role back if it still exists, plus the layout's Admin (they had
@@ -817,6 +885,7 @@ export async function syncRoles() {
         linked++;
         if (u.status === 'active') {
           if (u.role === 'admin' || isOwner(u)) want.add(rid('admin'));
+          if (isOwner(u) && live.has(map.fixed?.owner)) want.add(map.fixed.owner);
           else if (u.role === 'mod') want.add(rid('mod'));
           if (u.membership !== 'pmc') want.add(rid('wpg'));
           else want.add(rid('pmc')); // PMC guest: Wardogs
