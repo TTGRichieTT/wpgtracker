@@ -579,7 +579,7 @@ admin.post('/discord-server/bots/scan', role('admin'), async (_req, res) => {
 });
 admin.post('/discord-server/bots', role('admin'), async (req, res) => {
   const kick = Array.isArray(req.body?.kick) ? req.body.kick.map((x) => String(x)).filter((x) => /^\d{15,22}$/.test(x)) : [];
-  const opts = { kick, strip: bool(req.body?.strip), order: bool(req.body?.order) };
+  const opts = { kick, strip: bool(req.body?.strip), undo: bool(req.body?.undo), order: bool(req.body?.order), relayout: bool(req.body?.relayout) };
   try {
     startBotCleanup(opts);
   } catch (e) {

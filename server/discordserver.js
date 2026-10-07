@@ -468,7 +468,7 @@ const AUDIT = {
   1: 'changed the server settings', 10: 'made channel', 11: 'changed channel', 12: 'deleted channel', 13: 'added permissions on',
   14: 'changed permissions on', 15: 'removed permissions on', 20: 'kicked', 21: 'pruned members', 22: 'banned', 23: 'unbanned',
   24: 'changed member', 25: "changed someone's roles", 26: 'moved someone in voice', 27: 'disconnected someone from voice', 28: 'added bot',
-  30: 'made role', 31: 'changed role', 32: 'deleted role', 40: 'made invite', 50: 'made webhook', 51: 'changed webhook', 52: 'deleted webhook',
+  30: 'made', 31: 'changed', 32: 'deleted', 40: 'made invite', 50: 'made webhook', 51: 'changed webhook', 52: 'deleted webhook',
   72: 'deleted messages', 73: 'bulk-deleted messages', 74: 'pinned a message', 140: 'made AutoMod rule', 141: 'changed AutoMod rule', 142: 'deleted AutoMod rule',
 };
 const snowTime = (id) => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toISOString();
@@ -508,11 +508,20 @@ export async function botScan() {
       channels: p.channels.filter((c) => (c.permission_overwrites || []).some((o) => own.has(o.id))).map((c) => c.name),
     };
   }).sort((a, b) => b.security - a.security || a.name.localeCompare(b.name));
-  // What bots changed lately: the newest 300 audit log entries made by bots other than ours.
+  const audit = await botAudit(guild, p);
+  for (const b of bots) b.made = madeBy(audit, p, b.id).map((x) => x.label);
+  const b = await lastBackup();
+  return { server: info.name, guild, bots, changes: audit.changes, audit_problem: audit.problem, backup_at: b?.guild === guild ? b.at : null };
+}
+
+// What bots changed lately: the newest 300 audit log entries made by bots other than ours (bots that have since
+// left included). Discord keeps the audit log for 45 days.
+async function botAudit(guild, p) {
   const botIds = new Set(p.others.map((m) => m.user.id));
   const names = new Map([...p.roles.map((r) => [r.id, `role "${r.name}"`]), ...p.channels.map((c) => [c.id, `#${c.name}`]), ...p.members.map((m) => [m.user.id, m.user.global_name || m.user.username])]);
+  const entries = [];
   const changes = [];
-  let auditProblem = null;
+  let problem = null;
   try {
     let before = '';
     for (let page = 0; page < 3; page++) {
@@ -520,21 +529,35 @@ export async function botScan() {
       const list = a.audit_log_entries || [];
       for (const u of a.users || []) {
         if (!names.has(u.id)) names.set(u.id, u.global_name || u.username);
-        if (u.bot && u.id !== p.me.id) botIds.add(u.id); // bots that have since left still count
+        if (u.bot && u.id !== p.me.id) botIds.add(u.id);
       }
       for (const e of list.filter((x) => botIds.has(x.user_id))) {
-        const old = (e.changes || []).find((c) => c.key === 'name')?.old_value;
-        const target = names.get(e.target_id) || (old ? `"${old}"` : e.target_id ? `(${e.target_id})` : '');
+        entries.push(e);
+        const nm = (e.changes || []).find((c) => c.key === 'name');
+        const was = nm?.old_value ?? nm?.new_value;
+        const kind = e.action_type >= 30 && e.action_type <= 32 ? 'role ' : '';
+        const target = names.get(e.target_id) || (was ? `${kind}"${was}"` : e.target_id ? `${kind}(${e.target_id})` : '');
         changes.push({ at: snowTime(e.id), bot: names.get(e.user_id) || e.user_id, what: `${AUDIT[e.action_type] || `did action ${e.action_type} on`} ${target}`.trim(), reason: e.reason || '' });
       }
       if (list.length < 100) break;
       before = list[list.length - 1].id;
     }
   } catch (e) {
-    auditProblem = `Couldn't read the audit log: ${e.message}`;
+    problem = `Couldn't read the audit log: ${e.message}`;
   }
-  const b = await lastBackup();
-  return { server: info.name, guild, bots, changes, audit_problem: auditProblem, backup_at: b?.guild === guild ? b.at : null };
+  return { entries, changes, problem };
+}
+
+// Channels and roles a bot made (e.g. a security bot's #verify channel and Unverified role) that are still there.
+function madeBy(audit, p, botId) {
+  const out = [];
+  for (const e of audit.entries.filter((x) => x.user_id === botId)) {
+    const c = e.action_type === 10 && p.channels.find((x) => x.id === e.target_id);
+    const r = e.action_type === 30 && p.byId.get(e.target_id);
+    if (c && !out.some((x) => x.id === c.id)) out.push({ kind: 'channel', id: c.id, label: `#${c.name}` });
+    if (r && !r.managed && !out.some((x) => x.id === r.id)) out.push({ kind: 'role', id: r.id, label: `role "${r.name}"` });
+  }
+  return out;
 }
 
 export async function lastBotBackup() {
@@ -542,8 +565,10 @@ export async function lastBotBackup() {
 }
 
 // kick: bot ids to remove from the server. strip: take roles and permissions off the bots that stay.
+// undo: delete the channels and roles the kicked bots made (e.g. a security bot's #verify and Unverified role).
 // order: put channels back in the order and categories they had in the last Tidy up backup.
-export function startBotCleanup({ kick = [], strip = true, order = false } = {}) {
+// relayout: then set the WPG layout's channel permissions again (Tidy up without removing roles).
+export function startBotCleanup({ kick = [], strip = true, undo = false, order = false, relayout = false } = {}) {
   if (building.running) throw new Error('A build is already running.');
   Object.assign(building, { running: true, log: [], done: null, error: null, at: new Date().toISOString() });
   const say = (t) => building.log.push(t);
@@ -559,13 +584,34 @@ export function startBotCleanup({ kick = [], strip = true, order = false } = {})
     const top = (m) => Math.max(0, ...m.roles.map((id) => p.pos.get(id) || 0));
     const blocked = (m) => `${m.user.username}'s role is above WPG Barracks's role, so Discord won't let the bot touch it. Drag WPG Barracks's role to the very top (Server Settings → Roles) and run this again, or the server owner can kick it by hand.`;
     // 1. Kick first, so a security bot can't undo the rest.
+    const audit = undo ? await botAudit(guild, p) : null;
+    const made = new Map(p.others.map((m) => [m.user.id, audit ? madeBy(audit, p, m.user.id) : []]));
+    const kicked = [];
     for (const id of new Set(kick)) {
       const m = p.others.find((x) => x.user.id === id);
       if (!m) continue;
       if (top(m) >= p.myTop) { say(`Couldn't kick ${m.user.username}: ${blocked(m)}`); continue; }
       await discordFetch(`/guilds/${guild}/members/${id}`, 'DELETE')
-        .then(() => say(`Kicked ${m.user.username}`))
+        .then(() => { kicked.push(id); say(`Kicked ${m.user.username}`); })
         .catch((e) => say(`Couldn't kick ${m.user.username}: ${e.message}`));
+    }
+    // 2. What the kicked bots set up (their verify channel, Unverified role…), so new joiners get the WPG entry check.
+    if (undo) {
+      if (audit.problem) say(audit.problem);
+      const map = await loadMap(guild);
+      const ours = new Set([...Object.values(map.roles || {}), ...Object.values(map.channels || {}), ...p.mine, guild]);
+      let n = 0;
+      for (const x of kicked.flatMap((id) => made.get(id) || []).filter((y) => !ours.has(y.id))) {
+        const path = x.kind === 'channel' ? `/channels/${x.id}` : `/guilds/${guild}/roles/${x.id}`;
+        await discordFetch(path, 'DELETE').then(() => { n++; say(`Deleted ${x.label} (made by a kicked bot)`); }).catch((e) => say(`Couldn't delete ${x.label}: ${e.message}`));
+      }
+      if (!n) say(kicked.length ? 'The kicked bots made no channels or roles that are still here (Discord keeps 45 days of history).' : 'No bot was kicked, so nothing they made was deleted.');
+      else {
+        // People stuck in the old bot's verification start a fresh entry-check clock (not removed straight away).
+        map.entry_grace = new Date().toISOString();
+        await saveMap(map);
+        say('Everyone still waiting to get in has a fresh 24 hours to pass the WPG entry check.');
+      }
     }
     if (strip) {
       p = await botPicture(guild);
@@ -624,11 +670,16 @@ export function startBotCleanup({ kick = [], strip = true, order = false } = {})
           .catch((e) => say(`Couldn't put the channels back: ${e.message}`));
       }
     }
+    if (relayout) {
+      say('Setting the WPG layout\'s channel permissions again…');
+      const r = await buildServer({ apply: true, tidy: true });
+      say(r.actions.length ? `Layout: ${r.actions.length} change${r.actions.length === 1 ? '' : 's'}` : 'Layout was already right');
+    }
     return { server: guild };
   })()
     .then((r) => { building.done = r; building.log.push('Done.'); })
     .catch((e) => { building.error = e.message; building.log.push(`Stopped: ${e.message}`); })
-    .finally(() => { building.running = false; });
+    .finally(() => { building.running = false; scheduleSync(3000); });
 }
 
 // ---------- Role sync ----------

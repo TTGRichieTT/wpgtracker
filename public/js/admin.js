@@ -894,21 +894,26 @@ async function discordServerTab(body) {
             <input type="checkbox" data-kick="${esc(b.id)}"${b.security && !b.above ? ' checked' : ''}${b.above ? ' disabled' : ''} title="Kick this bot" style="margin-top:3px">
             <span class="grow" style="min-width:0"><b>${esc(b.name)}</b>${b.security ? ' <span style="color:var(--red)">· security bot</span>' : ''}${b.above ? ' <span style="color:var(--red)">· above the WPG bot</span>' : ''}
               <br><span class="muted">Roles: ${b.roles.map((x) => `${esc(x.name)}${x.risky.length ? ` <span style="color:#f5a524">(${esc(x.risky.join(', '))})</span>` : ''}`).join(', ') || 'none'}</span>
+              ${b.made?.length ? `<br><span style="color:#f5a524">Made: ${esc(b.made.join(', '))}</span>` : ''}
               ${b.channels.length ? `<br><span class="muted">Own permissions in: ${esc(b.channels.slice(0, 12).join(', '))}${b.channels.length > 12 ? ` and ${b.channels.length - 12} more` : ''}</span>` : ''}</span></label>`).join('') || '<div class="muted" style="padding:8px">No other bots.</div>'}</div>
           <p class="muted" style="margin:4px 0 0">Ticked = kicked.</p>
           <details style="margin-top:10px"${r.changes.length ? ' open' : ''}><summary><b>What bots changed lately</b> <span class="muted">· ${r.changes.length} change${r.changes.length === 1 ? '' : 's'}</span></summary>
             ${r.audit_problem ? `<p style="color:var(--red)">${esc(r.audit_problem)}</p>` : ''}
             <ul style="margin:6px 0 0;padding-left:18px;max-height:300px;overflow:auto">${r.changes.map((c) => `<li><span class="muted">${esc(when(c.at))}</span> <b>${esc(c.bot)}</b> ${esc(c.what)}${c.reason ? ` <span class="muted">(${esc(c.reason)})</span>` : ''}</li>`).join('') || '<li class="muted">Nothing in the audit log.</li>'}</ul></details>
-          <label class="check" style="margin-top:10px"><input type="checkbox" id="dsBotStrip" checked> Take every role and permission off the bots that stay</label>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="dsBotUndo" checked> Delete the channels and roles the kicked bots made (e.g. a security bot's verify channel and Unverified role), so new joiners go through the WPG entry check. Anyone still waiting to get in gets a fresh 24 hours.</label>
+          <label class="check"><input type="checkbox" id="dsBotStrip" checked> Take every role and permission off the bots that stay</label>
+          <label class="check"><input type="checkbox" id="dsBotLayout"${r.backup_at ? ' checked' : ''}> Then set the WPG layout's channel permissions again (as Tidy up does, no roles removed), so #welcome and #rules are open to new joiners</label>
           ${r.backup_at ? `<label class="check"><input type="checkbox" id="dsBotOrder"> Put channels back in the order and categories they had before the tidy-up (backup of ${esc(when(r.backup_at))})</label>` : ''}
           <div class="row" style="margin-top:12px"><button class="btn primary" id="dsBotGo">Back up &amp; clean up bots now</button></div>`;
         botOut.querySelector('#dsBotGo').onclick = async () => {
           const kick = [...botOut.querySelectorAll('[data-kick]:checked:not(:disabled)')].map((el) => el.dataset.kick);
           const strip = botOut.querySelector('#dsBotStrip').checked;
           const order = !!botOut.querySelector('#dsBotOrder')?.checked;
+          const undo = botOut.querySelector('#dsBotUndo').checked;
+          const relayout = botOut.querySelector('#dsBotLayout').checked;
           if (!(await confirmBox(`Clean up bots on ${r.server} now? ${kick.length} bot${kick.length === 1 ? '' : 's'} will be kicked${strip ? ' and the others lose their roles and permissions' : ''}. A backup is made first.`))) return;
           try {
-            await api('admin/discord-server/bots', { method: 'POST', body: { kick, strip, order } });
+            await api('admin/discord-server/bots', { method: 'POST', body: { kick, strip, undo, order, relayout } });
             const poll = async () => {
               if (!document.body.contains(botOut)) return;
               const st = (await api('admin/discord-server')).build;
