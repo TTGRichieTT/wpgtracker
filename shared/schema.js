@@ -201,10 +201,13 @@ export const livePresence = pgTable('live_presence', {
   raw: jsonb().notNull().default({}),
   seen_at: timestamp({ withTimezone: true }),
   updated_at: timestamp({ withTimezone: true }),
+  // The running profit / loss of the match in progress (Steam shows the match total; it goes back to $0 when the next
+  // match starts). Saved as that match's result when it resets, or when they leave Wardogs.
+  open_money: integer(),
   invite_link: text().notNull().default(''), // their own single-use Steam quick invite link to add the bot
   invite_expires: timestamp({ withTimezone: true }),
 });
-// Every match result read from Steam (for "Tonight's money").
+// Every finished match read from Steam (for "Tonight's money"): its final profit / loss. result: profit | loss
 export const presenceResults = pgTable('presence_results', {
   id: serial().primaryKey(),
   user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),

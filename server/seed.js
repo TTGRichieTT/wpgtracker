@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS = {
   steam_bot_enabled: 'true', // live match money from Steam (steambot.js; needs STEAM_BOT_USERNAME / PASSWORD)
   discord_post_big_wins: 'false', // Discord post when a member wins big in one match (Admin → Steam bot)
   big_win_amount: '50000',
+  discord_money_board: 'true', // the live board message in the live match money channel (discordbot.js)
+  discord_money_channel: '1557318825178038282', // live match money posts (big wins); empty = the channel for the other automatic posts
   tracker_relink_prompts: 'true', // ask members to relink when wardogs.tools stops updating them (app + Discord)
   tracker_server: '',
   xp_per_server_kill: '2',

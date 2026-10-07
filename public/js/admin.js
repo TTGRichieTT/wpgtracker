@@ -704,7 +704,7 @@ async function settingsTab(body) {
   const s = await api('admin/settings');
   const known = new Set(SETTINGS.flatMap(([, list]) => list.map(([k]) => k)));
   // Settings with their own page aren't repeated here (saving them from a one-line box would lose their line breaks).
-  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames', 'steam_bot_enabled', 'discord_post_big_wins', 'big_win_amount']); // Admin → Recruitment / Giveaways / Frames
+  const ELSEWHERE = new Set(['combat_specialties', 'discord_recruit_channel', 'discord_giveaway_channel', 'discord_post_giveaways', 'discord_post_frames', 'steam_bot_enabled', 'discord_post_big_wins', 'big_win_amount', 'discord_money_channel', 'discord_money_board']); // Admin → Recruitment / Giveaways / Frames
   const extra = Object.keys(s).filter((k) => !known.has(k) && !ELSEWHERE.has(k) && !k.startsWith('wpgxp_')); // WPG XP amounts: Admin → WPG XP
   const input = ([k, label, type]) => {
     const v = s[k] ?? '';

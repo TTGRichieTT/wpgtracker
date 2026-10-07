@@ -797,31 +797,73 @@ bus.on('tracker:relink', async (a) => {
   }
 });
 
-// /money: live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now, and
-// tonight's (last 12 hours) totals.
-async function cmdMoney() {
-  const signed = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
+// Live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now with the match's
+// running profit / loss, and tonight's (last 12 hours) totals. Used by /money and the live board.
+const signedMoney = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
+async function moneyEmbed({ live = false } = {}) {
+  const { TONIGHT_ROWS } = await import('./steambot.js');
   const [now, tonight] = await Promise.all([
-    q(`SELECT u.persona_name AS name, lp.text FROM live_presence lp JOIN users u ON u.id = lp.user_id
+    q(`SELECT u.persona_name AS name, lp.text, lp.money FROM live_presence lp JOIN users u ON u.id = lp.user_id
         WHERE lp.opted_in AND lp.in_game AND lp.text <> '' AND u.status='active' AND u.membership <> 'pmc'
-          AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.updated_at DESC LIMIT 15`),
-    q(`SELECT u.persona_name AS name, SUM(pr.money)::int AS total, COUNT(*)::int AS matches FROM presence_results pr JOIN users u ON u.id = pr.user_id
-        WHERE pr.at > now() - interval '12 hours' AND u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 10`),
+          AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.money DESC NULLS LAST LIMIT 15`),
+    q(`SELECT u.persona_name AS name, SUM(t.money)::int AS total, COUNT(*) FILTER (WHERE t.done)::int AS matches, BOOL_OR(NOT t.done) AS playing
+         FROM (${TONIGHT_ROWS}) t JOIN users u ON u.id = t.user_id
+        WHERE u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 10`),
   ]);
   const medal = ['🥇', '🥈', '🥉'];
+  const matches = (r) => `${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`;
   return {
-    embeds: [{
-      title: '💰 Wardogs match money',
-      url: `${SITE()}/#/leaderboard?by=tonight`,
-      color: GOLD,
-      fields: [
-        { name: '🎮 In a match now', value: now.map((r) => `**${cleanName(r.name)}** · ${r.text}`).join('\n').slice(0, 1000) || 'Nobody right now.' },
-        { name: "🌙 Tonight's money (last 12 hours)", value: tonight.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — **${signed(r.total)}** (${r.matches} match${r.matches === 1 ? '' : 'es'})`).join('\n').slice(0, 1000) || 'No matches yet tonight.' },
-      ],
-      footer: { text: 'Live from Steam · members who switched on live match money in WPG Barracks' },
-    }],
-    components: [{ type: 1, components: [{ type: 2, style: 5, label: 'Switch it on in WPG Barracks', url: `${SITE()}/#/u/me` }] }],
+    title: live ? '💰 Live match money' : '💰 Wardogs match money',
+    url: `${SITE()}/#/leaderboard?by=tonight`,
+    color: GOLD,
+    fields: [
+      { name: '🎮 In a match now', value: now.map((r) => `**${cleanName(r.name)}** · ${r.text}`).join('\n').slice(0, 1000) || 'Nobody right now.' },
+      { name: "🌙 Tonight's money (last 12 hours)", value: tonight.map((r, i) => `${medal[i] || `**${i + 1}.**`} ${cleanName(r.name)} — **${signedMoney(r.total)}** (${matches(r)})`).join('\n').slice(0, 1000) || 'No matches yet tonight.' },
+    ],
+    footer: { text: `${live ? 'Updates by itself · ' : ''}Live from Steam · members who switched on Live match money in WPG Barracks` },
+    ...(live ? { timestamp: new Date().toISOString() } : {}),
   };
+}
+const moneyButtons = () => [{ type: 1, components: [
+  { type: 2, style: 5, label: "Tonight's money", url: `${SITE()}/#/leaderboard?by=tonight` },
+  { type: 2, style: 5, label: 'Switch it on in WPG Barracks', url: `${SITE()}/#/u/me` },
+] }];
+async function cmdMoney() {
+  return { embeds: [await moneyEmbed()], components: moneyButtons() };
+}
+
+// The live board: one message in the live match money channel that the bot keeps editing (at most once a minute, and
+// only when something changed, or every 10 minutes to refresh its time). Remembered across restarts; if it's deleted
+// (or the channel changes), a new one is posted.
+const BOARD_KEY = '_money_board_msg';
+let boardLast = { body: '', at: 0 };
+let boardDirty = true;
+bus.on('money:changed', () => { boardDirty = true; });
+export async function updateMoneyBoard() {
+  if (!TOKEN() || !(await flag('discord_money_board'))) return;
+  const channel = String((await setting('discord_money_channel')) || '').trim();
+  if (!/^\d{15,22}$/.test(channel)) return;
+  const embed = await moneyEmbed({ live: true });
+  const body = JSON.stringify(embed.fields);
+  if (!boardDirty && body === boardLast.body && Date.now() - boardLast.at < 10 * 60 * 1000) return;
+  const payload = { embeds: [embed], components: moneyButtons() };
+  const saved = String((await one('SELECT value FROM settings WHERE key=$1', [BOARD_KEY]))?.value || '');
+  const [savedChannel, savedId] = saved.split(':');
+  let posted = false;
+  if (savedChannel === channel && savedId) {
+    try {
+      await discordFetch(`/channels/${channel}/messages/${savedId}`, 'PATCH', payload);
+      posted = true;
+    } catch (e) {
+      if (!/ 404|10008|Unknown Message/.test(e.message)) throw e; // deleted: post a new one below
+    }
+  }
+  if (!posted) {
+    const msg = await discordFetch(`/channels/${channel}/messages`, 'POST', payload);
+    await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [BOARD_KEY, `${channel}:${msg.id}`]);
+  }
+  boardLast = { body, at: Date.now() };
+  boardDirty = false;
 }
 
 const COMMANDS = {
@@ -1268,10 +1310,12 @@ bus.on('announce', async (a) => {
     } else if (a.type === 'bigwin' && (await flag('discord_post_big_wins'))) {
       const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
       if (isWpgMember(u)) {
+        // The live match money channel (Admin → Steam bot), else the channel for the other automatic posts.
+        const key = String((await setting('discord_money_channel')) || '').trim() ? 'discord_money_channel' : 'discord_post_channel';
         await postToChannel({
-          content: `💰 **${u.persona_name}**${mentionFor(u)} just won **$${num(a.money)}** in one Wardogs match!`,
+          content: `💰 **${u.persona_name}**${mentionFor(u)} just made **+$${num(a.money)}** profit in one Wardogs match!`,
           components: [{ type: 1, components: [{ type: 2, style: 5, label: "Tonight's money", url: `${SITE()}/#/leaderboard?by=tonight` }] }],
-        });
+        }, key);
       }
     } else if (a.type === 'frame' && (await flag('discord_post_frames'))) {
       const [u, f] = await Promise.all([one('SELECT * FROM users WHERE id=$1', [a.userId]), one('SELECT * FROM frames WHERE id=$1', [a.frameId])]);
@@ -1305,4 +1349,6 @@ export function startDiscordBot() {
     }
   };
   setTimeout(attempt, 60 * 1000);
+  // The live match money board (once a minute; it only edits when something changed).
+  setInterval(() => updateMoneyBoard().catch((e) => problem('Live money board', e.message)), 60 * 1000);
 }

@@ -154,8 +154,9 @@ export function badgeFor(u, size) {
 const rankName = (u) => (isPmc(u) ? 'PMC · Guest' : u?.rank ? u.rank.name : 'No rank');
 // "Playing …" tag from Steam; Wardogs is highlighted. Kept live by the 'playing' socket event.
 const isWardogs = (p) => (p && /wardogs/i.test(p.game) ? 1 : 0);
-// "🎮 WARDOGS · -$10,793 Loss": the game, plus live match money from Steam for members who switched it on.
-const playingHtml = (p) => (p ? `🎮 ${esc(p.game || '')}${p.live?.text ? ` · <b class="live-money${p.live.money > 0 ? ' up' : p.live.money < 0 ? ' down' : ''}">${esc(p.live.text)}</b>` : ''}` : '');
+// "🎮 WARDOGS · -$10,793 Loss": the game, plus live match money from Steam for members who switched it on
+// (Wardogs only: other games just show their name).
+const playingHtml = (p) => (p ? `🎮 ${esc(p.game || '')}${p.live?.text && isWardogs(p) ? ` · <b class="live-money${p.live.money > 0 ? ' up' : p.live.money < 0 ? ' down' : ''}">${esc(p.live.text)}</b>` : ''}` : '');
 export function playingTag(u) {
   const p = state.playing[u?.id];
   return `<span class="playing-tag${isWardogs(p) ? ' wd' : ''}" data-playing="${u?.id}"${p ? '' : ' hidden'}>${playingHtml(p)}</span>`;

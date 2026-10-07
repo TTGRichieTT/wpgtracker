@@ -31,10 +31,11 @@ export async function profileLivePanel(box, user) {
     </div>
     ${d.on ? `
       <div class="tiles" style="margin-bottom:8px">
-        <div class="tile"><div class="ic">${icon('swords')}</div><div class="grow"><div class="lbl">${live?.inGame ? 'In a match now' : 'Last reading'}</div>
-          <div class="val ${moneyClass(live?.money)}">${live ? esc(live.text) : '—'}</div>${live?.at ? `<div class="muted small">${esc(timeAgo(live.at))}</div>` : ''}</div></div>
+        <div class="tile"><div class="ic">${icon('swords')}</div><div class="grow"><div class="lbl">${live ? 'In a match now' : 'Last match'}</div>
+          ${live ? `<div class="val ${moneyClass(live.money)}">${esc(live.text)}</div><div class="muted small">updated ${esc(timeAgo(live.at))}</div>`
+            : d.last ? `<div class="val ${moneyClass(d.last.money)}">${signedMoney(d.last.money)} ${d.last.money < 0 ? 'Loss' : 'Profit'}</div><div class="muted small">${esc(timeAgo(d.last.at))}</div>` : '<div class="val">—</div>'}</div></div>
         <div class="tile"><div class="ic">${icon('coins')}</div><div class="grow"><div class="lbl">Tonight (last 12 hours)</div>
-          <div class="val ${moneyClass(t?.total)}">${t?.matches ? signedMoney(t.total) : '—'}</div>${t?.matches ? `<div class="muted small">${t.matches} match${t.matches === 1 ? '' : 'es'} · ${t.wins} won</div>` : ''}</div></div>
+          <div class="val ${moneyClass(t?.total)}">${t?.matches || live ? signedMoney(t?.total || 0) : '—'}</div>${t?.matches || live ? `<div class="muted small">${t.matches} match${t.matches === 1 ? '' : 'es'}${live ? ' + this one' : ''} · ${t.wins} in profit</div>` : ''}</div></div>
       </div>
       ${d.mine && d.invite ? `<div class="row" style="gap:10px;margin:4px 0 8px"><a class="btn primary small" href="${esc(d.invite)}" target="_blank" rel="noopener">${icon('steam')} Add the bot on Steam</a>
         <span class="muted small">Opens Steam to add the <b>WPG Barracks</b> account as a friend (your own link, works once, valid 7 days).</span></div>` : ''}
@@ -92,12 +93,14 @@ export async function steamBotAdminTab(body) {
     </div>
     <div class="panel" style="margin-top:16px">
       <div class="panel-title">${icon('megaphone')} Discord</div>
+      <label class="row small" style="gap:6px;margin-bottom:10px"><input type="checkbox" id="moneyBoard" ${d.settings.board ? 'checked' : ''}> Live board: one message in this channel the bot keeps up to date (who's in a match, tonight's money)</label>
+      <label class="field" style="max-width:420px;margin-bottom:10px"><span>Live match money channel ID</span><input type="text" id="moneyChannel" inputmode="numeric" placeholder="Empty = the channel for the other automatic posts" value="${esc(d.settings.moneyChannel)}"></label>
       <div class="row" style="align-items:flex-end;gap:12px">
-        <label class="row small" style="gap:6px"><input type="checkbox" id="bigWins" ${d.settings.bigWins ? 'checked' : ''}> Post big wins (WPG members only)</label>
-        <label class="field"><span>Big win: at least ($)</span><input type="number" id="bigWinAmount" min="1000" step="1000" value="${esc(d.settings.bigWinAmount)}"></label>
+        <label class="row small" style="gap:6px"><input type="checkbox" id="bigWins" ${d.settings.bigWins ? 'checked' : ''}> Post big matches (WPG members only)</label>
+        <label class="field"><span>Big match: profit of at least ($)</span><input type="number" id="bigWinAmount" min="1000" step="1000" value="${esc(d.settings.bigWinAmount)}"></label>
         <button class="btn" id="saveDiscord">Save</button>
       </div>
-      <p class="muted small">Members can also type <b>/money</b> in Discord: who's in a match now and tonight's totals.</p>
+      <p class="muted small">Live match money posts go to this channel (the bot needs View Channel, Send Messages and Embed Links there). Members can also type <b>/money</b> in Discord: who's in a match now and tonight's totals.</p>
     </div>
     <div class="panel" style="margin-top:16px">
       <div class="panel-title">${icon('chart')} What Steam sends <span class="sub">last 40 changes (kept 3 days)</span></div>
@@ -131,7 +134,7 @@ export async function steamBotAdminTab(body) {
   };
   body.querySelector('#saveDiscord').onclick = async () => {
     try {
-      await api('admin/steambot/settings', { method: 'PUT', body: { bigWins: body.querySelector('#bigWins').checked, bigWinAmount: Number(body.querySelector('#bigWinAmount').value) } });
+      await api('admin/steambot/settings', { method: 'PUT', body: { board: body.querySelector('#moneyBoard').checked, moneyChannel: body.querySelector('#moneyChannel').value, bigWins: body.querySelector('#bigWins').checked, bigWinAmount: Number(body.querySelector('#bigWinAmount').value) } });
       toast('Saved');
     } catch (x) { fail(x); }
   };

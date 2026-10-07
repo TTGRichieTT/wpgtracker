@@ -56,51 +56,65 @@ async function memberBySteam(steamId) {
 }
 
 // ---------- Reading the line ----------
-// "-$10,793 Loss" → { money: -10793, result: 'loss' }. Unknown formats just keep the text.
+// "-$10,793 Loss" → { money: -10793, result: 'loss' }; "+$4,200 Profit" → { money: 4200, result: 'profit' }.
+// Wardogs shows the match's running profit / loss (it goes back to $0 at the start of the next match).
 export function parseLine(text) {
   const t = String(text || '');
   const m = /([-+−–])?\s*\$\s*([\d,]+(?:\.\d+)?)/.exec(t);
   let money = m ? Math.round(Number(m[2].replace(/,/g, ''))) : null;
   if (money !== null && m[1] && m[1] !== '+') money = -money;
   if (money !== null && !Number.isFinite(money)) money = null;
-  const result = /\b(win|won|victory)\b/i.test(t) ? 'win' : /\b(loss|lost|defeat)\b/i.test(t) ? 'loss' : '';
-  if (money !== null && result === 'loss' && money > 0 && !m[1]) money = -money; // "$500 Loss" → -500
-  return { money, result };
+  if (money !== null && money > 0 && !m[1] && /\b(loss|lost)\b/i.test(t)) money = -money; // "$500 Loss" → -500
+  return { money, result: money > 0 ? 'profit' : money < 0 ? 'loss' : '' };
 }
 
-// One reading for a member: saved, shown live, and kept as a match result when it is one.
+// A finished match: its final profit / loss, kept for "Tonight's money" (a match that ends on exactly $0 isn't kept).
+async function finishMatch(userId, money) {
+  if (!money) return;
+  const result = money > 0 ? 'profit' : 'loss';
+  await q('INSERT INTO presence_results (user_id, money, result, text) VALUES ($1,$2,$3,$4)', [userId, money, result, `${money < 0 ? '-' : '+'}$${Math.abs(money).toLocaleString('en-GB')} ${money < 0 ? 'Loss' : 'Profit'}`]);
+  bigWin(userId, money).catch(() => {});
+  bus.emit('money:changed');
+}
+
+// One reading for a member: shown live, and the match in progress followed. A match is finished when the figure goes
+// back to $0 (the next match started) or they leave Wardogs. Anything else in between (menus, loading screens) just
+// waits, since a new match always starts at $0. A gap of 45 minutes with no news means the last match was missed.
+const STALE_MS = 45 * 60 * 1000;
 export async function record(userId, { inGame, text, raw }) {
   const row = await one('SELECT * FROM live_presence WHERE user_id=$1', [userId]);
   if (!row?.opted_in) return;
   const clean = String(text || '').slice(0, 200);
   const { money, result } = parseLine(clean);
   const changed = clean && clean !== row.text;
+  let open = row.open_money;
+  const stale = open !== null && row.seen_at && Date.now() - new Date(row.seen_at).getTime() > STALE_MS;
+  if (open !== null && (!inGame || money === 0 || (stale && money !== null))) {
+    await finishMatch(userId, open);
+    open = null;
+  }
+  if (inGame && money) open = money;
   await q(
     `UPDATE live_presence SET in_game=$2, text=CASE WHEN $3 <> '' THEN $3 ELSE text END, money=CASE WHEN $3 <> '' THEN $4 ELSE money END,
-            result=CASE WHEN $3 <> '' THEN $5 ELSE result END, raw=CASE WHEN $3 <> '' THEN $6 ELSE raw END,
+            result=CASE WHEN $3 <> '' THEN $5 ELSE result END, raw=CASE WHEN $3 <> '' THEN $6 ELSE raw END, open_money=$8,
             seen_at=now(), updated_at=CASE WHEN $7 THEN now() ELSE updated_at END WHERE user_id=$1`,
-    [userId, !!inGame, clean, money, result, JSON.stringify(raw || {}), changed || row.in_game !== !!inGame],
+    [userId, !!inGame, clean, money, result, JSON.stringify(raw || {}), changed || row.in_game !== !!inGame, open],
   );
-  if (changed) {
-    await q('INSERT INTO presence_log (user_id, text, raw) VALUES ($1,$2,$3)', [userId, clean, JSON.stringify(raw || {})]);
-    if (result && money !== null) {
-      await q('INSERT INTO presence_results (user_id, money, result, text) VALUES ($1,$2,$3,$4)', [userId, money, result, clean]);
-      bigWin(userId, money, result, clean).catch(() => {});
-    }
-  }
+  if (changed) await q('INSERT INTO presence_log (user_id, text, raw) VALUES ($1,$2,$3)', [userId, clean, JSON.stringify(raw || {})]);
   if (changed || row.in_game !== !!inGame) {
     const { setLive } = await import('./playing.js');
     setLive(userId, inGame && clean ? { text: clean, money, result } : null);
+    bus.emit('money:changed');
   }
 }
 
-// A big win (Admin → Steam bot sets the amount): one Discord post, WPG members only.
-async function bigWin(userId, money, result, text) {
-  if (result !== 'win' || !(await flag('discord_post_big_wins'))) return;
+// A big match (Admin → Steam bot sets the amount): one Discord post, WPG members only.
+async function bigWin(userId, money) {
+  if (money <= 0 || !(await flag('discord_post_big_wins'))) return;
   const min = Number(await setting('big_win_amount')) || 50000;
   if (money < min) return;
   const u = await one('SELECT * FROM users WHERE id=$1', [userId]);
-  if (isWpgMember(u)) bus.emit('announce', { type: 'bigwin', userId, money, text });
+  if (isWpgMember(u)) bus.emit('announce', { type: 'bigwin', userId, money });
 }
 
 // ---------- The Steam client ----------
@@ -357,8 +371,9 @@ async function poll() {
   const playing = playingNow();
   const rows = await q("SELECT lp.user_id, u.steam_id FROM live_presence lp JOIN users u ON u.id = lp.user_id WHERE lp.opted_in AND lp.friend <> 'friends'");
   const wanted = rows.filter((r) => /wardogs/i.test(playing[r.user_id]?.game || '') || String(playing[r.user_id]?.appId) === String(WARDOGS_APP));
-  // Stopped playing: no longer in a match.
-  for (const r of rows.filter((x) => !wanted.includes(x))) await q('UPDATE live_presence SET in_game=false WHERE user_id=$1 AND in_game', [r.user_id]);
+  // Stopped playing: no longer in a match (their last match is finished).
+  const gone = await q("SELECT user_id FROM live_presence WHERE opted_in AND friend <> 'friends' AND (in_game OR open_money IS NOT NULL)");
+  for (const r of gone.filter((x) => !wanted.some((w) => w.user_id === x.user_id))) await record(r.user_id, { inGame: false, text: '', raw: {} });
   if (!wanted.length) return;
   const res = await client.requestRichPresence(WARDOGS_APP, wanted.map((r) => r.steam_id)).catch(() => null);
   const users = res?.users || {};
@@ -378,14 +393,18 @@ export function startSteamBotLoops() {
 }
 
 // ---------- What the app shows ----------
-// Tonight = the last 12 hours.
+// Tonight = the last 12 hours: every finished match, plus the one in progress.
 export const TONIGHT_SQL = "at > now() - interval '12 hours'";
+export const TONIGHT_ROWS = `SELECT user_id, money, true AS done FROM presence_results WHERE at > now() - interval '12 hours'
+  UNION ALL SELECT user_id, open_money, false FROM live_presence WHERE opted_in AND open_money IS NOT NULL AND updated_at > now() - interval '12 hours'`;
 export async function liveFor(userId) {
-  const [row, tonight] = await Promise.all([
+  const [row, tonight, last] = await Promise.all([
     one('SELECT * FROM live_presence WHERE user_id=$1', [userId]),
-    one(`SELECT COALESCE(SUM(money),0)::int total, COUNT(*)::int matches, COUNT(*) FILTER (WHERE result='win')::int wins FROM presence_results WHERE user_id=$1 AND ${TONIGHT_SQL}`, [userId]),
+    one(`SELECT COALESCE(SUM(money),0)::int total, COUNT(*) FILTER (WHERE done)::int matches, COUNT(*) FILTER (WHERE done AND money > 0)::int wins
+           FROM (${TONIGHT_ROWS}) t WHERE user_id=$1`, [userId]),
+    one('SELECT money, at FROM presence_results WHERE user_id=$1 ORDER BY at DESC LIMIT 1', [userId]),
   ]);
-  return { row, tonight };
+  return { row, tonight, last };
 }
 export function publicStatus() {
   return { state: status.state, error: status.error, guard: status.state === 'guard' ? { domain: status.guardDomain } : null, steamId: status.steamId, name: status.name, since: status.since, pollWorks: status.pollWorks, requestsRefused: status.requestsRefused };
@@ -396,13 +415,14 @@ steamBotRouter.get('/users/:id/live', member, async (req, res) => {
   const u = await one('SELECT id, steam_id FROM users WHERE id=$1', [int(req.params.id)]);
   if (!u) throw new HttpError(404, 'Member not found.');
   const mine = u.id === req.user.id;
-  const { row, tonight } = await liveFor(u.id);
+  const { row, tonight, last } = await liveFor(u.id);
   const on = !!row?.opted_in;
   const invite = mine && on && row?.friend !== 'friends' ? await inviteLinkFor(u.id).catch(() => '') : '';
   res.json({
     mine, on, friend: row?.friend || 'none', invite, bot: { online: status.state === 'online', profile: botProfile(), name: status.name },
     realSteam: /^\d{17}$/.test(u.steam_id || ''),
-    live: on && row?.text ? { inGame: row.in_game, text: row.text, money: row.money, result: row.result, at: row.updated_at } : null,
+    live: on && row?.in_game && row?.text ? { inGame: true, text: row.text, money: row.money, result: row.result, at: row.updated_at } : null,
+    last: on && last ? { money: last.money, at: last.at } : null,
     tonight: on ? tonight : null,
   });
 });
@@ -437,13 +457,13 @@ steamBotRouter.get('/admin/steambot', role('admin'), async (_req, res) => {
   const [counts, log, settings] = await Promise.all([
     one("SELECT COUNT(*) FILTER (WHERE opted_in)::int on_count, COUNT(*) FILTER (WHERE opted_in AND friend='friends')::int friends, COUNT(*) FILTER (WHERE opted_in AND friend='requested')::int pending, COUNT(*) FILTER (WHERE opted_in AND friend='add_bot')::int add_bot FROM live_presence"),
     q('SELECT l.at, l.text, l.raw, u.persona_name AS name FROM presence_log l JOIN users u ON u.id = l.user_id ORDER BY l.at DESC LIMIT 40'),
-    Promise.all([flag('steam_bot_enabled'), flag('discord_post_big_wins'), setting('big_win_amount')]),
+    Promise.all([flag('steam_bot_enabled'), flag('discord_post_big_wins'), setting('big_win_amount'), setting('discord_money_channel'), flag('discord_money_board')]),
   ]);
   const c = creds();
   res.json({
     status: publicStatus(), profile: botProfile(), counts, log,
     setup: { username: !!c.user, password: !!c.pass, sharedSecret: !!c.secret, savedLogin: !!(await loadToken().catch(() => '')) },
-    settings: { enabled: settings[0], bigWins: settings[1], bigWinAmount: Number(settings[2]) || 50000 },
+    settings: { enabled: settings[0], bigWins: settings[1], bigWinAmount: Number(settings[2]) || 50000, moneyChannel: String(settings[3] || ''), board: settings[4] },
   });
 });
 steamBotRouter.post('/admin/steambot/guard', role('admin'), async (req, res) => {
@@ -485,7 +505,13 @@ steamBotRouter.put('/admin/steambot/settings', role('admin'), async (req, res) =
   const set = (k, v) => q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
   if ('enabled' in b) await set('steam_bot_enabled', String(bool(b.enabled)));
   if ('bigWins' in b) await set('discord_post_big_wins', String(bool(b.bigWins)));
+  if ('board' in b) await set('discord_money_board', String(bool(b.board)));
   if ('bigWinAmount' in b) await set('big_win_amount', String(Math.max(1000, int(b.bigWinAmount, 50000))));
+  if ('moneyChannel' in b) {
+    const ch = str(b.moneyChannel, 30).replace(/\D/g, '');
+    if (ch && !/^\d{15,22}$/.test(ch)) throw new HttpError(400, 'That isn\'t a Discord channel ID (right-click the channel → Copy Channel ID).');
+    await set('discord_money_channel', ch);
+  }
   const { clearSettingsCache } = await import('./db.js');
   clearSettingsCache();
   if ('enabled' in b && !bool(b.enabled) && client) {

@@ -309,11 +309,15 @@ They were cut from the WPG Discord career card. The mountain background is `publ
   work). The bot also tries sending a request and accepts members' requests; members already on its friends list are
   switched on by themselves; anyone who isn't an app member is removed. Switching it off, or unfriending the bot,
   stops it.
-- **Where it shows:** next to "🎮 WARDOGS" across the app, on their profile (last reading and tonight's total), the
-  **Tonight's money** leaderboard (last 12 hours) and **/money** in Discord (WPG members). Optional Discord post for
-  a big win in one match (off until you switch it on, with the amount, in Admin → Steam bot).
-- **What Steam sends** in Admin → Steam bot lists the raw values, so you can see whether Wardogs sends a running
-  total during a match or only the result at the end.
+- **How it's counted:** Steam shows the match's running profit / loss (e.g. **+$4,500 Profit**, **-$10,793 Loss**),
+  which goes back to $0 when the next match starts. Each match's result is its last figure before it resets (or
+  before they leave Wardogs); loading screens and menus in between don't split a match.
+- **Where it shows:** next to "🎮 WARDOGS" across the app, on their profile (this match or the last one, and tonight's
+  total), the **Tonight's money** leaderboard (last 12 hours, the match in progress included) and **/money** in
+  Discord (WPG members).
+- **Discord live board:** one message in the live match money channel (Admin → Steam bot) that the bot keeps up to
+  date: who's in a match with their running profit / loss, and tonight's top earners. Optional post for a big match
+  (off until you switch it on, with the amount).
 
 ### Profile frames and seasons (Admin → Frames & seasons)
 

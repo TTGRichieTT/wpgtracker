@@ -7,9 +7,12 @@ import { bus } from './bus.js';
 import { steamGet } from './steam.js';
 
 const playing = new Map(); // userId -> { game, appId }
-// Live match money from Steam (steambot.js): userId -> { text, money, result }, shown with "Playing Wardogs".
+// Wardogs (by name, or its Steam app id).
+const isWardogs = (p) => !!p && (/wardogs/i.test(p.game || '') || String(p.appId) === '1867240');
+// Live match money from Steam (steambot.js): userId -> { text, money, result }, shown with "Playing Wardogs" (only
+// Wardogs: never next to another game).
 const live = new Map();
-export const playingNow = () => Object.fromEntries([...playing].map(([id, p]) => [id, live.has(id) ? { ...p, live: live.get(id) } : p]));
+export const playingNow = () => Object.fromEntries([...playing].map(([id, p]) => [id, live.has(id) && isWardogs(p) ? { ...p, live: live.get(id) } : p]));
 let liveTimer = null;
 export function setLive(userId, value) {
   if (value) live.set(userId, value);
@@ -19,9 +22,6 @@ export function setLive(userId, value) {
   clearTimeout(liveTimer);
   liveTimer = setTimeout(flush, 1500);
 }
-
-// Wardogs (by name, or its Steam app id).
-const isWardogs = (p) => !!p && (/wardogs/i.test(p.game || '') || String(p.appId) === '1867240');
 
 let changed = false;
 function setPlaying(userId, game, appId) {

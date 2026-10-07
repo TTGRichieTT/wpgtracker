@@ -338,9 +338,10 @@ api.get('/leaderboard', member, async (req, res) => {
     );
   } else if (by === 'tonight') {
     // Match money read from Steam over the last 12 hours (members who switched live match money on; steambot.js).
+    const { TONIGHT_ROWS } = await import('./steambot.js');
     rows = await q(
-      `SELECT u.*, SUM(pr.money)::int AS score FROM users u JOIN presence_results pr ON pr.user_id = u.id
-        WHERE u.status='active' AND pr.at > now() - interval '12 hours' GROUP BY u.id ORDER BY score DESC LIMIT 100`,
+      `SELECT u.*, SUM(t.money)::int AS score FROM users u JOIN (${TONIGHT_ROWS}) t ON t.user_id = u.id
+        WHERE u.status='active' GROUP BY u.id ORDER BY score DESC LIMIT 100`,
     );
   } else if (by === 'hours') {
     rows = await q(
