@@ -974,6 +974,94 @@ export function renderFrameUnlockCard(d) {
   }, { credit: !!d.credit });
 }
 
+// ---------- /frames ----------
+// d: { name, avatar, frame (the one they wear), selected (its id), credit,
+//      groups: [{ label, frames: [{ ...look, unlocked, unlocked_at, progress{value,target,unit}, locked_reason }] }] }
+// Every frame drawn with its real art around the member's picture: earned ones bright with the date,
+// the rest dimmed with a lock and their progress.
+const FT_W = 176;
+const FT_H = 226;
+const FT_COLS = 8;
+const shortDate = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+function lock(g, cx, cy) {
+  g.save();
+  g.fillStyle = 'rgba(4,11,20,0.82)';
+  g.beginPath(); g.arc(cx, cy, 22, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#cfdbe6';
+  g.lineWidth = 3;
+  g.beginPath(); g.arc(cx, cy - 6, 7, Math.PI, 0); g.stroke();
+  g.fillStyle = '#cfdbe6';
+  roundRect(g, cx - 10, cy - 5, 20, 15, 3);
+  g.fill();
+  g.restore();
+}
+export function renderFramesCard(d) {
+  const groups = (d.groups || []).filter((x) => x.frames.length);
+  const groupH = (x) => 62 + Math.ceil(x.frames.length / FT_COLS) * FT_H;
+  const bodyH = groups.reduce((n, x) => n + groupH(x) + 14, 0) || 140;
+  const earned = groups.reduce((n, x) => n + x.frames.filter((f) => f.unlocked).length, 0);
+  const total = groups.reduce((n, x) => n + x.frames.length, 0);
+  return frame('FRAME COLLECTION', 76 + bodyH + 30, async (g, top) => {
+    let y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    const img = await icon(d.avatar);
+    label(g, `${earned} / ${total} UNLOCKED`, W / 2, y + 2, { align: 'center', size: 22, color: CYAN });
+    y += 18;
+    if (!groups.length) {
+      panel(g, 28, y + 6, 1480, 120);
+      label(g, 'NO FRAMES SET UP YET', W / 2, y + 66, { align: 'center', color: MUTED });
+      return;
+    }
+    for (const grp of groups) {
+      const h = groupH(grp);
+      panel(g, 28, y + 6, 1480, h);
+      medalIcon(g, 66, y + 40);
+      title(g, 100, y + 40, upper(grp.label), '');
+      const got = grp.frames.filter((f) => f.unlocked).length;
+      label(g, `${got} / ${grp.frames.length}`, 1480, y + 42, { align: 'right', size: 24, color: WHITE });
+      const x0 = 28 + (1480 - FT_COLS * FT_W) / 2;
+      for (let i = 0; i < grp.frames.length; i++) {
+        const f = grp.frames[i];
+        const tx = x0 + (i % FT_COLS) * FT_W;
+        const ty = y + 64 + Math.floor(i / FT_COLS) * FT_H;
+        const size = 140;
+        const fx = tx + (FT_W - size) / 2;
+        g.save();
+        if (!f.unlocked) g.globalAlpha = 0.38;
+        await framedPicture(g, img, fx, ty, size, f);
+        g.restore();
+        if (!f.unlocked) lock(g, fx + size / 2, ty + size / 2);
+        if (f.unlocked && f.id === d.selected) {
+          g.save();
+          g.fillStyle = CYAN;
+          roundRect(g, tx + FT_W / 2 - 42, ty - 4, 84, 22, 11);
+          g.fill();
+          g.restore();
+          label(g, 'WEARING', tx + FT_W / 2, ty + 7, { align: 'center', size: 14, color: '#04111d' });
+        }
+        // Name (up to two lines), then the date earned or progress.
+        g.font = `700 17px ${LABEL_FONT}`;
+        g.fillStyle = f.unlocked ? WHITE : MUTED;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        const lines = wrapLines(g, upper(f.name), FT_W - 12, 2);
+        lines.forEach((l, k) => g.fillText(l, tx + FT_W / 2, ty + size + 18 + k * 19));
+        const infoY = ty + size + 22 + lines.length * 19;
+        if (f.unlocked) {
+          label(g, f.unlocked_at ? shortDate(f.unlocked_at) : 'UNLOCKED', tx + FT_W / 2, infoY, { align: 'center', size: 14, color: GREEN });
+        } else if (f.progress && f.progress.target > 0) {
+          const p = f.progress;
+          bar(g, tx + 18, infoY - 6, FT_W - 36, 8, p.value / p.target);
+          const amt = (v) => (p.unit === '$' ? money(v) : `${fmt(v)}${p.unit ? ` ${upper(p.unit)}` : ''}`);
+          label(g, `${amt(p.value)} / ${amt(p.target)}`, tx + FT_W / 2, infoY + 14, { align: 'center', size: 13, color: MUTED });
+        } else {
+          label(g, upper(f.locked_reason || 'LOCKED'), tx + FT_W / 2, infoY, { align: 'center', size: 13, color: MUTED });
+        }
+      }
+      y += h + 14;
+    }
+  }, { credit: !!d.credit });
+}
+
 // ---------- Discord "… is live" post ----------
 const PLATFORM_COLORS = { twitch: '#9146ff', youtube: '#ff0000', kick: '#53fc18' };
 // Card fonts have no emoji, so drop them (and their joiners) rather than show empty boxes.
