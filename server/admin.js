@@ -7,7 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, tidyScan, startTidy, lastBackup } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -464,7 +464,7 @@ admin.get('/discord-server', role('admin'), async (_req, res) => {
       kick_hours: Number(await setting('discord_entry_kick_hours')) || 24,
       rules: (await setting('discord_rules')) || '',
       quiz: (await setting('discord_entry_quiz')) || '',
-      since: (await setting('_discord_entry_since')) || null,
+      since: guild ? (await loadMap(guild)).entry_since || null : null,
     },
     mod: {
       timeout_at: Number(await setting('discord_warn_timeout_at')) || 3,
@@ -517,8 +517,9 @@ admin.put('/discord-server', role('admin'), async (req, res) => {
   clearSettingsCache();
   // Entry check switched on for a server whose rules post is up: newcomers from now on must pass it.
   const guild = await guildId();
-  if (values.discord_entry_enabled === 'true' && !(await setting('_discord_entry_since')) && (await loadMap(guild)).messages?.rules) {
-    await q("INSERT INTO settings (key, value) VALUES ('_discord_entry_since', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+  const gmap = guild ? await loadMap(guild) : null;
+  if (values.discord_entry_enabled === 'true' && gmap?.messages?.rules && !gmap.entry_since) {
+    await saveMap({ ...gmap, entry_since: new Date().toISOString() });
     clearSettingsCache();
   }
   await audit(req.user.id, 'discord.server.settings', guild, { ...values, discord_rules: undefined });

@@ -287,7 +287,7 @@ async function quiz() {
 }
 // Who doesn't need to do the check: passed / let in, or joined before it was switched on.
 export async function entryFreePass(guild) {
-  const since = Date.parse((await setting('_discord_entry_since')) || '');
+  const since = Date.parse((await loadMap(guild)).entry_since || '');
   if (!since) return () => true;
   const ok = new Set((await q("SELECT discord_id FROM discord_entries WHERE guild_id=$1 AND status IN ('passed','let_in')", [guild])).map((r) => r.discord_id));
   return (m) => ok.has(m.user.id) || Date.parse(m.joined_at) < since;
@@ -600,7 +600,8 @@ export async function setupModeration({ guild, info, map, roleIds, apply, say })
     say("Raise Discord's own checks: verified email, account older than 5 minutes, scan media from everyone");
     if (apply) await discordFetch(`/guilds/${guild}`, 'PATCH', { verification_level: Math.max(2, info.verification_level || 0), explicit_content_filter: 2 }).catch((e) => say(`Couldn't change the verification level: ${e.message}`));
   }
-  if (apply && (await entryOn()) && !(await setting('_discord_entry_since'))) await saveSetting('_discord_entry_since', new Date().toISOString());
+  // When the entry check started on THIS server: only people who join after it have to do it.
+  if (apply && (await entryOn()) && !map.entry_since) map.entry_since = new Date().toISOString();
 }
 
 // Admin → Discord server: post the rules and panels again (after editing the rules) and refresh AutoMod.
@@ -764,10 +765,10 @@ async function onEvent({ t, d }) {
 // were already on the server before the entry check was switched on are never touched.
 export async function kickStragglers() {
   if (!(await entryOn())) return 0;
-  const since = Date.parse((await setting('_discord_entry_since')) || '');
-  if (!since) return 0;
   const c = await ctx();
   if (!c.guild) return 0;
+  const since = Date.parse(c.map.entry_since || '');
+  if (!since) return 0;
   const hours = await num('discord_entry_kick_hours', 24);
   const held = new Set((await q("SELECT discord_id FROM discord_entries WHERE status='held'")).map((r) => r.discord_id));
   let members;
