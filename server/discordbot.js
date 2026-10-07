@@ -891,7 +891,55 @@ const WHO = [
   { type: 6, name: 'member', description: 'Which member (leave empty for yourself)', required: false },
   { type: 3, name: 'name', description: 'Or search by name', required: false },
 ];
-function commandDefinitions() {
+// ---------- Who can use each command (Discord control → Commands) ----------
+// Each command has the groups allowed to use it (any combination). "everyone" = anyone on Discord;
+// "pmc" = PMC guests linked to the app; "member" = WPG members; "mod" / "admin" = staff. No groups = off.
+export const COMMAND_GROUPS = [['everyone', 'Anyone'], ['pmc', 'PMC'], ['member', 'WPG members'], ['mod', 'Mods'], ['admin', 'Admins']];
+const GROUP_KEYS = COMMAND_GROUPS.map(([k]) => k);
+const TIER = { everyone: 0, pmc: 1, member: 2, mod: 3, admin: 4 };
+const defaultGroups = (name) => (MOD_COMMANDS[name] ? ['mod', 'admin'] : ['roster', 'unit'].includes(name) ? ['member', 'mod', 'admin'] : ['everyone']);
+// Saved as { name: [groups] } (older saves had one level per command: that level and everyone above it).
+function readGroups(v) {
+  if (Array.isArray(v)) return GROUP_KEYS.filter((g) => v.includes(g));
+  if (v === 'off') return [];
+  if (typeof v === 'string' && v in TIER) return v === 'everyone' ? ['everyone'] : GROUP_KEYS.filter((g) => g !== 'everyone' && TIER[g] >= TIER[v]);
+  return null;
+}
+export async function commandAccess() {
+  let saved = {};
+  try { saved = JSON.parse((await setting('discord_command_access')) || '{}') || {}; } catch { /* keep defaults */ }
+  return Object.fromEntries(Object.keys(allCommands()).map((n) => [n, readGroups(saved[n]) ?? defaultGroups(n)]));
+}
+export const commandList = () => Object.entries(allCommands()).map(([name, c]) => ({ name, description: c.description, moderator: !!MOD_COMMANDS[name], default: defaultGroups(name) }));
+// Which group the person running a command is in: the higher of their app rank (once linked with /link) and
+// their Discord permissions (Administrator = admin; kick / ban / timeout = mod). Not linked and no staff
+// permissions = just "everyone".
+async function callerGroup(body) {
+  let tier = 0;
+  try {
+    const p = BigInt(body.member?.permissions || 0);
+    if (p & (1n << 3n)) tier = 4;
+    else if (p & ((1n << 1n) | (1n << 2n) | (1n << 40n))) tier = 3;
+  } catch { /* no permissions sent */ }
+  const id = String(body.member?.user?.id || body.user?.id || '');
+  const u = id ? await one('SELECT role, status, membership FROM users WHERE discord_id=$1', [id]) : null;
+  if (u && u.status === 'active') tier = Math.max(tier, u.role === 'admin' ? 4 : u.role === 'mod' ? 3 : u.membership === 'pmc' ? 1 : 2);
+  return GROUP_KEYS.find((g) => TIER[g] === tier);
+}
+const allowedFor = (groups, group) => groups.includes('everyone') || groups.includes(group);
+// Hides a command in Discord from people who can't use it, where Discord can tell (only staff groups ticked).
+const MOD_PERMS = String((1n << 1n) | (1n << 2n) | (1n << 40n));
+function visibility(groups, def) {
+  if (groups.some((g) => ['everyone', 'pmc', 'member'].includes(g))) return null; // Discord can't tell: the bot checks
+  if (groups.includes('mod')) return def.default_member_permissions || MOD_PERMS;
+  return '8'; // admins only
+}
+
+async function commandDefinitions() {
+  const access = await commandAccess();
+  return baseDefinitions().filter((d) => access[d.name].length).map((d) => ({ ...d, default_member_permissions: visibility(access[d.name], d) }));
+}
+function baseDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
     if (['stats', 'rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
@@ -958,7 +1006,7 @@ export async function ensureEndpoint() {
 export async function registerCommands() {
   if (!botReady()) return { ok: false, reason: 'DISCORD_BOT_TOKEN is not set in Render yet' };
   if (!appFromDiscord) await readApplication();
-  const done = await discordFetch(`/applications/${realAppId()}/commands`, 'PUT', commandDefinitions());
+  const done = await discordFetch(`/applications/${realAppId()}/commands`, 'PUT', await commandDefinitions());
   // An earlier version set commands up for the WPG server only; clear those so nothing shows twice.
   const guild = await guildId().catch(() => null);
   if (guild) await discordFetch(`/applications/${realAppId()}/guilds/${guild}/commands`, 'PUT', []).catch(() => {});
@@ -1084,6 +1132,18 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
   const name = body.data?.name;
   const cmd = allCommands()[name];
   const who = body.member?.user || body.user || {};
+  // Who may use it (Discord control → Commands): answered privately when they can't.
+  if (cmd) {
+    const groups = (await commandAccess())[name];
+    if (!groups.length) return res.json({ type: 4, data: { content: 'That command is switched off.', flags: 64 } });
+    const group = await callerGroup(body);
+    if (!allowedFor(groups, group)) {
+      const names = COMMAND_GROUPS.filter(([k]) => groups.includes(k)).map(([, l]) => l);
+      const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+      const hint = group === 'everyone' && groups.some((g) => g === 'pmc' || g === 'member') ? ' Link your Discord to the WPG app with /link first.' : '';
+      return res.json({ type: 4, data: { content: `Sorry, /${name} is only for ${list}.${hint}`, flags: 64 } });
+    }
+  }
   // Answer "thinking…" at once (Discord only waits 3 s), then fill in the real reply.
   res.json({ type: 5, data: cmd?.private ? { flags: 64 } : {} });
   let reply;

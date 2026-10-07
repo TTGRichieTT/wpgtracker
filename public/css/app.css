@@ -858,3 +858,13 @@ input[type=datetime-local] { color-scheme: dark; }
 .dc-in .panel,.dc-in #dsPostsBox .panel{background:none;border:0;box-shadow:none;padding:12px 0 4px;margin:0}
 .dc-in .panel::before,.dc-in .panel::after{display:none}
 .dc-in .stack{gap:6px}
+/* Discord control → Commands: one compact row per command, a tick box per group */
+.dc-cmds{display:flex;flex-direction:column}
+.dc-cmd{display:grid;grid-template-columns:minmax(0,1fr) repeat(5,58px);align-items:center;gap:4px;padding:5px 0;border-bottom:1px solid var(--line)}
+.dc-cmd > span:first-child{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc-cmd em{font-style:normal;color:var(--muted);font-size:12px;margin-left:6px}
+.dc-cmd label{display:flex;justify-content:center;cursor:pointer;padding:4px 0}
+.dc-cmd input{width:18px;height:18px;margin:0;accent-color:var(--accent);cursor:pointer}
+.dc-cmd.head{font:700 11px var(--head);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--line)}
+.dc-cmd.group{display:block;padding:12px 0 4px;border-bottom:0;font-size:13px}
+@media (max-width:560px){.dc-cmd{grid-template-columns:minmax(0,1fr) repeat(5,44px)}.dc-cmd em{display:none}.dc-cmd.head{font-size:9px;letter-spacing:0}}

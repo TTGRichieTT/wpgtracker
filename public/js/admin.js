@@ -578,7 +578,7 @@ async function editUser(id, ranks, awards, reload) {
 
 // ---------- Discord control panel: everything the WPG Discord bot does, in one place ----------
 const DISCORD_SECTIONS = [
-  ['bot', 'Bot'], ['server', 'Server & roles'], ['entry', 'Entry & rules'], ['filters', 'Filters & moderation'],
+  ['bot', 'Bot'], ['server', 'Server & roles'], ['entry', 'Entry & rules'], ['commands', 'Commands'], ['filters', 'Filters & moderation'],
   ['logs', 'Logs & extras'], ['posts', 'Posts & channels'], ['cases', 'Cases'],
 ];
 // [setting, label, help] for the on / off switches, by section.
@@ -678,6 +678,7 @@ async function discordServerTab(body) {
     bot: d.gateway.connected ? `✅ connected${d.gateway.limited ? ' (limited)' : ''}` : '⚠️ not connected',
     server: d.guild_id ? `${s.at ? (s.ok ? '✅ roles in step' : '⚠️ sync problem') : 'not synced yet'}` : 'no server set',
     entry: `${d.entry.enabled ? 'on' : 'off'}${d.held.length ? ` · ${d.held.length} waiting` : ''}`,
+    commands: `${d.commands.filter((c) => c.groups.length).length} of ${d.commands.length} on`,
     filters: onCount(DISCORD_SWITCHES.filters),
     logs: `${onCount(DISCORD_SWITCHES.logs)}${d.tickets ? ` · ${d.tickets} open ticket${d.tickets === 1 ? '' : 's'}` : ''}`,
     posts: 'channels for automatic posts',
@@ -740,6 +741,18 @@ async function discordServerTab(body) {
         ${d.held.length ? `<div style="margin-top:12px"><b>Waiting to be let in</b>${d.held.map((h) => `<div class="row" style="margin-top:6px;gap:8px"><span class="grow">${esc(h.user_name)} <span class="muted small">· ${esc(when(h.updated_at))}</span></span>
           <button class="btn small" data-held="${esc(h.discord_id)}" data-act="letin">Let in</button><button class="btn small danger" data-held="${esc(h.discord_id)}" data-act="kick">Kick</button></div>`).join('')}</div>` : '<p class="muted small" style="margin:10px 0 0">Nobody is waiting to be let in.</p>'}
       </div>`,
+    commands: () => `<div class="panel"><div class="panel-title">Who can use each command</div>
+        <p class="muted small" style="margin-top:0">Tick who can use each command (any mix). <b>Anyone</b> = everyone on Discord. People count as their app rank once
+          linked with /link; Discord admins count as Admins, and anyone who can kick, ban or time out counts as Mods. Nothing ticked = the command is
+          removed from Discord. Commands only for Mods / Admins are also hidden in Discord from everyone else. /link and /unlink are Anyone or off.</p>
+        <form id="dsCmds"><div class="dc-cmds">
+          <div class="dc-cmd head"><span></span>${d.command_groups.map(([, l]) => `<span>${esc(l)}</span>`).join('')}</div>
+          ${d.commands.map((c, i) => `${i === 0 || c.moderator !== d.commands[i - 1].moderator ? `<div class="dc-cmd group"><b>${c.moderator ? 'Moderator commands' : 'Member commands'}</b></div>` : ''}
+            <div class="dc-cmd" title="${esc(c.description)}"><span><b>/${esc(c.name)}</b> <em>${esc(c.description)}</em></span>
+              ${d.command_groups.map(([k, l]) => `<label aria-label="${esc(l)}"><input type="checkbox" data-cmd="${esc(c.name)}" value="${k}"${c.groups.includes(k) ? ' checked' : ''}${['link', 'unlink'].includes(c.name) && k !== 'everyone' ? ' disabled' : ''}></label>`).join('')}</div>`).join('')}
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn primary">Save &amp; update Discord</button><button type="button" class="btn ghost" id="dsCmdDefaults">Back to defaults</button></div>
+        </form></div>`,
     filters: () => `<div class="panel"><div class="panel-title">Filters &amp; moderation</div>
         <form id="dsMod">
           ${switchList(DISCORD_SWITCHES.filters)}
@@ -842,6 +855,19 @@ async function discordServerTab(body) {
       };
     });
   }
+  body.querySelector('#dsCmds').onsubmit = async (e) => {
+    e.preventDefault();
+    const commands = Object.fromEntries(d.commands.map((c) => [c.name, [...e.target.querySelectorAll(`[data-cmd="${c.name}"]:checked`)].map((el) => el.value)]));
+    try {
+      const r = await api('admin/discord-server/commands', { method: 'PUT', body: { commands } });
+      toast('Saved', r.discord?.ok ? 'Discord has the new command list (it can take a minute to show; restart Discord with Ctrl+R if not).' : `Saved in the app. Discord's list wasn't updated: ${r.discord?.reason || 'try Re-check & fix Discord setup in the Bot section'}`);
+      reload();
+    } catch (x) { fail(x); }
+  };
+  body.querySelector('#dsCmdDefaults').onclick = () => {
+    for (const c of d.commands) body.querySelectorAll(`[data-cmd="${c.name}"]`).forEach((el) => { el.checked = c.default.includes(el.value); });
+    toast('Defaults ticked', 'Press Save to use them.');
+  };
   {
     body.querySelector('#dsMod').onsubmit = async (e) => {
       e.preventDefault();
