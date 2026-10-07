@@ -52,6 +52,10 @@ export const users = pgTable('users', {
   skills: jsonb().notNull().default([]), // skills the member shows on their profile (from the recruitment roles list)
   frame_id: integer(), // the profile frame they show around their picture (frames.js)
   steam_private: boolean().notNull().default(false),
+  // Their choice (Edit profile → Friend requests): others can send them friend requests in the app, and their
+  // profile shows the Add on Steam / Steam profile buttons.
+  friend_requests: boolean().notNull().default(true),
+  steam_add_button: boolean().notNull().default(true),
   discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),
   last_seen: now(),

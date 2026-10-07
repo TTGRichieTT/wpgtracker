@@ -7,7 +7,7 @@ import { syncWardogs } from './wardogs.js';
 import { rankProgress } from './wpgxp.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
-  HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, color, safeUrl,
+  HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, bool, color, safeUrl,
   issueRememberToken,
 } from './util.js';
 import { shownFrames } from './frames.js';
@@ -120,10 +120,14 @@ api.put('/me/profile', member, async (req, res) => {
     const allowed = new Set([...(await specialties()), ...skills]);
     skills = [...new Set(b.skills.map((s) => str(s, 60)))].filter((s) => allowed.has(s)).slice(0, 30);
   }
+  // Friend request choices: kept as they are unless sent.
+  const choice = (k) => (k in b ? bool(b[k]) : req.user[k] !== false);
   const u = await one(
-    `UPDATE users SET callsign=$2, bio=$3, country=$4, custom_avatar=$5, banner_color=$6, custom_fields=$7, skills=$8
+    `UPDATE users SET callsign=$2, bio=$3, country=$4, custom_avatar=$5, banner_color=$6, custom_fields=$7, skills=$8,
+            friend_requests=$9, steam_add_button=$10
      WHERE id=$1 RETURNING *`,
-    [req.user.id, str(b.callsign, 40), str(b.bio, 1000), str(b.country, 4), safeUrl(b.custom_avatar), color(b.banner_color, '#0d2238'), JSON.stringify(custom), JSON.stringify(skills)],
+    [req.user.id, str(b.callsign, 40), str(b.bio, 1000), str(b.country, 4), safeUrl(b.custom_avatar), color(b.banner_color, '#0d2238'), JSON.stringify(custom), JSON.stringify(skills),
+      choice('friend_requests'), choice('steam_add_button')],
   );
   bus.emit('user:changed', u.id);
   res.json({ user: await userOut(u) });
@@ -390,9 +394,11 @@ api.get('/friends', member, async (req, res) => {
 
 // Send a request, or accept one they sent you.
 api.post('/friends/:id', member, async (req, res) => {
-  const other = await one("SELECT id FROM users WHERE id=$1 AND status='active'", [int(req.params.id)]);
+  const other = await one("SELECT id, persona_name, friend_requests FROM users WHERE id=$1 AND status='active'", [int(req.params.id)]);
   if (!other || other.id === req.user.id) throw new HttpError(400, 'You cannot add that member.');
   const incoming = await one('SELECT * FROM friends WHERE requester_id=$1 AND addressee_id=$2', [other.id, req.user.id]);
+  // Accepting their request always works; a new request only if they take them.
+  if (!incoming && other.friend_requests === false) throw new HttpError(403, `${other.persona_name} isn't taking friend requests.`);
   if (incoming) {
     await q("UPDATE friends SET status='accepted' WHERE requester_id=$1 AND addressee_id=$2", [other.id, req.user.id]);
     bus.emit('notify', other.id, { title: 'Friend request accepted', body: `${req.user.persona_name} accepted your request.` });

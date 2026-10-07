@@ -815,11 +815,11 @@ async function viewProfile(main, [id]) {
   // Steam friends: Steam doesn't let other sites send friend requests, so these open Steam itself. "Add on Steam"
   // opens the Steam app on this computer with the request; "Steam profile" opens their profile (Add Friend is there,
   // and on phones it opens in the Steam app).
-  const steamBtns = !mine && /^\d{17}$/.test(u.steam_id || '')
+  const steamBtns = !mine && u.steam_add_button !== false && /^\d{17}$/.test(u.steam_id || '')
     ? `<a class="btn" href="steam://friends/add/${u.steam_id}" title="Opens Steam on this computer and sends the friend request">${icon('friends')} Add on Steam</a><a class="btn ghost" href="https://steamcommunity.com/profiles/${u.steam_id}" target="_blank" rel="noopener" title="Their Steam profile: press Add Friend there">Steam profile</a>`
     : '';
   const friendBtn = mine ? '' : {
-    none: `<button class="btn" data-friend="add">${icon('friends')} Add friend</button>`,
+    none: u.friend_requests === false ? '<span class="btn ghost" style="cursor:default;opacity:.7" title="They switched off friend requests">Not taking friend requests</span>' : `<button class="btn" data-friend="add">${icon('friends')} Add friend</button>`,
     outgoing: `<button class="btn ghost" data-friend="remove">Request sent · Cancel</button>`,
     incoming: `<button class="btn primary" data-friend="add">${icon('friends')} Accept friend</button>`,
     friends: `<button class="btn ghost" data-friend="remove">Friends ✓ · Remove</button>`,
@@ -1064,6 +1064,9 @@ async function viewEditProfile(main) {
         <label class="field"><span>Custom picture link (optional, https)</span><input type="url" name="custom_avatar" value="${esc(u.avatar && !u.avatar.includes('steamstatic') ? u.avatar : '')}" placeholder="Leave empty to use your Steam picture"></label>
         <label class="field"><span>Banner colour</span><input type="color" name="banner_color" value="${esc(u.banner_color || '#0d2238')}"></label>
       </div>
+      <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Friend requests</span>
+        <label class="check small"><input type="checkbox" name="friend_requests" ${u.friend_requests !== false ? 'checked' : ''}> Members can send me friend requests in the app</label>
+        <label class="check small"><input type="checkbox" name="steam_add_button" ${u.steam_add_button !== false ? 'checked' : ''}> Show the Add on Steam and Steam profile buttons on my profile</label></div>
       <div class="row"><button class="btn primary">Save profile</button><a class="btn ghost" href="#/u/${u.id}">Cancel</a></div>
     </form>
     <form class="panel stack" id="dlink" style="margin-top:16px">
@@ -1101,7 +1104,7 @@ async function viewEditProfile(main) {
     for (const fd of fields) custom[fd.key] = f[`cf_${fd.key}`]?.value || '';
     try {
       const skills = [...f.querySelectorAll('[name=skills]:checked')].map((x) => x.value);
-      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills } });
+      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills, friend_requests: f.friend_requests.checked, steam_add_button: f.steam_add_button.checked } });
       toast('Saved', 'Profile updated.');
       await refreshMe();
       location.hash = `#/u/${u.id}`;

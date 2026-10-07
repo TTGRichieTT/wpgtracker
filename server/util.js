@@ -170,6 +170,8 @@ export function publicUser(u, rank) {
     last_seen: u.last_seen,
     last_sync: u.last_sync,
     steam_private: u.steam_private,
+    friend_requests: u.friend_requests !== false,
+    steam_add_button: u.steam_add_button !== false,
   };
 }
 
