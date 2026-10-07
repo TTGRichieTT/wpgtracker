@@ -76,7 +76,8 @@ export async function steamBotAdminTab(body) {
       ${s.error ? `<p class="small" style="color:${s.state === 'error' ? 'var(--red)' : 'var(--muted)'}">${esc(s.error)}</p>` : ''}
       ${s.guard ? `<form class="row" id="guardForm" style="align-items:flex-end;margin-bottom:12px">
           <label class="field"><span>Steam Guard code${s.guard.domain ? ` (emailed to …@${esc(s.guard.domain)})` : ' (Steam mobile app)'}</span><input type="text" name="code" maxlength="5" autocomplete="one-time-code" required style="text-transform:uppercase"></label>
-          <button class="btn primary">Send code</button></form>` : ''}
+          <button class="btn primary">Send code</button></form>
+        <p class="muted small" style="margin:-6px 0 12px">Use the code from the <b>newest</b> Steam email (within 15 minutes). If it's too late, press Reconnect for a new email.</p>` : ''}
       ${d.profile ? `<p class="small" style="margin:0 0 10px">Bot's Steam profile: <a href="${esc(d.profile)}" target="_blank" rel="noopener">${esc(d.profile)}</a></p>` : ''}
       <div class="row" style="gap:8px;margin-bottom:12px">
         <button class="btn" id="botReconnect">${icon('refresh')} Reconnect</button>
@@ -110,8 +111,8 @@ export async function steamBotAdminTab(body) {
     e.preventDefault();
     try {
       await api('admin/steambot/guard', { method: 'POST', body: { code: e.target.code.value } });
-      toast('Code sent', 'Logging in…');
-      setTimeout(reload, 4000);
+      toast('Code accepted', 'Logging the bot in…');
+      setTimeout(reload, 5000);
     } catch (x) { fail(x); }
   });
   body.querySelector('#botReconnect').onclick = async () => {

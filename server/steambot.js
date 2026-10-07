@@ -11,8 +11,10 @@
 //  - The latest line shows next to "Playing Wardogs" across the app; every match result is kept for the
 //    "Tonight's money" leaderboard and Discord (/money); staff see the raw values in Admin → Steam bot.
 // Login: STEAM_BOT_USERNAME and STEAM_BOT_PASSWORD (+ STEAM_BOT_SHARED_SECRET for a mobile authenticator) in the
-// host's settings. After the first login Steam hands over a sign-in token, kept encrypted in the database, so later
-// starts need neither the password nor a Steam Guard code. An email Steam Guard code is typed in Admin → Steam bot.
+// host's settings. The first login is done with steam-session and kept open while staff type the emailed Steam
+// Guard code in Admin → Steam bot (restarting the login with the code would make Steam email a new one, forever).
+// Steam then hands over a sign-in token, kept encrypted in the database, so later starts need neither the password
+// nor a code.
 import express from 'express';
 import { q, one, flag, setting, audit } from './db.js';
 import { bus } from './bus.js';
@@ -31,6 +33,7 @@ let SteamUser = null;
 let guardCallback = null;
 let retryTimer = null;
 let usingToken = false;
+let pendingSession = null; // the first login, waiting for the emailed Steam Guard code
 
 const creds = () => ({
   user: String(process.env.STEAM_BOT_USERNAME || '').trim(),
@@ -171,11 +174,69 @@ async function logOn() {
   usingToken = !!token;
   try {
     if (token) client.logOn({ refreshToken: token, machineName: 'WPG Barracks' });
-    else if (c.user && c.pass) client.logOn({ accountName: c.user, password: c.pass, machineName: 'WPG Barracks' });
+    else if (c.user && c.pass) await passwordLogin();
     else setState('error', { error: 'No saved Steam sign-in and no STEAM_BOT_PASSWORD: add it in Render, then press Reconnect.' });
   } catch (e) {
     retry(10 * 60 * 1000, e.message);
   }
+}
+
+// First login with the password: one Steam login session, kept open until the Steam Guard code is typed (up to
+// 15 minutes), then its sign-in token is saved and used to log the bot on.
+async function passwordLogin() {
+  const ss = await import('steam-session');
+  const { LoginSession, EAuthTokenPlatformType, EAuthSessionGuardType } = ss.default || ss;
+  const c = creds();
+  if (pendingSession) {
+    try { pendingSession.cancelLoginAttempt(); } catch { /* already over */ }
+    pendingSession = null;
+  }
+  const session = new LoginSession(EAuthTokenPlatformType.SteamClient);
+  session.loginTimeout = 15 * 60 * 1000;
+  session.on('authenticated', async () => {
+    pendingSession = null;
+    try {
+      await saveToken(session.refreshToken);
+      usingToken = true;
+      setState('connecting');
+      client.logOn({ refreshToken: session.refreshToken, machineName: 'WPG Barracks' });
+    } catch (e) {
+      retry(60 * 1000, e.message);
+    }
+  });
+  session.on('timeout', () => {
+    if (pendingSession !== session) return;
+    pendingSession = null;
+    setState('error', { error: "The Steam Guard code wasn't entered within 15 minutes: press Reconnect to get a new email." });
+  });
+  session.on('error', (e) => {
+    if (pendingSession === session) pendingSession = null;
+    retry(10 * 60 * 1000, `Steam login problem: ${e.message}`);
+  });
+  let start;
+  try {
+    start = await session.startWithCredentials({ accountName: c.user, password: c.pass });
+  } catch (e) {
+    if (e.eresult === 5) return setState('error', { error: 'Steam says the password is wrong: check STEAM_BOT_PASSWORD in Render, then press Reconnect.' });
+    if (e.eresult === 84) return retry(30 * 60 * 1000, 'Steam is limiting logins from here: trying again in 30 minutes.');
+    return retry(10 * 60 * 1000, `Steam login problem: ${e.message}`);
+  }
+  if (!start.actionRequired) return; // no code needed: 'authenticated' follows
+  const actions = start.validActions || [];
+  const device = actions.find((a) => a.type === EAuthSessionGuardType.DeviceCode);
+  if (device && c.secret) {
+    const SteamTotp = (await import('steam-totp')).default;
+    await session.submitSteamGuardCode(SteamTotp.generateAuthCode(c.secret));
+    return;
+  }
+  const email = actions.find((a) => a.type === EAuthSessionGuardType.EmailCode);
+  pendingSession = session;
+  setState('guard', { guardDomain: email ? email.detail || '' : null });
+  bus.emit('staff:notify', {
+    title: 'Steam bot needs a Steam Guard code',
+    body: email ? `Check the email at …@${email.detail} and type the code in Admin → Steam bot (within 15 minutes).` : 'Type the code from the Steam mobile app in Admin → Steam bot.',
+    link: '#/admin/steambot',
+  });
 }
 function retry(ms, why) {
   setState('error', { error: why });
@@ -387,12 +448,22 @@ steamBotRouter.get('/admin/steambot', role('admin'), async (_req, res) => {
 });
 steamBotRouter.post('/admin/steambot/guard', role('admin'), async (req, res) => {
   const code = str(req.body?.code, 10).toUpperCase().replace(/\s/g, '');
-  if (!guardCallback) throw new HttpError(400, "The bot isn't waiting for a code right now.");
   if (!/^[A-Z0-9]{5}$/.test(code)) throw new HttpError(400, 'Steam Guard codes are 5 letters or numbers.');
-  const cb = guardCallback;
-  guardCallback = null;
-  setState('connecting');
-  cb(code);
+  if (pendingSession) {
+    // The same login that sent the email: a wrong code just says so (no new email).
+    try {
+      await pendingSession.submitSteamGuardCode(code);
+    } catch (e) {
+      if (e.eresult === 65 || e.eresult === 88) throw new HttpError(400, 'Steam says that code is wrong. Use the code from the newest Steam email.');
+      throw new HttpError(400, `Steam didn't take the code: ${e.message}. Press Reconnect to get a new email.`);
+    }
+    setState('connecting');
+  } else if (guardCallback) {
+    const cb = guardCallback;
+    guardCallback = null;
+    setState('connecting');
+    cb(code);
+  } else throw new HttpError(400, "The bot isn't waiting for a code right now. Press Reconnect to start a new login.");
   await audit(req.user.id, 'steambot.guard', 'Steam Guard code entered');
   res.json({ ok: true });
 });
