@@ -6,7 +6,7 @@ import { syncUser, recalcXp, announceRankChange } from './steam.js';
 import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
-import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_LEVELS } from './discordbot.js';
+import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
 import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
@@ -470,8 +470,8 @@ admin.get('/discord-server', role('admin'), async (_req, res) => {
       kick_at: Number(await setting('discord_warn_kick_at')) || 5,
       blocked_words: (await setting('discord_blocked_words')) || '',
     },
-    commands: await (async () => { const access = await commandAccess(); return commandList().map((c) => ({ ...c, level: access[c.name] })); })(),
-    command_levels: COMMAND_LEVELS,
+    commands: await (async () => { const access = await commandAccess(); return commandList().map((c) => ({ ...c, groups: access[c.name] })); })(),
+    command_groups: COMMAND_GROUPS,
     switches: Object.fromEntries(await Promise.all(SWITCHES.map(async (k) => [k, (await setting(k)) !== 'false']))),
     held: guild ? await q("SELECT discord_id, user_name, updated_at FROM discord_entries WHERE guild_id=$1 AND status='held' ORDER BY updated_at", [guild]) : [],
     cases: guild ? await q('SELECT * FROM discord_cases WHERE guild_id=$1 ORDER BY id DESC LIMIT 40', [guild]) : [],
@@ -526,13 +526,14 @@ admin.put('/discord-server', role('admin'), async (req, res) => {
 
 // Who can use each bot command. Saved, then Discord's command list is updated straight away.
 admin.put('/discord-server/commands', role('admin'), async (req, res) => {
-  const levels = new Set(COMMAND_LEVELS.map(([k]) => k));
+  const groups = COMMAND_GROUPS.map(([k]) => k);
   const known = new Set(commandList().map((c) => c.name));
   const out = {};
-  for (const [name, level] of Object.entries(req.body?.commands || {})) {
-    if (!known.has(name) || !levels.has(level)) continue;
-    // /link and /unlink must stay open to everyone, or nobody new could ever link their Discord.
-    out[name] = ['link', 'unlink'].includes(name) && level !== 'off' ? 'everyone' : level;
+  for (const [name, picked] of Object.entries(req.body?.commands || {})) {
+    if (!known.has(name) || !Array.isArray(picked)) continue;
+    const list = groups.filter((g) => picked.includes(g));
+    // /link and /unlink must stay open to everyone (or off), or nobody new could ever link their Discord.
+    out[name] = ['link', 'unlink'].includes(name) ? (list.length ? ['everyone'] : []) : list;
   }
   await q("INSERT INTO settings (key, value) VALUES ('discord_command_access', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(out)]);
   clearSettingsCache();
