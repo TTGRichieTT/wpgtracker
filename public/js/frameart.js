@@ -1,11 +1,21 @@
 // Profile frames, drawn as SVG around a member's picture (used by the app and the Discord cards).
-// A frame is { style, color?, badge?, label?, crown?, season?, season_tag?, image?, rank? }:
+// A frame is { style, color?, badge?, label?, crown?, season?, season_tag?, image?, rank?, title? }:
+//  title: words on a plate across the top (the Officer frame shows the member's clan rank title there);
 //  season: the season number it's from (shown as S1, S2… unless season_tag is false);
 //  image: an uploaded frame picture (style 'image', 512 x 512 with a transparent middle);
 //  badge 'rank': the member's clan rank badge in the corner (rank: their rank's name, abbr, colour, insignia). The picture sits in the middle 74% of the square (13–87 of 0–100);
 // the frame is drawn around it, with a small badge in the corner that says what kind of frame it is.
 
 import { rankBadge } from './insignia.js';
+
+// Words on a plate across the top of the frame (e.g. the member's clan rank title on the Officer frame).
+function titlePlate(text, color) {
+  const t = String(text || '').trim().toUpperCase();
+  if (!t) return '';
+  const fs = t.length > 16 ? 6 : t.length > 11 ? 7 : 8.4;
+  const w = Math.min(92, t.length * fs * 0.66 + 10);
+  return `<g><rect x="${(50 - w / 2).toFixed(1)}" y="1" width="${w.toFixed(1)}" height="12.5" rx="3" fill="#0b1520" stroke="${color}" stroke-width="1.5"/><text x="50" y="${(7.6 + fs * 0.34).toFixed(1)}" text-anchor="middle" font-family="Rajdhani, Arial Narrow, sans-serif" font-weight="700" font-size="${fs}" fill="#fff" letter-spacing=".5">${esc(t)}</text></g>`;
+}
 
 let uid = 0;
 const METALS = {
@@ -131,7 +141,7 @@ export function frameSVG(frame, size = 100, { overlayOnly = false } = {}) {
   } else {
     body = `<path d="${RING}" fill="${color}" fill-rule="evenodd"/>`;
   }
-  return `<svg class="frame-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><defs>${defs}</defs>${overlayOnly ? '' : body}${badge(f.badge, badgeColor, f.rank)}${f.season_tag === false ? '' : seasonTag(f.season, badgeColor)}</svg>`;
+  return `<svg class="frame-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><defs>${defs}</defs>${overlayOnly ? '' : body}${titlePlate(f.title, f.rank?.color || badgeColor)}${badge(f.badge, badgeColor, f.rank)}${f.season_tag === false ? '' : seasonTag(f.season, badgeColor)}</svg>`;
 }
 
 // The look presets admins can pick (key → label).
