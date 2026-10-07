@@ -64,16 +64,17 @@ const RESOURCES = {
   awards: {
     one: 'medal',
     title: 'Medals & ribbons',
-    help: 'Create medals here, then give them to members from the Members tab. Medals with an automatic rule are given by themselves when members sync their stats (e.g. class:recon:30 = Recon level 30, hours:200 = 200 hours played).',
+    help: 'Create medals here. Give one by hand from the Members tab, or pick a tracked stat (our WPG server, wardogs.tools, Steam or WPG Barracks) and a target: members get it by themselves once they reach it, checked after every stats sync, after every match on the WPG server and every hour.',
+    prep: async () => { TRACKED = TRACKED || await api('admin/tracked-stats'); },
     fields: [
       { k: 'name', label: 'Medal name' },
       { k: 'description', label: 'What it is for', type: 'textarea' },
       { k: 'colors', label: 'Ribbon stripes', type: 'colors' },
-      { k: 'auto_rule', label: 'Give automatically (optional): class:assault:20 · career:50 · hours:300 — leave empty to give by hand' },
+      { k: 'auto_rule', label: 'Given', type: 'medalrule' },
       { k: 'sort_order', label: 'Order', type: 'number' },
     ],
     defaults: { colors: '#1f3a93,#ffffff,#b22234' },
-    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b> ${r.auto_rule ? `<span class="pill mod">auto · ${esc(r.auto_rule)}</span>` : ''}<div class="muted small">${esc(r.description)}</div></div>`,
+    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b> ${r.auto_rule ? `<span class="pill mod">auto · ${esc(ruleText(r.auto_rule))}</span>` : ''}<div class="muted small">${esc(r.description)}</div></div>`,
   },
   'stat-defs': {
     one: 'stat',
@@ -221,6 +222,7 @@ export async function viewAdmin(main, [tabParam]) {
 async function resourceTab(body, name) {
   const cfg = RESOURCES[name];
   const key = cfg.key || 'id';
+  if (cfg.prep) await cfg.prep();
   const rows = await api(`admin/${name}`);
   body.innerHTML = `
     <div class="panel">
@@ -298,6 +300,25 @@ function fieldHtml(f, v, isNew, data = {}) {
   const id = `f_${f.k}`;
   if (f.createOnly && !isNew) return `<label class="field"><span>${esc(f.label)}</span><input type="text" value="${esc(v)}" disabled></label>`;
   switch (f.type) {
+    case 'medalrule': {
+      // Given by hand, or automatically from a tracked stat (grouped by where it comes from) once a target is reached.
+      const [kind, a, b] = String(v || '').split(':');
+      const legacy = v && kind !== 'stat';
+      const cur = kind === 'stat' ? a : legacy ? '_legacy' : '';
+      const groups = {};
+      for (const [k, x] of Object.entries(TRACKED || {})) (groups[x.source] ||= []).push([k, x]);
+      return `<div class="field" style="grid-column:1/-1"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px">How it's given</span>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <select name="rule_stat" class="grow" style="min-width:240px">
+            <option value="" ${cur === '' ? 'selected' : ''}>By hand (staff give it)</option>
+            ${legacy ? `<option value="_legacy" selected>Keep: ${esc(ruleText(v))}</option>` : ''}
+            ${Object.entries(groups).map(([src, list]) => `<optgroup label="Automatic: ${esc(src)}">${list.map(([k, x]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</optgroup>`).join('')}
+          </select>
+          <label class="row small" style="gap:6px">at least <input type="number" name="rule_target" min="0" step="any" style="width:120px" value="${esc(kind === 'stat' ? b : '')}"></label>
+        </div>
+        <input type="hidden" name="rule_legacy" value="${esc(legacy ? v : '')}">
+        <span class="muted small">Members get it by themselves once their number reaches the target, and keep it for good.</span></div>`;
+    }
     case 'textarea':
       return `<label class="field" style="grid-column:1/-1"><span>${esc(f.label)}</span><textarea name="${f.k}" id="${id}">${esc(v ?? '')}</textarea></label>`;
     case 'number':
@@ -393,7 +414,10 @@ function openEditor(cfg, name, key, row, done) {
     const out = {};
     for (const f of cfg.fields) {
       if (f.createOnly && !isNew) continue;
-      if (f.type === 'insignia') out[f.k] = readInsignia();
+      if (f.type === 'medalrule') {
+        const st = form.rule_stat.value;
+        out[f.k] = st === '_legacy' ? form.rule_legacy.value : st ? `stat:${st}:${form.rule_target.value || 0}` : '';
+      } else if (f.type === 'insignia') out[f.k] = readInsignia();
       else if (f.type === 'colors') out[f.k] = stripes();
       else if (f.type === 'check') out[f.k] = form[f.k].checked;
       else if (f.type === 'secret') {
@@ -618,6 +642,17 @@ const DISCORD_SWITCHES = {
     ]],
   ],
 };
+// Tracked stats a medal can be given from (loaded when the Medals tab opens), and a rule in words.
+let TRACKED = null;
+const CLASS_LABEL = { recon: 'Recon', assault: 'Assault', medic: 'Medic', support: 'Support', driver: 'Driver', pilot: 'Pilot' };
+function ruleText(rule) {
+  const [kind, a, b] = String(rule || '').split(':');
+  if (kind === 'stat') return `${TRACKED?.[a]?.label || a} ≥ ${Number(b).toLocaleString()}`;
+  if (kind === 'class') return `${CLASS_LABEL[a] || a} class level ≥ ${b}`;
+  if (kind === 'career') return `Wardog level ≥ ${a}`;
+  if (kind === 'hours') return `Hours on Steam (enabled games) ≥ ${a}`;
+  return rule;
+}
 // Settings saved through Admin → Settings' store, shown in Posts & channels.
 const DISCORD_POSTS = [
   ['Discord server link and voice list', [

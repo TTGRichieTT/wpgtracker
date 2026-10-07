@@ -14,42 +14,24 @@ import { q, one, audit, flag } from './db.js';
 import { bus } from './bus.js';
 import { HttpError, member, role, str, int, bool, color } from './util.js';
 import { nextSeasonLook } from '../public/js/frameart.js';
+import { STATS, TRACKER_STATS, statsFor, reached } from './trackstats.js';
+import { giveAutoMedals } from './medals.js';
 
 export const framesRouter = express.Router();
 
 const isWpgMember = (u) => !!u && u.status === 'active' && u.membership !== 'pmc';
 const changed = () => bus.emit('config:changed', 'frames');
 
-// What can earn a frame. scope: all (all-time) or season (this season only). unit: how progress is shown.
+// What can earn a frame: every tracked stat (trackstats.js: WPG server, wardogs.tools, Steam, WPG Barracks), plus
+// frames given by hand and the season placings the app makes when a season ends.
 export const METRICS = {
-  founding: { label: 'Joined in Season 1', scope: 'all', yesno: true },
-  headshots: { label: 'Headshots on the WPG server', scope: 'all' },
-  longest_kill: { label: 'Longest kill on the WPG server (m)', scope: 'all', unit: 'm' },
-  max_class_level: { label: 'Highest class level (wardogs.tools)', scope: 'all' },
-  giveaway_wins: { label: 'Giveaways won', scope: 'all' },
-  days_in_wpg: { label: 'Days in WPG Barracks', scope: 'all', unit: 'days' },
-  kills: { label: 'Kills on the WPG server (all time)', scope: 'all' },
-  hours: { label: 'Hours on the WPG server (all time)', scope: 'all', unit: 'h' },
-  wins: { label: 'Wins on the WPG server (all time)', scope: 'all' },
-  wpg_xp: { label: 'WPG XP (all time)', scope: 'all' },
-  medals: { label: 'Medals', scope: 'all' },
-  steam_hours: { label: 'Wardogs hours on Steam', scope: 'all', unit: 'h' },
-  season_kills: { label: 'Kills on the WPG server this season', scope: 'season' },
-  season_hours: { label: 'Hours on the WPG server this season', scope: 'season', unit: 'h' },
-  season_wins: { label: 'Wins on the WPG server this season', scope: 'season' },
-  season_finished: { label: 'Matches finished (not left early) this season', scope: 'season' },
-  season_wpg_xp: { label: 'WPG XP earned this season', scope: 'season' },
-  wardog_level: { label: 'Wardog level (wardogs.tools)', scope: 'season' },
-  cash: { label: 'Cash held (wardogs.tools)', scope: 'season', unit: '$' },
-  clan_member: { label: 'WPG member', scope: 'clan', yesno: true },
-  unit: { label: 'Posted to a Combat Command unit (its colour)', scope: 'clan', yesno: true },
-  officer: { label: 'Clan rank of at least the target rank order', scope: 'clan', yesno: true },
-  manual: { label: 'Given by hand', scope: 'all', yesno: true },
-  placement: { label: 'Season placing', scope: 'all', yesno: true },
+  ...STATS,
+  manual: { label: 'Given by hand', scope: 'all', source: 'WPG Barracks', yesno: true },
+  placement: { label: 'Season placing', scope: 'all', source: 'WPG Barracks', yesno: true },
 };
 
 // Frames worked out from wardogs.tools stats (credited wherever they're shown or posted).
-export const TRACKER_METRICS = new Set(['max_class_level', 'wardog_level', 'cash']);
+export const TRACKER_METRICS = TRACKER_STATS;
 
 // ---------- Seasons ----------
 export async function currentSeason() {
@@ -95,62 +77,8 @@ export async function frameLookFor(user, f) {
 }
 
 // ---------- What a member has done ----------
-async function metricsFor(user, season) {
-  const sid = user.steam_id;
-  const real = /^\d{17}$/.test(sid || '');
-  const since = season?.start_at || new Date(0);
-  const [srvSeason, srvAll, kf, ws, gw, medals, prog, startXp, steam, rank, posting] = await Promise.all([
-    real ? one(`SELECT COALESCE(SUM(mp.kills),0)::int kills, COALESCE(SUM(mp.seconds),0)::int secs, COALESCE(SUM(CASE WHEN mp.won THEN 1 ELSE 0 END),0)::int wins,
-                       COUNT(*) FILTER (WHERE mp.stayed)::int finished
-                  FROM match_players mp JOIN game_servers g ON g.id = mp.server_id AND g.wpg_xp = true
-                 WHERE mp.steam_id=$1 AND mp.ended_at >= $2 AND mp.stayed IS NOT FALSE`, [sid, since]) : null,
-    real ? one('SELECT COALESCE(SUM(kills),0)::int kills, COALESCE(SUM(playtime_s),0)::int secs, COALESCE(SUM(wins),0)::int wins FROM server_players WHERE steam_id=$1', [sid]) : null,
-    real ? one('SELECT COUNT(*) FILTER (WHERE headshot)::int hs, COALESCE(MAX(distance),0)::float far FROM kill_events WHERE killer=$1', [sid]) : null,
-    one('SELECT official, ranks FROM wardogs_stats WHERE user_id=$1', [user.id]),
-    one("SELECT COUNT(*)::int n FROM giveaway_winners WHERE user_id=$1 AND status <> 'expired'", [user.id]),
-    one('SELECT COUNT(*)::int n FROM user_awards WHERE user_id=$1', [user.id]),
-    real ? one('SELECT xp FROM server_progress WHERE steam_id=$1', [sid]) : null,
-    real && season ? one('SELECT xp FROM season_start_xp WHERE season_id=$1 AND steam_id=$2', [season.id, sid]) : null,
-    one('SELECT COALESCE(SUM(playtime_forever),0)::int mins FROM user_games WHERE user_id=$1', [user.id]),
-    user.rank_id ? one('SELECT sort_order FROM ranks WHERE id=$1', [user.rank_id]) : null,
-    one(`SELECT cu.name, cu.color, cu.roles, cp.role_id, prof.primary_role FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id
-           LEFT JOIN combat_profiles prof ON prof.user_id = cp.user_id WHERE cp.user_id=$1`, [user.id]),
-  ]);
-  const o = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
-  // Tracker figures only count for a season once they've been synced since it started (a wipe resets them).
-  const freshTracker = o?.syncedAt && Date.parse(o.syncedAt) >= new Date(since).getTime();
-  const firstSeasonEnd = (await one('SELECT start_at FROM seasons WHERE number=2'))?.start_at;
-  return {
-    founding: user.joined_at && (!firstSeasonEnd || new Date(user.joined_at) < new Date(firstSeasonEnd)) ? 1 : 0,
-    headshots: kf?.hs || 0,
-    longest_kill: Math.round(kf?.far || 0),
-    max_class_level: o ? Math.max(0, ...Object.values(o.roles || {}).map((r) => Number(r?.level ?? r) || 0)) : 0,
-    giveaway_wins: gw?.n || 0,
-    days_in_wpg: user.joined_at ? Math.floor((Date.now() - new Date(user.joined_at).getTime()) / 86400000) : 0,
-    kills: srvAll?.kills || 0,
-    hours: Math.floor((srvAll?.secs || 0) / 3600),
-    wins: srvAll?.wins || 0,
-    wpg_xp: prog?.xp || 0,
-    medals: medals?.n || 0,
-    steam_hours: Math.floor((steam?.mins || 0) / 60),
-    season_kills: srvSeason?.kills || 0,
-    season_hours: Math.floor((srvSeason?.secs || 0) / 3600),
-    season_wins: srvSeason?.wins || 0,
-    season_finished: srvSeason?.finished || 0,
-    season_wpg_xp: Math.max(0, (prog?.xp || 0) - (startXp?.xp || 0)),
-    wardog_level: freshTracker ? Number(o.wardogLevel) || 0 : 0,
-    cash: freshTracker ? Number(o.cash) || 0 : 0,
-    clan_member: isWpgMember(user) ? 1 : 0,
-    unit: isWpgMember(user) && posting ? 1 : 0,
-    unitInfo: posting || null,
-    officer: isWpgMember(user) ? rank?.sort_order ?? -1 : -1,
-  };
-}
-const met = (f, m) => {
-  if (f.metric === 'manual' || f.metric === 'placement') return false;
-  if (f.metric === 'officer') return m.officer >= Number(f.target);
-  return (Number(m[f.metric]) || 0) >= Math.max(1, Number(f.target) || 0);
-};
+const metricsFor = (user, season) => statsFor(user, season || null);
+const met = (f, m) => (f.metric === 'manual' || f.metric === 'placement' ? false : reached(f.metric, f.target, m));
 
 // ---------- Unlocking ----------
 // Checks one member against every frame and records what they've newly earned. announce: post/notify (only for
@@ -185,7 +113,11 @@ export async function checkFrames(userId, { announce = true } = {}) {
 async function sweep() {
   const users = await q("SELECT id FROM users WHERE status='active'");
   const fresh = (await allFrames()).filter((f) => f.enabled && !f.swept);
-  for (const u of users) await checkFrames(u.id, { announce: true }).catch((e) => console.warn('[frames]', e.message));
+  for (const u of users) {
+    await checkFrames(u.id, { announce: true }).catch((e) => console.warn('[frames]', e.message));
+    // Automatic medals too (stats from the kill feed and wardogs.tools can change between a member's syncs).
+    await giveAutoMedals(u.id).catch((e) => console.warn('[medals]', e.message));
+  }
   if (fresh.length) {
     await q('UPDATE frames SET swept=true WHERE id = ANY($1)', [fresh.map((f) => f.id)]);
     clearFrames();

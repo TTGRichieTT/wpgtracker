@@ -290,10 +290,11 @@ api.get('/users/:id', member, async (req, res) => {
   });
 });
 
-// Automatic medals in the same series (e.g. every Recon level medal, or every hours medal) only show
+// Automatic medals in the same series (e.g. every Recon level medal, every hours medal, or every medal on one tracked
+// stat such as WPG server kills) only show
 // the highest one held, so a new tier replaces the old one on the ribbon rack.
 export function topTierOnly(awards) {
-  const series = (rule) => { const [kind, a] = String(rule || '').split(':'); return kind === 'class' ? `class:${a}` : kind; };
+  const series = (rule) => { const [kind, a] = String(rule || '').split(':'); return kind === 'class' || kind === 'stat' ? `${kind}:${a}` : kind; };
   const level = (rule) => Number(String(rule).split(':').pop()) || 0;
   const best = new Map();
   for (const a of awards) {
