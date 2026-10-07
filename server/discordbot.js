@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { q, one, setting, flag } from './db.js';
 import { bus } from './bus.js';
 import { MOD_COMMANDS, modCommandDefinitions, handleComponent } from './discordmod.js';
+import { guildId as serverId, loadMap } from './discordserver.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
 import { shownFrames, frameLookFor, TRACKER_METRICS, framesFor } from './frames.js';
@@ -989,6 +990,13 @@ async function callerGroup(body) {
   const id = String(body.member?.user?.id || body.user?.id || '');
   const u = id ? await one('SELECT role, status, membership FROM users WHERE discord_id=$1', [id]) : null;
   if (u && u.status === 'active') tier = Math.max(tier, u.role === 'admin' ? 4 : u.role === 'mod' ? 3 : u.membership === 'pmc' ? 1 : 2);
+  // On the WPG server, the WPG Member role counts as a WPG member and Wardogs as a PMC guest.
+  const guild = await serverId().catch(() => '');
+  if (guild && body.guild_id === guild && Array.isArray(body.member?.roles)) {
+    const roles = (await loadMap(guild)).roles || {};
+    if (roles.wpg && body.member.roles.includes(roles.wpg)) tier = Math.max(tier, 2);
+    else if (roles.pmc && body.member.roles.includes(roles.pmc)) tier = Math.max(tier, 1);
+  }
   return GROUP_KEYS.find((g) => TIER[g] === tier);
 }
 const allowedFor = (groups, group) => groups.includes('everyone') || groups.includes(group);

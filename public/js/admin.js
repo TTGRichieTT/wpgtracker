@@ -718,17 +718,27 @@ async function discordServerTab(body) {
         <div class="row" style="margin-top:10px"><button class="btn" id="dsPreview">Preview</button><button class="btn primary" id="dsBuild">Build server</button></div>
         <div id="dsOut" class="small" style="margin-top:10px"></div></div>
       <div class="panel"><div class="panel-title">Roles</div>
-        <p class="small muted" style="margin-top:0">The app gives <b>Wardogs</b> to everyone who passes the entry check (to everyone if it's off). For members who linked their Discord with <b>/link</b> it also manages
+        <p class="small muted" style="margin-top:0">The app gives <b>WPG Community</b> to everyone who passes the entry check (to everyone if it's off), <b>Wardogs</b> to PMC guests and <b>WPG Member</b> to full members. For members who linked their Discord with <b>/link</b> it also manages
           Admin / Moderator, WPG Member, Combat Command (CO, XO, Deputy), their unit, Unit Leader, their faction and a grey role for every Steam game
           they've played ${esc(d.game_hours)}+ hours (show only). Content Creator, Partner and Military Vet are given by hand; members pick PC / Xbox / PlayStation / Switch / 18+ in #pick-roles.
           Roles on members who haven't linked are never taken away.</p>
         <div class="small">${s.at ? `${s.ok ? '✅' : '⚠️'} Last sync ${esc(when(s.at))}: ${s.ok
           ? `${s.members} on the server, ${s.linked} linked · ${s.added} roles given, ${s.removed} taken away · ${s.game_roles} game roles`
           : `<span style="color:var(--red)">${esc(s.reason || 'failed')}</span>`}` : '<span class="muted">Not synced yet.</span>'}</div>
-        <div class="row" style="margin-top:10px"><button class="btn" id="dsSyncNow">${icon('refresh')} Sync roles now</button></div></div>`,
+        <div class="row" style="margin-top:10px"><button class="btn" id="dsSyncNow">${icon('refresh')} Sync roles now</button></div></div>
+      <div class="panel"><div class="panel-title">Tidy up an existing server</div>
+        <p class="small muted" style="margin-top:0">For a server that's been running a while. Channels keep their names, places and messages; they're matched
+          to the layout by name (emoji and brackets ignored) and get the layout's permissions. Roles with 5 or more members are kept, plus staff, the
+          app's roles, dividers and bots' roles; the rest are removed (untick any to keep them). Kept roles lose risky permissions unless they're staff.
+          Bots are left alone. Everything is backed up first. <b>Scan</b> changes nothing.</p>
+        <div class="form-grid">
+          <label class="field"><span>Count members from another server (optional: when testing on a copy, put the real server's ID here)</span><input type="text" id="dsCountFrom" inputmode="numeric" placeholder="Leave empty normally"></label>
+        </div>
+        <div class="row" style="margin-top:6px"><button class="btn" id="dsTidyScan">Scan</button>${d.backup_at ? `<a class="btn ghost" href="/api/admin/discord-server/backup">Download backup (${esc(when(d.backup_at))})</a>` : ''}</div>
+        <div id="dsTidyOut" class="small" style="margin-top:10px"></div></div>`,
     entry: () => `<div class="panel"><div class="panel-title">Entry check &amp; rules</div>
         <p class="small muted" style="margin-top:0">New joiners only see #welcome and #rules. The button under the rules asks them to type a short code and answer
-          one question; passing gives <b>Wardogs</b>. Accounts newer than the minimum age wait for staff (Let in / Kick in #staff-chat or below).
+          one question; passing gives <b>WPG Community</b>. Accounts newer than the minimum age wait for staff (Let in / Kick in #staff-chat or below).
           3 failed tries = removed; anyone not in after the time limit is removed (they can rejoin). Members already on the server are never affected.</p>
         <form id="dsEntry" class="form-grid">
           <label class="check" style="grid-column:1/-1"><input type="checkbox" name="enabled" ${d.entry.enabled ? 'checked' : ''}> Entry check on${d.entry.since ? ` <span class="muted small">(since ${esc(when(d.entry.since))})</span>` : ''}</label>
@@ -828,6 +838,42 @@ async function discordServerTab(body) {
         };
         poll();
       } catch (x) { fail(x); }
+    };
+    const tidyOut = body.querySelector('#dsTidyOut');
+    body.querySelector('#dsTidyScan').onclick = async () => {
+      tidyOut.innerHTML = '<div class="spinner"></div>';
+      const countFrom = body.querySelector('#dsCountFrom').value.trim();
+      try {
+        const r = await api('admin/discord-server/tidy/scan', { method: 'POST', body: { count_from: countFrom } });
+        const removing = r.roles.filter((x) => !x.keep).length;
+        tidyOut.innerHTML = `<b>${esc(r.server)}</b>${r.count_from ? ` <span class="muted">(member counts from server ${esc(r.count_from)})</span>` : ''}
+          <div style="margin:8px 0 4px"><b>Roles</b> <span class="muted">· ${r.roles.length} roles, ${removing} to remove (ticked)</span></div>
+          <div style="max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px">${r.roles.map((x) => `<label class="row" style="gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:nowrap;${x.keep ? '' : 'background:rgba(229,72,77,.08)'}">
+            <input type="checkbox" data-remove="${esc(x.id)}"${x.keep ? '' : ' checked'}${x.locked ? ' disabled' : ''} title="Remove this role">
+            <span style="width:12px;height:12px;border-radius:50%;flex:none;background:${esc(x.color || '#5d7a94')}"></span>
+            <span class="grow" style="min-width:0"><b>${esc(x.name)}</b> <span class="muted">· ${esc(x.reason)}</span>${x.fix.length ? `<br><span style="color:#f5a524">Takes off: ${esc(x.fix.join(', '))}</span>` : ''}</span>
+            <span class="muted" style="flex:none">${x.members}</span></label>`).join('')}</div>
+          <p class="muted" style="margin:4px 0 0">Ticked = removed. Greyed-out boxes can't be removed (staff, app, divider or bot roles).</p>
+          <div style="margin:10px 0 4px"><b>Bots</b> <span class="muted">· kept (the server owner can kick any that aren't needed)</span></div>
+          <div class="muted">${r.bots.map((b) => esc(b.name)).join(', ') || 'None'}</div>
+          <details style="margin-top:10px"><summary><b>Channels &amp; layout</b> <span class="muted">· ${r.actions.length} change${r.actions.length === 1 ? '' : 's'}</span></summary>
+            <ul style="margin:6px 0 0;padding-left:18px;max-height:300px;overflow:auto">${r.actions.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></details>
+          <div class="row" style="margin-top:12px"><button class="btn primary" id="dsTidyGo">Back up &amp; tidy up now</button></div>`;
+        tidyOut.querySelector('#dsTidyGo').onclick = async () => {
+          const remove = [...tidyOut.querySelectorAll('[data-remove]:checked:not(:disabled)')].map((el) => el.dataset.remove);
+          if (!(await confirmBox(`Tidy up ${r.server} now? ${remove.length} role${remove.length === 1 ? '' : 's'} will be removed and channel permissions reset. A backup is made first.`))) return;
+          try {
+            await api('admin/discord-server/tidy', { method: 'POST', body: { remove, count_from: countFrom } });
+            const poll = async () => {
+              if (!document.body.contains(tidyOut)) return;
+              const st = (await api('admin/discord-server')).build;
+              tidyOut.innerHTML = `<b>${st.running ? 'Tidying up…' : st.error ? 'Stopped' : 'Finished'}</b><ul style="margin:6px 0 0;padding-left:18px;max-height:360px;overflow:auto">${st.log.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${st.running ? '' : '<p class="muted">Press <b>Sync roles now</b> above to give everyone their roles straight away (it also runs by itself every 2 minutes).</p>'}`;
+              if (st.running) setTimeout(poll, 1500);
+            };
+            poll();
+          } catch (x) { fail(x); }
+        };
+      } catch (x) { tidyOut.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
     };
     body.querySelector('#dsSyncNow').onclick = async (e) => {
       e.target.disabled = true;

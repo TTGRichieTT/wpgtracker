@@ -1,6 +1,6 @@
 // Discord moderation and the entry check, on the server set in Admin → Discord server.
 //  - Entry: new joiners only see #welcome and #rules. The button under the rules opens a short check (type a code,
-//    answer a yes / no question about the rules); passing gives Wardogs, which opens the server. Accounts younger than
+//    answer a yes / no question about the rules); passing gives WPG Community, which opens the server. Accounts younger than
 //    discord_entry_min_age_days are held for staff (Let in / Kick buttons in #staff-chat). Three failed checks = kicked,
 //    and anyone who hasn't got in after discord_entry_kick_hours is kicked (with a message that they can rejoin).
 //    Lots of joins in a minute pauses entry for 15 minutes and alerts staff (raid alarm).

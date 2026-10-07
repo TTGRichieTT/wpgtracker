@@ -182,13 +182,13 @@ switches control the bot, not Discord's own server settings. The Discord parts o
   (needed to list the server's members). Optional: switch on Community for a rules screen.
 - **Build:** **Preview** lists what would be made; **Build server** makes it: roles (Admin, Moderator, CO / XO / Deputy,
   Unit Leader, WPG Member, one per unit, Lonestar / Valkyra / Manticore, Content Creator, Partner, Military Vet,
-  Wardogs, 18+) and the categories Start here, Information, Community, Wardogs, WPG App, WPG Clan, Guild halls and
+  WPG Community, Wardogs, 18+, divider roles) and the categories Start here, Information, Community, Wardogs, WPG App, WPG Clan, Guild halls and
   Staff, with who can see and talk in each. It reuses roles and channels that already exist by name and never deletes
   anything it didn't make, so it's safe on the main server too. The **Also send the app's Discord posts here** box points
   go-live, rank-up and staff-alert posts at the new channels; leave it off on a test server.
 - **Roles (when "Keep members' roles in step" is on, every 2 minutes and straight after changes in the app):**
-  everyone on the server gets **Wardogs** (after the rules screen, if there is one). Members who linked with **/link**
-  also get Admin / Moderator, WPG Member (not PMC guests), their Combat Command post or unit (and Unit Leader), their
+  everyone on the server gets **WPG Community** (after the entry check). Members who linked with **/link**
+  also get Admin / Moderator, **WPG Member** (full members) or **Wardogs** (PMC guests), their Combat Command post or unit (and Unit Leader), their
   faction, and a grey show-only role for every Steam game they've played for 100+ hours (the hours can be changed).
   Content Creator, Partner, Military Vet and 18+ are given by hand. Roles on members who haven't linked are never
   taken away; unlinking takes the app's roles off again.
@@ -198,6 +198,18 @@ own artwork around their picture; locked ones dimmed with a lock and a progress 
 or name option): what they've earned with the date, the frame they're wearing, and the next few still to earn with
 progress, by Permanent, Clan, this season and past seasons.
 
+**Tidy up an existing server** (Server & roles): for the old WPG Discord. **Scan** changes nothing and lists every role
+with its member count and what will happen to it. Kept: roles with 5+ members, staff / owner roles, the layout's roles
+(matched by name, e.g. WPG Community = everyone, WarDogs = the PMC role, 🛡️|Administrator = Admin), divider roles and bots'
+roles; the rest are ticked for removal (untick any to keep them). Kept roles that aren't staff lose risky permissions.
+Channels keep their names, places and messages; they're matched to the layout by name (emoji and brackets ignored) and
+get exactly the layout's permissions (single-member and bot overwrites kept); channels not in the layout take their
+category's. Missing layout channels and roles are added and the roles put in order under dividers. Bots are left alone.
+A full backup (roles, channels, permissions, everyone's roles) is made first and can be downloaded. To test on a copy of
+the real server, put the real server's ID in "Count members from another server". **WPG Community** is everyone in WPG,
+**Wardogs** is PMC guests (the app gives it to linked PMC guests and takes it off anyone with WPG Member) and **WPG Member**
+is full members.
+
 ### Entry check, rules and moderation (same page)
 
 The bot also does what mod bots like Carl-bot, Captcha.bot and Ticket Tool did. It keeps a live connection to Discord,
@@ -206,7 +218,7 @@ so switch on **Server Members Intent** and **Message Content Intent** in the Dev
 
 - **Entry check:** new joiners only see #welcome and #rules. Under the rules (edited on the page, then **Update the rules
   post**) is an **I've read the rules, let me in** button: type a 5-letter code and answer one yes / no question → they
-  get **Wardogs**. Accounts younger than 7 days wait for staff (Let in / Kick buttons in #staff-chat or on the page). 3
+  get **WPG Community**. Accounts younger than 7 days wait for staff (Let in / Kick buttons in #staff-chat or on the page). 3
   wrong tries = removed; anyone not in after 24 hours is removed (both told they can rejoin). Members already on the
   server when it was switched on are never affected. 10 joins in a minute pauses entry for 15 minutes and pings staff.
   Discord's own verification level (verified email, account 5+ minutes old) and media scanning are switched on too.
