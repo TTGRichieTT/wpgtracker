@@ -718,7 +718,7 @@ async function discordServerTab(body) {
         <div class="row" style="margin-top:10px"><button class="btn" id="dsPreview">Preview</button><button class="btn primary" id="dsBuild">Build server</button></div>
         <div id="dsOut" class="small" style="margin-top:10px"></div></div>
       <div class="panel"><div class="panel-title">Roles</div>
-        <p class="small muted" style="margin-top:0">The app gives <b>Wardogs</b> to everyone who passes the entry check (to everyone if it's off). For members who linked their Discord with <b>/link</b> it also manages
+        <p class="small muted" style="margin-top:0">The app gives <b>WPG Community</b> to everyone who passes the entry check (to everyone if it's off), <b>Wardogs</b> to PMC guests and <b>WPG Member</b> to full members. For members who linked their Discord with <b>/link</b> it also manages
           Admin / Moderator, WPG Member, Combat Command (CO, XO, Deputy), their unit, Unit Leader, their faction and a grey role for every Steam game
           they've played ${esc(d.game_hours)}+ hours (show only). Content Creator, Partner and Military Vet are given by hand; members pick PC / Xbox / PlayStation / Switch / 18+ in #pick-roles.
           Roles on members who haven't linked are never taken away.</p>
@@ -738,7 +738,7 @@ async function discordServerTab(body) {
         <div id="dsTidyOut" class="small" style="margin-top:10px"></div></div>`,
     entry: () => `<div class="panel"><div class="panel-title">Entry check &amp; rules</div>
         <p class="small muted" style="margin-top:0">New joiners only see #welcome and #rules. The button under the rules asks them to type a short code and answer
-          one question; passing gives <b>Wardogs</b>. Accounts newer than the minimum age wait for staff (Let in / Kick in #staff-chat or below).
+          one question; passing gives <b>WPG Community</b>. Accounts newer than the minimum age wait for staff (Let in / Kick in #staff-chat or below).
           3 failed tries = removed; anyone not in after the time limit is removed (they can rejoin). Members already on the server are never affected.</p>
         <form id="dsEntry" class="form-grid">
           <label class="check" style="grid-column:1/-1"><input type="checkbox" name="enabled" ${d.entry.enabled ? 'checked' : ''}> Entry check on${d.entry.since ? ` <span class="muted small">(since ${esc(when(d.entry.since))})</span>` : ''}</label>

@@ -72,11 +72,12 @@ async function roleSpec() {
   list.push({ key: 'wpg', name: 'WPG Member', aliases: ['WPG Members'], color: '#29b6f6', hoist: true });
   for (const u of units.filter((x) => x.kind !== 'command')) list.push({ key: `unit:${u.id}`, name: titleCase(u.name), color: u.color });
   for (const [id, name, color] of FACTIONS) list.push({ key: `faction:${id}`, name, color });
-  // PMC guests (linked to the app as PMC); taken off anyone who is a WPG member.
-  list.push({ key: 'pmc', name: 'WPG Community', aliases: ['PMC'], color: '#5865f2', hoist: true });
+  // Wardogs = PMC guests (linked to the app as PMC); taken off anyone who is a full WPG member.
+  list.push({ key: 'pmc', name: 'Wardogs', aliases: ['PMC'], color: '#3ddc84', hoist: true });
   list.push(divider('special', 'Special'));
   for (const name of ['Content Creator', 'Partner', 'Military Vet']) list.push({ key: `manual:${name}`, name, color: '#9b59b6', manual: true });
-  list.push({ key: 'wardogs', name: 'Wardogs', color: '#3ddc84', hoist: true });
+  // WPG Community = everyone who's part of WPG (given by the entry check). Its key stays 'wardogs' (older saves).
+  list.push({ key: 'wardogs', name: 'WPG Community', aliases: ['Community'], color: '#5865f2', hoist: true });
   list.push(divider('games', 'Game Roles'));
   list.push({ key: 'manual:18+', name: '18+', color: '#636e72', manual: true });
   // Picked by members themselves with the buttons in #pick-roles.
@@ -140,7 +141,7 @@ function channelSpec(units, command) {
 
 const WELCOME = `**Welcome to Wasted Prodigy Gamers!** 🐺
 
-Read the rules in #rules and press the button under them to get in: that gives you the **Wardogs** role, which opens the server.
+Read the rules in #rules and press the button under them to get in: that gives you the **WPG Community** role, which opens the server.
 Already in the WPG app? Type **/link** in #app-help afterwards to connect your Discord. Your clan, unit, faction and game roles then follow your app profile automatically.`;
 
 // ---------- Build (preview or for real) ----------
@@ -176,8 +177,10 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
   const roleIds = {};
   const usedRoles = new Set();
   for (const spec of list) {
-    const found = (byId.get(map.roles[spec.key]) && !removing.has(map.roles[spec.key]) ? byId.get(map.roles[spec.key]) : null)
-      || existingRoles.find((r) => !r.managed && r.id !== guild && !removing.has(r.id) && !usedRoles.has(r.id) && sameName(r.name, [spec.name, ...(spec.aliases || [])]));
+    // By name first (so a role keeps its meaning if the layout's names change), then the one used last time.
+    const mapped = byId.get(map.roles[spec.key]);
+    const found = existingRoles.find((r) => !r.managed && r.id !== guild && !removing.has(r.id) && !usedRoles.has(r.id) && sameName(r.name, [spec.name, ...(spec.aliases || [])]))
+      || (mapped && !removing.has(mapped.id) && !usedRoles.has(mapped.id) && !list.some((o) => o !== spec && sameName(mapped.name, [o.name, ...(o.aliases || [])])) ? mapped : null);
     if (found) { roleIds[spec.key] = found.id; usedRoles.add(found.id); continue; }
     say(`Create role "${spec.name}"`);
     if (apply) {
@@ -372,7 +375,8 @@ export async function tidyScan({ countFrom = '' } = {}) {
   const used = new Set();
   const specFor = new Map();
   for (const spec of list) {
-    const r = roles.find((x) => x.id === map.roles[spec.key]) || roles.find((x) => !x.managed && x.id !== guild && !used.has(x.id) && sameName(x.name, [spec.name, ...(spec.aliases || [])]));
+    const mapped = roles.find((x) => x.id === map.roles[spec.key] && !used.has(x.id) && !list.some((o) => o !== spec && sameName(x.name, [o.name, ...(o.aliases || [])])));
+    const r = roles.find((x) => !x.managed && x.id !== guild && !used.has(x.id) && sameName(x.name, [spec.name, ...(spec.aliases || [])])) || mapped;
     if (r) { used.add(r.id); specFor.set(r.id, spec); }
   }
   const out = [];
@@ -548,7 +552,7 @@ export async function syncRoles() {
           if (u.role === 'admin' || isOwner(u)) want.add(rid('admin'));
           else if (u.role === 'mod') want.add(rid('mod'));
           if (u.membership !== 'pmc') want.add(rid('wpg'));
-          else want.add(rid('pmc')); // PMC guest: WPG Community
+          else want.add(rid('pmc')); // PMC guest: Wardogs
           const p = postings.get(u.id);
           const unit = p && unitById.get(p.unit_id);
           if (unit) {
@@ -571,7 +575,7 @@ export async function syncRoles() {
         await discordFetch(`/guilds/${guild}/members/${m.user.id}/roles/${id}`, 'PUT').catch(() => {});
         added++;
       }
-      // WPG Community is for PMC guests: anyone with WPG Member (given here or by hand) doesn't keep it.
+      // Wardogs is for PMC guests: anyone with WPG Member (given here or by hand) doesn't keep it.
       if (rid('pmc') && have.has(rid('pmc')) && (want.has(rid('wpg')) || have.has(rid('wpg'))) && !want.has(rid('pmc'))) {
         await discordFetch(`/guilds/${guild}/members/${m.user.id}/roles/${rid('pmc')}`, 'DELETE').catch(() => {});
         have.delete(rid('pmc'));
@@ -621,7 +625,7 @@ export function startDiscordServer() {
   // Changes in the app (approvals, roles, postings, profiles, /link) are passed on shortly after.
   for (const ev of ['user:changed', 'combat:changed']) bus.on(ev, () => scheduleSync());
   bus.on('discord:unlinked', (id) => stripRoles(id).catch((e) => console.warn('[discord roles]', e.message)));
-  // New joiners get Wardogs, Steam games and anything missed: every 2 minutes.
+  // New joiners get WPG Community, Steam games and anything missed: every 2 minutes.
   setInterval(() => syncRoles().catch((e) => console.warn('[discord roles]', e.message)), 2 * 60 * 1000);
   scheduleSync(60 * 1000);
 }

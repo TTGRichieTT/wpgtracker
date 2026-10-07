@@ -990,7 +990,7 @@ async function callerGroup(body) {
   const id = String(body.member?.user?.id || body.user?.id || '');
   const u = id ? await one('SELECT role, status, membership FROM users WHERE discord_id=$1', [id]) : null;
   if (u && u.status === 'active') tier = Math.max(tier, u.role === 'admin' ? 4 : u.role === 'mod' ? 3 : u.membership === 'pmc' ? 1 : 2);
-  // On the WPG server, the WPG Member role counts as a WPG member and WPG Community as a PMC guest.
+  // On the WPG server, the WPG Member role counts as a WPG member and Wardogs as a PMC guest.
   const guild = await serverId().catch(() => '');
   if (guild && body.guild_id === guild && Array.isArray(body.member?.roles)) {
     const roles = (await loadMap(guild)).roles || {};
