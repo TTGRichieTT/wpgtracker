@@ -7,7 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup, restoreStaff, staffRoles, fixStaffRoles } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -446,7 +446,7 @@ admin.put('/settings', role('admin'), async (req, res) => {
 });
 
 // ---------- Discord server: build the layout and keep members' roles in step (admins) ----------
-admin.get('/discord-server', role('admin'), async (_req, res) => {
+admin.get('/discord-server', role('admin'), async (req, res) => {
   const guild = await guildId();
   res.json({
     guild_id: guild,
@@ -456,6 +456,9 @@ admin.get('/discord-server', role('admin'), async (_req, res) => {
     portal_url: `https://discord.com/developers/applications/${discordAppId()}/bot`,
     build: buildStatus(),
     backup_at: (await lastBackup())?.at || null,
+    staff_roles: guild ? await staffRoles() : { owner: '', admin: '', mod: '' },
+    me_linked: !!req.user.discord_id,
+    me_owner: isOwner(req.user),
     sync: await lastSync(),
     gateway: gatewayStatus(),
     entry: {
@@ -633,6 +636,31 @@ admin.post('/discord-server/build', role('admin'), async (req, res) => {
   }
   await audit(req.user.id, 'discord.server.build', await guildId(), { use_posts: bool(req.body?.use_posts) });
   res.json({ ok: true });
+});
+
+// Staff roles: the server's Owner / Admin / Moderator by ID; fixes their permissions and order (and gives the
+// main admin who asks Owner + Admin on their linked Discord).
+admin.post('/discord-server/staff-roles', role('admin'), async (req, res) => {
+  const id = (k) => str(req.body?.[k], 30).trim();
+  const giveMe = bool(req.body?.give_me) && isOwner(req.user) ? String(req.user.discord_id || '') : '';
+  try {
+    const r = await fixStaffRoles({ owner: id('owner'), admin: id('admin'), mod: id('mod'), giveTo: giveMe });
+    await audit(req.user.id, 'discord.server.staff_roles', await guildId(), { owner: id('owner'), admin: id('admin'), mod: id('mod'), give_me: !!giveMe });
+    res.json(r);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+});
+
+// Old staff back: list (apply false) or give back the staff roles people had at the last Tidy up backup.
+admin.post('/discord-server/restore-staff', role('admin'), async (req, res) => {
+  try {
+    const r = await restoreStaff({ apply: bool(req.body?.apply) });
+    if (bool(req.body?.apply)) await audit(req.user.id, 'discord.server.restore_staff', await guildId(), { people: r.people.length });
+    res.json(r);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
 });
 
 admin.post('/discord-server/sync', role('admin'), async (_req, res) => {

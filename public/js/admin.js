@@ -717,15 +717,28 @@ async function discordServerTab(body) {
         <label class="check small"><input type="checkbox" id="dsPosts"> Also send the app's Discord posts here (go-live, rank-ups, staff alerts, voice list). Leave off on a test server.</label>
         <div class="row" style="margin-top:10px"><button class="btn" id="dsPreview">Preview</button><button class="btn primary" id="dsBuild">Build server</button></div>
         <div id="dsOut" class="small" style="margin-top:10px"></div></div>
+      <div class="panel"><div class="panel-title">Staff roles</div>
+        <p class="small muted" style="margin-top:0">Your server's own Owner, Administrator and Moderator roles (in Discord: Server Settings → Roles → ⋯ → Copy Role ID).
+          Owner and Administrator get full admin, Moderator the moderator permissions, and the bot puts them straight under its own role in that order
+          (and keeps them there). The staff channels open to Administrator and Moderator.</p>
+        <form id="dsStaffRoles" class="form-grid">
+          <label class="field"><span>Owner role ID</span><input type="text" name="owner" inputmode="numeric" value="${esc(d.staff_roles.owner)}" required></label>
+          <label class="field"><span>Administrator role ID</span><input type="text" name="admin" inputmode="numeric" value="${esc(d.staff_roles.admin)}" required></label>
+          <label class="field"><span>Moderator role ID</span><input type="text" name="mod" inputmode="numeric" value="${esc(d.staff_roles.mod)}" required></label>
+          ${d.me_owner ? `<label class="check" style="grid-column:1/-1"><input type="checkbox" name="give_me" ${d.me_linked ? 'checked' : 'disabled'}> Give me Owner and Administrator on Discord${d.me_linked ? '' : ' <span class="muted">(link your Discord first: type /link in Discord)</span>'}</label>` : ''}
+          <div class="row" style="grid-column:1/-1"><button class="btn primary">Save &amp; fix staff roles now</button></div>
+        </form>
+        <div id="dsStaffRolesOut" class="small" style="margin-top:8px"></div></div>
       <div class="panel"><div class="panel-title">Roles</div>
         <p class="small muted" style="margin-top:0">The app gives <b>WPG Community</b> to everyone who passes the entry check (to everyone if it's off), <b>Wardogs</b> to PMC guests and <b>WPG Member</b> to full members. For members who linked their Discord with <b>/link</b> it also manages
-          Admin / Moderator, WPG Member, Combat Command (CO, XO, Deputy), their unit, Unit Leader, their faction and a grey role for every Steam game
+          Admin / Moderator (given to app admins and mods, never taken away), WPG Member, Combat Command (CO, XO, Deputy), their unit, Unit Leader, their faction and a grey role for every Steam game
           they've played ${esc(d.game_hours)}+ hours (show only). Content Creator, Partner and Military Vet are given by hand; members pick PC / Xbox / PlayStation / Switch / 18+ in #pick-roles.
           Roles on members who haven't linked are never taken away.</p>
         <div class="small">${s.at ? `${s.ok ? '✅' : '⚠️'} Last sync ${esc(when(s.at))}: ${s.ok
           ? `${s.members} on the server, ${s.linked} linked · ${s.added} roles given, ${s.removed} taken away · ${s.game_roles} game roles`
           : `<span style="color:var(--red)">${esc(s.reason || 'failed')}</span>`}` : '<span class="muted">Not synced yet.</span>'}</div>
-        <div class="row" style="margin-top:10px"><button class="btn" id="dsSyncNow">${icon('refresh')} Sync roles now</button></div></div>
+        <div class="row" style="margin-top:10px"><button class="btn" id="dsSyncNow">${icon('refresh')} Sync roles now</button>${d.backup_at ? '<button class="btn ghost" id="dsStaffBack">Give old staff their roles back</button>' : ''}</div>
+        <div id="dsStaffOut" class="small" style="margin-top:10px"></div></div>
       <div class="panel"><div class="panel-title">Tidy up an existing server</div>
         <p class="small muted" style="margin-top:0">For a server that's been running a while. Channels keep their names, places and messages; they're matched
           to the layout by name (emoji and brackets ignored) and get the layout's permissions. Roles with 5 or more members are kept, plus staff, the
@@ -924,6 +937,37 @@ async function discordServerTab(body) {
           } catch (x) { fail(x); }
         };
       } catch (x) { botOut.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
+    };
+    body.querySelector('#dsStaffRoles').onsubmit = async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const out = body.querySelector('#dsStaffRolesOut');
+      f.querySelector('button').disabled = true;
+      out.innerHTML = '<div class="spinner"></div>';
+      try {
+        const r = await api('admin/discord-server/staff-roles', { method: 'POST', body: { owner: f.owner.value, admin: f.admin.value, mod: f.mod.value, give_me: !!f.give_me?.checked } });
+        out.innerHTML = `<ul style="margin:0;padding-left:18px">${r.log.map((l) => `<li>${esc(l)}</li>`).join('') || '<li>Nothing needed changing.</li>'}</ul>`;
+      } catch (x) { out.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
+      f.querySelector('button').disabled = false;
+    };
+    const staffOut = body.querySelector('#dsStaffOut');
+    const staffBtn = body.querySelector('#dsStaffBack');
+    if (staffBtn) staffBtn.onclick = async () => {
+      staffOut.innerHTML = '<div class="spinner"></div>';
+      try {
+        const r = await api('admin/discord-server/restore-staff', { method: 'POST', body: {} });
+        if (!r.people.length) { staffOut.innerHTML = `<span class="muted">Everyone who was staff at the backup (${esc(when(r.backup_at))}) still has their roles.</span>`; return; }
+        staffOut.innerHTML = `<b>From the backup of ${esc(when(r.backup_at))}</b>
+          <ul style="margin:6px 0 0;padding-left:18px;max-height:300px;overflow:auto">${r.people.map((p) => `<li><b>${esc(p.name)}</b> <span class="muted">had ${esc(p.had.join(', '))}</span> → gets ${esc(p.give.join(', '))}</li>`).join('')}</ul>
+          <div class="row" style="margin-top:8px"><button class="btn primary" id="dsStaffGo">Give ${r.people.length} ${r.people.length === 1 ? 'person' : 'people'} their roles back</button></div>`;
+        staffOut.querySelector('#dsStaffGo').onclick = async (e) => {
+          e.target.disabled = true;
+          try {
+            const done = await api('admin/discord-server/restore-staff', { method: 'POST', body: { apply: true } });
+            staffOut.innerHTML = `✅ Gave ${done.people.length} ${done.people.length === 1 ? 'person' : 'people'} their staff roles back.`;
+          } catch (x) { fail(x); e.target.disabled = false; }
+        };
+      } catch (x) { staffOut.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
     };
     body.querySelector('#dsSyncNow').onclick = async (e) => {
       e.target.disabled = true;
