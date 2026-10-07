@@ -206,6 +206,7 @@ async function boot() {
   }
   if (state.me.status === 'pending') return renderPending();
   renderShell();
+  renderRelinkBar();
   connectSocket();
   window.addEventListener('hashchange', route);
   route();
@@ -234,6 +235,7 @@ function applyMe(me) {
   state.trackerLinked = !!me.tracker_linked;
   state.trackerState = me.tracker_state || null;
   state.trackerPolledAt = me.tracker_polled_at || null;
+  state.trackerRelink = !!me.tracker_relink;
   state.wpgServer = me.wpg_server || null;
   state.discordLinked = !!me.discord_linked;
   state.realSteam = !!me.real_steam;
@@ -244,6 +246,7 @@ async function refreshMe() {
   try {
     applyMe(await api('me'));
     updateNav();
+    renderRelinkBar();
     emitLive('me', state.me);
   } catch (e) {
     if (e.status === 401 || e.status === 403) location.reload();
@@ -363,6 +366,7 @@ function renderShell() {
           <button class="btn ghost small" id="menuBtn" aria-label="Menu">${icon('menu')}</button>
           <img src="/img/icon-192.png" alt=""><div class="title" id="topTitle">${esc(s.clan_name || 'WPG')}</div>
         </header>
+        <div id="relinkBar"></div>
         <main class="main" id="main"></main>
         <div class="main footer-wrap">${footerArt()}</div>
       </div>
@@ -649,15 +653,38 @@ async function syncMine(e) {
 // Fetch stats only from the owner's ID-based API, and credit the source wherever those stats appear.
 const TRACKER_URL = 'https://wardogs.tools';
 export const trackerCredit = () => `<p class="muted small" style="margin:10px 0 0">Data provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>`;
-const needsTracker = () => state.realSteam && !state.trackerLinked;
-const staleLink = () => state.trackerLinked && state.trackerState && state.trackerState !== 'active';
+// Where members (re)link their Wardogs account on wardogs.tools.
+const RELINK_URL = 'https://wardogs.tools/account';
+const relinkBtn = (cls = 'btn') => `<a class="${cls}" href="${RELINK_URL}" target="_blank" rel="noopener">${icon('refresh')} Relink on wardogs.tools</a>`;
+const needsTracker = () => state.realSteam && !state.trackerLinked && !state.trackerRelink;
+// wardogs.tools has stopped updating them (its status isn't active, or their linked account can't be found any more).
+const staleLink = () => state.trackerRelink || (state.trackerLinked && state.trackerState && state.trackerState !== 'active');
 function staleCardHtml() {
   const since = state.trackerPolledAt ? ` on ${fmtDate(state.trackerPolledAt)}` : '';
+  const why = state.trackerLinked
+    ? `wardogs.tools says your account is <b>${esc(state.trackerState)}</b>, so your numbers here are getting old.`
+    : "wardogs.tools can't find your Wardogs account any more, so your stats here have stopped.";
   return `<div class="panel glow tracker-card" style="border-color:#f5a524">
-    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Your Wardogs stats stopped updating${since ? ` (last read${since})` : ''}</div>
-    <p style="margin:0 0 10px">wardogs.tools says your account is <b>${esc(state.trackerState)}</b>, so your numbers here are getting old. Open wardogs.tools, sign in and link your Wardogs account again, then press <b>Check now</b>.</p>
-    <div class="row"><a class="btn" href="${TRACKER_URL}" target="_blank" rel="noopener">${icon('target')} Open wardogs.tools</a><button class="btn primary" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
+    <div class="panel-title" style="margin-bottom:8px;color:#f5a524">${icon('refresh')} Relink your Wardogs account${since && state.trackerLinked ? ` (last read${since})` : ''}</div>
+    <p style="margin:0 0 10px">${why} Open <b>wardogs.tools/account</b>, sign in and link your Wardogs account again, then press <b>Check now</b>.</p>
+    <p class="muted small" data-tracker-status style="margin:0 0 10px"></p>
+    <div class="row">${relinkBtn('btn primary')}<button class="btn" type="button" data-tracker-check>${icon('refresh')} Check now</button></div>
   </div>`;
+}
+// A slim bar on every page while they need to relink (can be hidden until the next visit).
+function renderRelinkBar() {
+  const el = document.getElementById('relinkBar');
+  if (!el) return;
+  let hidden = false;
+  try { hidden = sessionStorage.getItem('wpg.relinkHidden') === '1'; } catch { /* storage blocked */ }
+  el.innerHTML = state.trackerRelink && !hidden
+    ? `<div class="relink-bar tracker-card"><span>${icon('refresh', 'width="16" height="16"')} <b>wardogs.tools has stopped updating your Wardogs stats.</b> Relink your account to keep them up to date.</span>
+        <span class="row" style="gap:8px">${relinkBtn('btn small primary')}<button class="btn small" type="button" data-tracker-check>Check now</button><button class="btn small ghost" type="button" data-relink-hide aria-label="Hide">✕</button></span></div>`
+    : '';
+  el.querySelector('[data-relink-hide]')?.addEventListener('click', () => {
+    try { sessionStorage.setItem('wpg.relinkHidden', '1'); } catch { /* storage blocked */ }
+    el.innerHTML = '';
+  });
 }
 
 function trackerCardHtml() {
@@ -687,6 +714,13 @@ document.addEventListener('click', async (e) => {
   if (status) status.textContent = 'Looking…';
   try {
     const r = await api('me/tracker-check', { method: 'POST', body: {} });
+    // Found, but wardogs.tools still isn't updating them: the relink hasn't gone through yet.
+    if (r.linked && r.state && r.state !== 'active') {
+      const msg = `wardogs.tools still says your account is ${r.state}. Relink it at wardogs.tools/account, then check again.`;
+      if (status) status.textContent = msg;
+      else toast('Not updating yet', msg);
+      return;
+    }
     if (r.linked) {
       toast('Wardogs stats found!', 'Your global stats are on your career profile now.', { link: `#/u/${state.me.id}` });
       await refreshMe();
@@ -876,8 +910,10 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('target')} Wardogs <span class="sub">(global stats)</span></div>
           ${off && wr?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${wr.state && wr.state !== 'active' ? '#f5a524' : 'var(--muted)'}">Last polled ${esc(fmtDate(wr.polled_at))} ${esc(new Date(wr.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${wr.state ? ` · ${esc(wr.state)}` : ''}</p>` : ''}
+          ${mine && staleLink() ? `<p class="small" style="margin:0 0 10px;color:#f5a524">${icon('refresh', 'width="14" height="14" style="vertical-align:-2px"')} wardogs.tools has stopped updating your stats: relink your account, then press Check now.</p>` : ''}
           ${officialHtml}
           ${off || wr?.position || wr?.level ? trackerCredit() : ''}
+          ${mine && state.realSteam ? `<div class="row tracker-card" style="margin-top:10px;gap:8px">${relinkBtn(staleLink() ? 'btn small primary' : 'btn small')}<button class="btn small" type="button" data-tracker-check>${icon('refresh')} Check now</button><span class="muted small" data-tracker-status></span></div>` : ''}
         </div>
         <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>

@@ -204,7 +204,7 @@ async function freshWardogs(user) {
   }
   if (refreshError) return `${CREDIT} · Could not refresh stats: ${refreshError}.`;
   if (ws?.ranks?.source !== 'wardogs.tools' || !ws.official) return `${CREDIT} · **${user.persona_name}** isn't on wardogs.tools yet (they link their Wardogs account there).`;
-  if (ws.ranks?.state && ws.ranks.state !== 'active') return `${CREDIT} · wardogs.tools has stopped updating **${user.persona_name}** (${ws.ranks.state}): they link their account there again.`;
+  if (ws.ranks?.state && ws.ranks.state !== 'active') return `${CREDIT} · wardogs.tools has stopped updating **${user.persona_name}** (${ws.ranks.state}): relink at <https://wardogs.tools/account>.`;
   return CREDIT;
 }
 
@@ -762,6 +762,38 @@ bus.on('recruit', async (a) => {
     }
   } catch (e) {
     problem('Recruitment message', e.message);
+  }
+});
+
+// wardogs.tools stopped updating a member (ranking.js): ask them to relink, by Discord direct message. If their DMs
+// are closed, WPG members are asked in the automatic posts channel instead (with a mention).
+bus.on('tracker:relink', async (a) => {
+  try {
+    const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
+    if (!u?.discord_id || !TOKEN()) return;
+    const { RELINK_URL } = await import('./ranking.js');
+    const why = a.state && !['missing', 'unsynced'].includes(a.state) ? ` (wardogs.tools says your account is **${a.state}**)` : '';
+    const embed = {
+      color: 0xf5a524,
+      title: `🔗 ${a.reminder ? 'Reminder: relink' : 'Relink'} your Wardogs account on wardogs.tools`,
+      description: `wardogs.tools has stopped updating your Wardogs stats${why}, so your level, cash and class levels in WPG Barracks are out of date.\n\n`
+        + `**1.** Open [wardogs.tools/account](${RELINK_URL}), sign in and link your Wardogs account again.\n`
+        + `**2.** Then press **Check now** on your profile in WPG Barracks.`,
+      footer: { text: 'Data provided by wardogs.tools · WPG Barracks' },
+    };
+    const buttons = [{ type: 1, components: [
+      { type: 2, style: 5, label: 'Relink on wardogs.tools', url: RELINK_URL },
+      { type: 2, style: 5, label: 'Open my profile', url: `${SITE()}/#/u/${u.id}` },
+    ] }];
+    try {
+      const dm = await discordFetch('/users/@me/channels', 'POST', { recipient_id: u.discord_id });
+      await discordFetch(`/channels/${dm.id}/messages`, 'POST', { embeds: [embed], components: buttons });
+    } catch (e) {
+      if (!isWpgMember(u)) throw e;
+      await postToChannel({ content: `<@${u.discord_id}> please relink your Wardogs account on wardogs.tools.`, embeds: [embed], components: buttons, allowed_mentions: { users: [u.discord_id] } });
+    }
+  } catch (e) {
+    problem('Relink message', e.message);
   }
 });
 

@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
   accent_color: '#29b6f6',
   logo_url: '/img/brand/wpg-logo.webp',
   tracker_enabled: 'true',
+  tracker_relink_prompts: 'true', // ask members to relink when wardogs.tools stops updating them (app + Discord)
   tracker_server: '',
   xp_per_server_kill: '2',
   xp_event_message: '',

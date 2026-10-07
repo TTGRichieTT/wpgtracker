@@ -600,6 +600,7 @@ const SETTINGS = [
   ]],
   ['Stats syncing', [
     ['tracker_enabled', 'Get global Wardogs stats from the keyed wardogs.tools player API (level, rank, cash, gold, worth, classes and rates)', 'check'],
+    ['tracker_relink_prompts', 'When wardogs.tools stops updating a member, ask them to relink (in the app and by Discord message, reminded every 3 days, 3 times at most)', 'check'],
     ['sync_minutes', 'Re-sync each member every … minutes (min 15)', 'number'],
   ]],
   ['Discord bot (automatic posts)', [

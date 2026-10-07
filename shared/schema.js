@@ -177,9 +177,12 @@ export const wardogsStats = pgTable('wardogs_stats', {
   official_synced: timestamp({ withTimezone: true }),
   server: jsonb(),
   server_synced: timestamp({ withTimezone: true }),
-  // API rank metadata: { source, socialId, displayName, position, total, bracket, change, polled_at, state }
+  // API rank metadata: { source, socialId, displayName, position, total, bracket, change, polled_at, state, lost? }
   ranks: jsonb(),
   ranks_synced: timestamp({ withTimezone: true }),
+  // wardogs.tools stopped updating them: how many times they've been asked to relink, and when last (ranking.js).
+  relink_prompts: integer().notNull().default(0),
+  relink_prompted_at: timestamp({ withTimezone: true }),
 });
 
 export const wardogsApiCache = pgTable('wardogs_api_cache', {

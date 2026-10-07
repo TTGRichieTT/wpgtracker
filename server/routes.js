@@ -39,7 +39,8 @@ api.get('/me', signedIn, async (req, res) => {
   const tracker = await one(
     `SELECT (official IS NOT NULL AND ranks->>'source'='wardogs.tools') AS linked,
             CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'state' END AS state,
-            CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'polled_at' END AS polled_at
+            CASE WHEN ranks->>'source'='wardogs.tools' THEN ranks->>'polled_at' END AS polled_at,
+            (ranks->>'source'='wardogs.tools' AND ranks->>'lost' = 'true') AS lost
        FROM wardogs_stats WHERE user_id=$1`,
     [req.user.id],
   );
@@ -58,6 +59,8 @@ api.get('/me', signedIn, async (req, res) => {
     // API-provided status (for example, active or paused); missing/unsynced are lookup outcomes.
     tracker_state: tracker?.state || null,
     tracker_polled_at: tracker?.polled_at || null,
+    // wardogs.tools has stopped updating them (status not active, or a linked account no longer found): relink.
+    tracker_relink: !!tracker && ((tracker.linked && !!tracker.state && tracker.state !== 'active') || !!tracker.lost),
     wpg_server: { xp: prog?.xp || 0, level: prog?.rank_level || 1, name: prog?.rank_name || 'RECRUIT I', ...(await rankProgress(prog?.xp)) },
     real_steam: /^\d{17}$/.test(req.user.steam_id),
     discord_linked: !!req.user.discord_id,
