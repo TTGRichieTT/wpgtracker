@@ -989,58 +989,78 @@ async function roundPic(g, img, x, y, s) {
   g.beginPath(); g.arc(x + s / 2, y + s / 2, s / 2, 0, Math.PI * 2); g.stroke();
 }
 export function renderMoneyCard(d) {
-  const now = (d.now || []).slice(0, 10);
-  const tonight = (d.tonight || []).slice(0, 10);
-  const ROW = 62;
-  const rows = Math.max(3, now.length, tonight.length);
-  const bodyH = 96 + rows * ROW + 20;
+  const now = (d.now || []).slice(0, 100);
+  const tonight = (d.tonight || []).slice(0, 100);
+  // Up to 12 each: the two lists side by side. More: one full-width list above the other, in 2 or 3 columns.
+  const wide = Math.max(now.length, tonight.length) > 12;
+  const PLACE = ['#e9c46a', '#cfd8e3', '#d08a4f'];
+  const cols = (n) => (n > 40 ? 3 : n > 12 ? 2 : 1);
+  const ROW = wide ? 44 : 62;
+  const listH = (n) => 78 + Math.max(1, Math.ceil(Math.max(1, n) / (wide ? cols(n) : 1))) * ROW + 16;
+  const sideH = Math.max(listH(now.length), listH(tonight.length), 78 + 3 * ROW + 16);
+  const bodyH = wide ? listH(now.length) + 16 + listH(tonight.length) : sideH;
   return frame('LIVE MATCH MONEY', bodyH + 84, async (g, top) => {
     const y = top + 6;
     label(g, d.live ? `UPDATES BY ITSELF · LAST UPDATED ${upper(d.updated || '')}` : `AS OF ${upper(d.updated || '')}`, W / 2, y + 16, { align: 'center', size: 20, color: CYAN });
     const py = y + 40;
-    // In a match now.
-    panel(g, 28, py, 730, bodyH);
-    trophyIcon(g, 66, py + 38);
-    title(g, 100, py + 38, 'IN A MATCH', 'NOW');
-    label(g, `${now.length} PLAYING`, 730, py + 40, { align: 'right', color: MUTED });
-    const nowImgs = await Promise.all(now.map((r) => icon(r.avatar)));
-    if (!now.length) label(g, 'NOBODY IN A MATCH RIGHT NOW', 393, py + 140, { align: 'center', color: MUTED });
-    now.forEach((r, i) => {
-      const ry = py + 78 + i * ROW;
-      g.fillStyle = BOX_FILL;
-      roundRect(g, 50, ry, 686, ROW - 10, 8);
-      g.fill();
-      roundPic(g, nowImgs[i], 60, ry + 6, 40);
-      bigValue(g, r.name, 114, ry + 26, 300, { size: 24, weight: 700 });
-      const isMoney = r.money !== null && r.money !== undefined && /\$/.test(r.text || '');
-      bigValue(g, isMoney ? upper(r.text) : upper(r.text || 'In game'), 722, ry + 26, 300, { size: isMoney ? 24 : 18, align: 'right', font: LABEL_FONT, weight: 700, color: isMoney ? moneyColor(r.money) : MUTED });
-    });
-    // Last 24 hours.
-    panel(g, 778, py, 730, bodyH);
-    medalIcon(g, 816, py + 38);
-    title(g, 850, py + 38, 'LAST', '24 HOURS');
-    label(g, 'TOTAL PROFIT / LOSS', 1480, py + 40, { align: 'right', color: MUTED });
-    const tImgs = await Promise.all(tonight.map((r) => icon(r.avatar)));
-    if (!tonight.length) label(g, 'NO MATCHES IN THE LAST 24 HOURS', 1143, py + 140, { align: 'center', color: MUTED });
-    const PLACE = ['#e9c46a', '#cfd8e3', '#d08a4f'];
-    tonight.forEach((r, i) => {
-      const ry = py + 78 + i * ROW;
-      g.fillStyle = BOX_FILL;
-      roundRect(g, 800, ry, 686, ROW - 10, 8);
-      g.fill();
-      label(g, `#${i + 1}`, 836, ry + 26, { align: 'center', size: 24, color: PLACE[i] || MUTED });
-      roundPic(g, tImgs[i], 866, ry + 6, 40);
-      bigValue(g, r.name, 920, ry + 18, 300, { size: 22, weight: 700 });
-      g.font = `600 14px ${VALUE_FONT}`;
-      g.fillStyle = MUTED;
-      g.textAlign = 'left';
-      g.textBaseline = 'middle';
-      g.fillText(`${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`, 920, ry + 38);
-      bigValue(g, signed(r.total), 1472, ry + 26, 220, { size: 28, align: 'right', color: moneyColor(r.total) });
-    });
+    // One list in a panel: x, y, width; rows laid out in columns.
+    const list = async (x, ty, w, h, rows, { icon: drawIcon, main, accent, right, empty, ranked }) => {
+      panel(g, x, ty, w, h);
+      drawIcon(g, x + 38, ty + 38);
+      title(g, x + 72, ty + 38, main, accent);
+      label(g, right, x + w - 28, ty + 40, { align: 'right', color: MUTED });
+      if (!rows.length) { label(g, empty, x + w / 2, ty + 112, { align: 'center', color: MUTED }); return; }
+      const c = wide ? cols(rows.length) : 1;
+      const perCol = Math.ceil(rows.length / c);
+      const cw = (w - 44 - (c - 1) * 12) / c;
+      const pic = wide ? 30 : 40;
+      const imgs = await Promise.all(rows.map((r) => icon(r.avatar)));
+      rows.forEach((r, i) => {
+        const cx = x + 22 + Math.floor(i / perCol) * (cw + 12);
+        const ry = ty + 78 + (i % perCol) * ROW;
+        g.fillStyle = BOX_FILL;
+        roundRect(g, cx, ry, cw, ROW - 8, 8);
+        g.fill();
+        let nx = cx + 10;
+        if (ranked) {
+          label(g, `#${i + 1}`, nx + 18, ry + (ROW - 8) / 2, { align: 'center', size: wide ? 18 : 24, color: PLACE[i] || MUTED });
+          nx += 40;
+        }
+        roundPic(g, imgs[i], nx, ry + (ROW - 8 - pic) / 2, pic);
+        nx += pic + 12;
+        const valueW = Math.min(wide ? 160 : 300, cw * 0.42);
+        const mid = ry + (ROW - 8) / 2;
+        if (ranked) {
+          bigValue(g, r.name, nx, wide ? mid : mid - 8, cw - (nx - cx) - valueW - 16, { size: wide ? 17 : 22, weight: 700 });
+          if (!wide) {
+            g.font = `600 14px ${VALUE_FONT}`;
+            g.fillStyle = MUTED;
+            g.textAlign = 'left';
+            g.textBaseline = 'middle';
+            g.fillText(`${r.matches} match${r.matches === 1 ? '' : 'es'}${r.playing ? ' + 1 in progress' : ''}`, nx, mid + 12);
+          }
+          const tail = wide ? ` (${r.matches}${r.playing ? '+1' : ''})` : '';
+          bigValue(g, `${signed(r.total)}${tail}`, cx + cw - 12, mid, valueW, { size: wide ? 18 : 28, align: 'right', color: moneyColor(r.total) });
+        } else {
+          bigValue(g, r.name, nx, mid, cw - (nx - cx) - valueW - 16, { size: wide ? 17 : 24, weight: 700 });
+          const isMoney = r.money !== null && r.money !== undefined && /\$/.test(r.text || '');
+          bigValue(g, upper(r.text || 'In game'), cx + cw - 12, mid, valueW, { size: wide ? 15 : isMoney ? 24 : 18, align: 'right', font: LABEL_FONT, weight: 700, color: isMoney ? moneyColor(r.money) : MUTED });
+        }
+      });
+    };
+    const nowOpts = { icon: trophyIcon, main: 'IN A MATCH', accent: 'NOW', right: `${now.length} PLAYING`, empty: 'NOBODY IN A MATCH RIGHT NOW' };
+    const dayOpts = { icon: medalIcon, main: 'LAST', accent: '24 HOURS', right: `${tonight.length} PLAYER${tonight.length === 1 ? '' : 'S'} · TOTAL PROFIT / LOSS`, empty: 'NO MATCHES IN THE LAST 24 HOURS', ranked: true };
+    if (wide) {
+      await list(28, py, 1480, listH(now.length), now, nowOpts);
+      await list(28, py + listH(now.length) + 16, 1480, listH(tonight.length), tonight, dayOpts);
+    } else {
+      await list(28, py, 730, sideH, now, nowOpts);
+      await list(778, py, 730, sideH, tonight, dayOpts);
+    }
     g.font = `600 15px ${VALUE_FONT}`;
     g.fillStyle = MUTED;
     g.textAlign = 'center';
+    g.textBaseline = 'middle';
     g.fillText('Live from Steam · WPG members who switched on Live match money in WPG Barracks', W / 2, py + bodyH + 22);
   });
 }

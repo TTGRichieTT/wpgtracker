@@ -872,10 +872,10 @@ async function moneyData() {
   const [now, tonight] = await Promise.all([
     q(`SELECT u.persona_name AS name, u.custom_avatar, u.avatar, lp.text, lp.money FROM live_presence lp JOIN users u ON u.id = lp.user_id
         WHERE lp.opted_in AND lp.in_game AND lp.text <> '' AND u.status='active' AND u.membership <> 'pmc'
-          AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.money DESC NULLS LAST LIMIT 15`),
+          AND lp.seen_at > now() - interval '15 minutes' ORDER BY lp.money DESC NULLS LAST LIMIT 100`),
     q(`SELECT u.persona_name AS name, MAX(u.custom_avatar) AS custom_avatar, MAX(u.avatar) AS avatar, SUM(t.money)::int AS total, COUNT(*) FILTER (WHERE t.done)::int AS matches, BOOL_OR(NOT t.done) AS playing
          FROM (${TONIGHT_ROWS}) t JOIN users u ON u.id = t.user_id
-        WHERE u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 10`),
+        WHERE u.status='active' AND u.membership <> 'pmc' GROUP BY u.id ORDER BY total DESC LIMIT 100`),
   ]);
   return { now, tonight };
 }
