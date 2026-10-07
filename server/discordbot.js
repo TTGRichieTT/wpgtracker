@@ -8,6 +8,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { q, one, setting, flag } from './db.js';
 import { bus } from './bus.js';
+import { MOD_COMMANDS, modCommandDefinitions, handleComponent } from './discordmod.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
 import { shownFrames, frameLookFor, TRACKER_METRICS } from './frames.js';
@@ -884,6 +885,8 @@ const COMMANDS = {
   roster: { run: cmdRoster, description: 'The WPG Combat Command board (WPG members only)', private: true },
   unit: { run: cmdUnit, description: 'One WPG unit and who is in it (WPG members only)', private: true },
 };
+// Every command: the member commands above plus the moderator ones (discordmod.js), looked up when used.
+const allCommands = () => ({ ...COMMANDS, ...MOD_COMMANDS });
 const WHO = [
   { type: 6, name: 'member', description: 'Which member (leave empty for yourself)', required: false },
   { type: 3, name: 'name', description: 'Or search by name', required: false },
@@ -914,7 +917,7 @@ function commandDefinitions() {
       ];
     }
     return def;
-  });
+  }).concat(modCommandDefinitions());
 }
 
 // Remembers setup milestones (shown as ticks in Admin → Settings). Hidden settings start with "_".
@@ -1013,7 +1016,7 @@ export async function botStatus() {
     endpoint_problem: lastEndpointProblem,
     commands_ready: commands?.value || null,
     commands_on_discord: null,
-    commands_wanted: Object.keys(COMMANDS),
+    commands_wanted: Object.keys(allCommands()),
     bot_name: null,
     in_server: null,
     token_problem: null,
@@ -1053,21 +1056,44 @@ discordBot.post('/discord/interactions', express.raw({ type: '*/*', limit: '200k
     remember('_discord_endpoint_ok', new Date().toISOString()).catch(() => {});
     return res.json({ type: 1 });
   }
+  const appId = /^\d{15,22}$/.test(String(body.application_id || '')) ? body.application_id : APP_ID();
+  // Buttons (3) and pop-up forms (5): the entry check, role buttons, tickets, staff decisions.
+  if (body.type === 3 || body.type === 5) {
+    let out;
+    try {
+      out = await handleComponent(body);
+    } catch (e) {
+      problem(`Button ${body.data?.custom_id || ''}`, e.message);
+      return res.json({ type: 4, data: { content: 'Something went wrong. Try again in a minute.', flags: 64 } });
+    }
+    res.json(out.now);
+    if (out.later) {
+      let reply;
+      try {
+        reply = await out.later();
+      } catch (e) {
+        problem(`Button ${body.data?.custom_id || ''}`, e.message);
+        reply = { content: 'Something went wrong. Try again in a minute.' };
+      }
+      if (reply) await sendReply(`${API}/webhooks/${appId}/${body.token}/messages/@original`, reply);
+    }
+    return;
+  }
   if (body.type !== 2) return res.status(400).json({ error: 'Unsupported' });
 
   const name = body.data?.name;
-  const cmd = COMMANDS[name];
+  const cmd = allCommands()[name];
   const who = body.member?.user || body.user || {};
   // Answer "thinking…" at once (Discord only waits 3 s), then fill in the real reply.
   res.json({ type: 5, data: cmd?.private ? { flags: 64 } : {} });
   let reply;
   try {
-    reply = cmd ? await cmd.run(body.data || {}, String(who.id || ''), who.global_name || who.username) : { content: 'Unknown command.' };
+    reply = cmd ? await cmd.run(body.data || {}, String(who.id || ''), who.global_name || who.username, body) : { content: 'Unknown command.' };
   } catch (e) {
     problem(`/${name}`, e.message);
-    reply = { content: 'Something went wrong getting that. Try again in a minute.' };
+    // Moderator commands say what Discord refused (e.g. the bot's role is below theirs).
+    reply = { content: MOD_COMMANDS[name] ? `Couldn't do that: ${e.message.replace(/^Discord \S+ \S+ returned /, '')}` : 'Something went wrong getting that. Try again in a minute.' };
   }
-  const appId = /^\d{15,22}$/.test(String(body.application_id || '')) ? body.application_id : APP_ID();
   const sent = await sendReply(`${API}/webhooks/${appId}/${body.token}/messages/@original`, reply);
   noteCommand(`/${name}`, !sent ? 'reply failed' : reply.files?.length ? 'picture' : 'text');
 });
@@ -1109,7 +1135,7 @@ async function drain() {
   posting = false;
 }
 // Sends one message; pictures (files) go as attachments.
-async function sendToChannel(channel, { files, ...rest }) {
+export async function sendToChannel(channel, { files, ...rest }) {
   const payload = { allowed_mentions: { parse: [] }, ...rest };
   if (!files?.length) return discordFetch(`/channels/${channel}/messages`, 'POST', payload);
   const form = new FormData();

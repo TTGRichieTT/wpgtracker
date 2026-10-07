@@ -334,6 +334,7 @@ const NAV = [
   { href: () => `#/u/${state.me.id}`, key: 'me', label: 'My career', icon: 'user' },
   { href: '#/profile/edit', key: 'edit', label: 'Edit profile', icon: 'edit' },
   { href: '#/admin', key: 'admin', label: 'Admin', icon: 'shield', staff: true },
+  { href: '#/discord', key: 'discord', label: 'Discord control', icon: 'discord', adminOnly: true },
 ];
 const BOTTOM = ['home', 'chat', 'messages', 'friends'];
 
@@ -392,7 +393,7 @@ function renderShell() {
 function updateNav() {
   const nav = document.getElementById('nav');
   if (!nav) return;
-  nav.innerHTML = NAV.filter((n) => (!n.staff || isStaff()) && (!n.wpg || !isPmc(state.me) || isStaff())).map((n) => (n.sep ? '<div class="sep"></div>' : navLink(n))).join('');
+  nav.innerHTML = NAV.filter((n) => (!n.staff || isStaff()) && (!n.adminOnly || state.me?.role === 'admin') && (!n.wpg || !isPmc(state.me) || isStaff())).map((n) => (n.sep ? '<div class="sep"></div>' : navLink(n))).join('');
   document.getElementById('bottomnav').innerHTML =
     NAV.filter((n) => BOTTOM.includes(n.key)).map(navLink).join('') +
     `<a href="#" id="moreBtn">${icon('menu')}<span>More</span></a>`;
@@ -529,6 +530,7 @@ async function route() {
     u: viewProfile,
     profile: viewEditProfile,
     admin: async (m, r) => (await import('./admin.js')).viewAdmin(m, r),
+    discord: async (m) => (await import('./admin.js')).viewDiscordControl(m),
     login: () => { location.hash = '#/'; },
   };
   const view = views[first || ''] || viewNotFound;

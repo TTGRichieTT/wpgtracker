@@ -846,3 +846,15 @@ input[type=datetime-local] { color-scheme: dark; }
 .sit-key { max-height: 75vh; overflow-y: auto; }
 /* Several marks in one spot: the count on the real spot, the marks fanned out round it */
 .sit-stack{display:flex;align-items:center;justify-content:center;border-radius:50%;background:#0b1420;border:2px solid #fff;color:#fff;font-size:10px;line-height:1;box-shadow:0 0 0 2px rgba(0,0,0,.45)}
+/* Discord control page: each part is a drop-down section */
+.dc-sec{padding:0}
+.dc-sec > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px;font:700 17px var(--head);letter-spacing:.04em;text-transform:uppercase}
+.dc-sec > summary::-webkit-details-marker{display:none}
+.dc-sec > summary::after{content:'';margin-left:auto;width:9px;height:9px;border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:rotate(45deg);transition:transform .15s}
+.dc-sec[open] > summary::after{transform:rotate(-135deg)}
+.dc-sec > summary .muted{font:400 13px var(--body, inherit);text-transform:none;letter-spacing:0}
+.dc-sec[open] > summary{border-bottom:1px solid var(--line)}
+.dc-in{padding:4px 18px 16px}
+.dc-in .panel,.dc-in #dsPostsBox .panel{background:none;border:0;box-shadow:none;padding:12px 0 4px;margin:0}
+.dc-in .panel::before,.dc-in .panel::after{display:none}
+.dc-in .stack{gap:6px}

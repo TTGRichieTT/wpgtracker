@@ -7,7 +7,9 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap } from './discordserver.js';
+import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
+import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
 
 export const admin = express.Router();
@@ -454,20 +456,91 @@ admin.get('/discord-server', role('admin'), async (_req, res) => {
     portal_url: `https://discord.com/developers/applications/${discordAppId()}/bot`,
     build: buildStatus(),
     sync: await lastSync(),
+    gateway: gatewayStatus(),
+    entry: {
+      enabled: (await setting('discord_entry_enabled')) === 'true',
+      min_age_days: Number(await setting('discord_entry_min_age_days')) || 7,
+      kick_hours: Number(await setting('discord_entry_kick_hours')) || 24,
+      rules: (await setting('discord_rules')) || '',
+      quiz: (await setting('discord_entry_quiz')) || '',
+      since: (await setting('_discord_entry_since')) || null,
+    },
+    mod: {
+      timeout_at: Number(await setting('discord_warn_timeout_at')) || 3,
+      kick_at: Number(await setting('discord_warn_kick_at')) || 5,
+      blocked_words: (await setting('discord_blocked_words')) || '',
+    },
+    switches: Object.fromEntries(await Promise.all(SWITCHES.map(async (k) => [k, (await setting(k)) !== 'false']))),
+    held: guild ? await q("SELECT discord_id, user_name, updated_at FROM discord_entries WHERE guild_id=$1 AND status='held' ORDER BY updated_at", [guild]) : [],
+    cases: guild ? await q('SELECT * FROM discord_cases WHERE guild_id=$1 ORDER BY id DESC LIMIT 40', [guild]) : [],
+    tickets: guild ? (await one("SELECT COUNT(*)::int AS n FROM discord_tickets WHERE guild_id=$1 AND status='open'", [guild])).n : 0,
   });
 });
 
 admin.put('/discord-server', role('admin'), async (req, res) => {
   const b = req.body || {};
-  const guild = str(b.guild_id, 30).trim();
-  if (guild && !/^\d{15,22}$/.test(guild)) throw new HttpError(400, 'That isn\'t a Discord server ID (it\'s a long number).');
-  const hours = Math.min(10000, Math.max(10, int(b.game_hours) || 100));
-  const values = { discord_build_server_id: guild, discord_sync_roles: bool(b.sync_roles) ? 'true' : 'false', discord_game_role_hours: String(hours) };
+  // Each form on the page sends only its own part; anything not sent is left as it is.
+  const values = {};
+  if ('guild_id' in b) {
+    const g = str(b.guild_id, 30).trim();
+    if (g && !/^\d{15,22}$/.test(g)) throw new HttpError(400, 'That isn\'t a Discord server ID (it\'s a long number).');
+    values.discord_build_server_id = g;
+  }
+  if ('sync_roles' in b) values.discord_sync_roles = bool(b.sync_roles) ? 'true' : 'false';
+  if ('game_hours' in b) values.discord_game_role_hours = String(Math.min(10000, Math.max(10, int(b.game_hours) || 100)));
+  // Entry check and moderation settings (sent by the page's other forms; left alone when not sent).
+  const e = b.entry;
+  if (e && typeof e === 'object') {
+    values.discord_entry_enabled = bool(e.enabled) ? 'true' : 'false';
+    values.discord_entry_min_age_days = String(Math.min(365, Math.max(0, int(e.min_age_days))));
+    values.discord_entry_kick_hours = String(Math.min(720, Math.max(1, int(e.kick_hours) || 24)));
+    values.discord_rules = str(e.rules, 3900);
+    // One "question | answer, answer" per line; questions are cut to 45 characters (Discord's limit).
+    values.discord_entry_quiz = String(e.quiz || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l.includes('|'))
+      .map((l) => { const [qq, ...a] = l.split('|'); return `${qq.trim().slice(0, 45)} | ${a.join('|').trim()}`; }).slice(0, 30).join('\n');
+  }
+  const m = b.mod;
+  if (b.switches && typeof b.switches === 'object') {
+    for (const k of SWITCHES) if (k in b.switches) values[k] = bool(b.switches[k]) ? 'true' : 'false';
+  }
+  if (m && typeof m === 'object') {
+    values.discord_warn_timeout_at = String(Math.min(50, Math.max(1, int(m.timeout_at) || 3)));
+    values.discord_warn_kick_at = String(Math.min(50, Math.max(1, int(m.kick_at) || 5)));
+    values.discord_blocked_words = str(m.blocked_words, 8000);
+  }
   for (const [k, v] of Object.entries(values)) {
     await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [k, v]);
   }
   clearSettingsCache();
-  await audit(req.user.id, 'discord.server.settings', guild, values);
+  // Entry check switched on for a server whose rules post is up: newcomers from now on must pass it.
+  const guild = await guildId();
+  if (values.discord_entry_enabled === 'true' && !(await setting('_discord_entry_since')) && (await loadMap(guild)).messages?.rules) {
+    await q("INSERT INTO settings (key, value) VALUES ('_discord_entry_since', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+    clearSettingsCache();
+  }
+  await audit(req.user.id, 'discord.server.settings', guild, { ...values, discord_rules: undefined });
+  res.json({ ok: true });
+});
+
+admin.post('/discord-server/posts', role('admin'), async (_req, res) => {
+  try {
+    res.json({ ok: true, log: await refreshPosts() });
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+});
+
+admin.post('/discord-server/reconnect', role('admin'), async (_req, res) => {
+  reconnectGateway();
+  res.json({ ok: true });
+});
+
+admin.post('/discord-server/held/:id', role('mod'), async (req, res) => {
+  try {
+    await decideHeld(String(req.params.id), req.body?.action === 'letin', req.user.persona_name);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
   res.json({ ok: true });
 });
 
