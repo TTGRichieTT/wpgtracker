@@ -602,7 +602,7 @@ async function cmdServerBoard(data) {
   return d ? serverBoardPost(d) : { content: 'No WPG game server is set up yet.' };
 }
 // The board's numbers (also used by the live board in #leaderboards).
-async function serverBoardData(sortKey = 'wpgxp') {
+async function serverBoardData(sortKey = 'wpgxp', limit = 14) {
   const server = await one("SELECT * FROM game_servers WHERE enabled = true AND rcon_url <> '' ORDER BY sort_order, id LIMIT 1");
   if (!server) return null;
   const [sortLabel, order] = SERVER_SORTS[sortKey];
@@ -614,8 +614,8 @@ async function serverBoardData(sortKey = 'wpgxp') {
      ), ranked AS (
        SELECT board.*, ROW_NUMBER() OVER (ORDER BY ${MAIN_ORDER})::int AS server_rank FROM board
      )
-     SELECT * FROM ranked ORDER BY ${order} LIMIT 14`,
-    [server.id],
+     SELECT * FROM ranked ORDER BY ${order} LIMIT $2`,
+    [server.id, limit],
   );
   // When the board last changed: the tracker's last check, else the latest activity on it.
   const st = await one(
@@ -623,9 +623,9 @@ async function serverBoardData(sortKey = 'wpgxp') {
     [server.id],
   );
   const live = await liveMatch(server).catch(() => null);
-  return { sortKey, sortLabel, rows, at: st?.at || null, map: live?.map || '—' };
+  return { sortKey, sortLabel, rows, at: st?.at || null, map: live?.map || '—', limit };
 }
-async function serverBoardPost({ sortKey, sortLabel, rows, at, map }, { live = false } = {}) {
+async function serverBoardPost({ sortKey, sortLabel, rows, at, map, limit }, { live = false } = {}) {
   const text = () => ({
     embeds: [{
       title: `🏆 WPG server leaderboard — by ${sortLabel}`,
@@ -638,6 +638,7 @@ async function serverBoardPost({ sortKey, sortLabel, rows, at, map }, { live = f
   });
   return asPicture('serverboard', (cards) => cards.renderServerBoardCard({
     serverName: '[WPG] WASTED PRODIGY',
+    max: limit,
     map,
     updated: updatedText(at),
     sortLabel: sortKey === 'wpgxp' ? '' : sortLabel,
@@ -961,19 +962,29 @@ async function keepMessage(key, channel, payload) {
   await q('INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value', [key, `${channel}:${msg.id}`]);
 }
 
-// The live leaderboard: the WPG server board (as /serverboard) in the leaderboards channel, kept as one message the
-// bot edits when the board or the map changes (checked every minute) and every 10 minutes to refresh its time.
+// The live leaderboard: the top 20 on every WPG server board (as /serverboard: by WPG XP, kills, K/D, wins, matches and playtime)
+// as pictures in one message in the leaderboards channel, which the bot edits when a board or the map changes
+// (checked every minute) and every 10 minutes to refresh its time.
 const LB_KEY = '_leaderboard_board_msg';
 let lbLast = { body: '', at: 0 };
 export async function updateLeaderboardBoard() {
   if (!TOKEN()) return;
   const channel = String((await setting('discord_leaderboard_channel')) || '').trim();
   if (!/^\d{15,22}$/.test(channel)) return;
-  const data = await serverBoardData('wpgxp');
-  if (!data) return;
-  const body = JSON.stringify([data.rows, data.map]);
+  const boards = [];
+  for (const key of Object.keys(SERVER_SORTS)) boards.push(await serverBoardData(key, 20)); // top 20 on each
+  if (!boards[0]) return;
+  const body = JSON.stringify(boards.map((d) => [d.rows, d.map]));
   if (body === lbLast.body && Date.now() - lbLast.at < 10 * 60 * 1000) return;
-  await keepMessage(LB_KEY, channel, await serverBoardPost(data, { live: true }));
+  // One message: each board's picture (or its text version if the picture couldn't be made), one link button.
+  const posts = [];
+  for (const d of boards) posts.push(await serverBoardPost(d, { live: true }));
+  const payload = {
+    files: posts.flatMap((p, i) => (p.files || []).map((f) => ({ ...f, name: `wpg-leaderboard-${i + 1}-${boards[i].sortKey}.jpg` }))),
+    embeds: posts.flatMap((p) => p.embeds || []).slice(0, 10),
+    components: posts.find((p) => p.components)?.components,
+  };
+  await keepMessage(LB_KEY, channel, payload);
   lbLast = { body, at: Date.now() };
 }
 

@@ -574,7 +574,7 @@ const BOARD_COLS = [
 
 // d: { serverName, map, updated (text), sortLabel, rows[{name, serverRank, kills, deaths, matches, wins, losses, playtime, wpgRank, wpgXp}] }
 export function renderServerBoardCard(d) {
-  const rows = (d.rows || []).slice(0, 14);
+  const rows = (d.rows || []).slice(0, d.max || 14); // /serverboard 14, the live board in #leaderboards 20
   const ROW = 29;
   const titleH = 62;
   const headH = 76;
