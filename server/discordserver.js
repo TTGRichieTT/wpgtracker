@@ -162,7 +162,7 @@ function overwriteList(owSpec, roleIds, guild) {
 // matched by name anywhere (emoji and brackets ignored), keep their names and places, and get exactly the layout's
 // permissions (other role overwrites removed; member and bot overwrites kept). Channels that aren't in the layout
 // take their category's permissions. removing: role ids being deleted (never matched to the layout's roles).
-export async function buildServer({ apply = false, usePosts = false, tidy = false, removing = new Set() } = {}) {
+export async function buildServer({ apply = false, usePosts = false, tidy = false, removing = new Set(), botOnly = new Set() } = {}) {
   const guild = await guildId();
   if (!/^\d{15,22}$/.test(guild)) throw new Error('Set the Discord server ID first.');
   const actions = [];
@@ -203,7 +203,7 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
     // The whole order is set at once (below the bot): other bots' roles and owner / admin roles first as they were,
     // then the layout, then the server's other roles (e.g. game roles) under the Game Roles divider.
     const below = fresh.filter((r) => r.id !== guild && !removing.has(r.id) && (pos.get(r.id) || 0) < top).sort((a, b) => b.position - a.position);
-    const isTop = (r) => !usedRoles.has(r.id) && (r.managed || (BigInt(r.permissions || 0) & (1n << 3n)) !== 0n);
+    const isTop = (r) => !usedRoles.has(r.id) && (r.managed || botOnly.has(r.id) || (BigInt(r.permissions || 0) & (1n << 3n)) !== 0n);
     const head = below.filter(isTop).map((r) => r.id);
     const rest = below.filter((r) => !isTop(r) && !usedRoles.has(r.id)).map((r) => r.id);
     const ids = [...head, ...list.map((s) => roleIds[s.key]), ...rest];
@@ -225,7 +225,7 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
   let afk = null;
   const usedChannels = new Set();
   const wantedFor = new Map(); // category id → the permissions it should have
-  const botRoles = new Set(existingRoles.filter((r) => r.managed).map((r) => r.id));
+  const botRoles = new Set([...existingRoles.filter((r) => r.managed).map((r) => r.id), ...botOnly]);
   for (const cat of channelSpec(units, command)) {
     let catCh = channels.find((c) => c.id === map.channels[`cat:${cat.key}`])
       || channels.find((c) => c.type === CATEGORY && !usedChannels.has(c.id) && sameName(c.name, [cat.name, ...(cat.aliases || [])]));
@@ -361,7 +361,11 @@ export async function tidyScan({ countFrom = '' } = {}) {
   const roles = await discordFetch(`/guilds/${guild}/roles`);
   const members = await allMembers(guild).catch(() => { throw new Error("Discord won't list the server's members: switch on SERVER MEMBERS INTENT in the Developer Portal → Bot."); });
   const counts = new Map();
-  for (const m of members) for (const r of m.roles) counts.set(r, (counts.get(r) || 0) + 1);
+  const humans = new Map(); // role → how many of its members are people (not bots)
+  for (const m of members) for (const r of m.roles) { counts.set(r, (counts.get(r) || 0) + 1); if (!m.user.bot) humans.set(r, (humans.get(r) || 0) + 1); }
+  // Roles our own bot has, and roles only bots have (bots given an ordinary role, e.g. "YAGPDB.xyz"): never removed.
+  const me = await discordFetch('/users/@me');
+  const mine = new Set(members.find((m) => m.user.id === me.id)?.roles || []);
   // Testing on a copy: count members on the real server instead, matching roles by name.
   let byName = null;
   if (/^\d{15,22}$/.test(countFrom) && countFrom !== guild) {
@@ -389,6 +393,8 @@ export async function tidyScan({ countFrom = '' } = {}) {
     let locked = true;
     let reason;
     if (r.managed) reason = 'Bot or integration role (goes when the bot / integration is removed)';
+    else if (mine.has(r.id)) reason = "This app's bot role";
+    else if ((counts.get(r.id) || 0) > 0 && !humans.get(r.id)) reason = 'Only bots have it (kept so the bots keep working)';
     else if (spec?.divider) reason = 'Divider';
     else if (spec) reason = `Used by the app: ${spec.name}`;
     else if (owner) reason = 'Server owner / admin role';
@@ -398,13 +404,14 @@ export async function tidyScan({ countFrom = '' } = {}) {
       reason = `${count} member${count === 1 ? '' : 's'}`;
     }
     // Kept roles that aren't staff lose risky permissions (they get their access from the channels instead).
-    const staffRole = owner || r.managed || spec?.key === 'admin' || spec?.key === 'mod';
+    const botRole = mine.has(r.id) || ((counts.get(r.id) || 0) > 0 && !humans.get(r.id));
+    const staffRole = owner || r.managed || botRole || spec?.key === 'admin' || spec?.key === 'mod';
     const fix = keep && !staffRole && (perms & RISKY_ALL) ? Object.entries(RISKY).filter(([, b]) => perms & b).map(([n]) => n) : [];
-    out.push({ id: r.id, name: r.name, color: r.color ? `#${r.color.toString(16).padStart(6, '0')}` : '', members: count, keep, locked, reason, fix });
+    out.push({ id: r.id, name: r.name, color: r.color ? `#${r.color.toString(16).padStart(6, '0')}` : '', members: count, keep, locked, reason, fix, bot: botRole && !r.managed });
   }
   const bots = members.filter((m) => m.user.bot).map((m) => ({ id: m.user.id, name: m.user.global_name || m.user.username }));
   const removing = new Set(out.filter((r) => !r.keep).map((r) => r.id));
-  const layout = await buildServer({ apply: false, tidy: true, removing });
+  const layout = await buildServer({ apply: false, tidy: true, removing, botOnly: new Set(out.filter((r) => r.bot).map((r) => r.id)) });
   return { server: info.name, guild, count_from: byName ? countFrom : '', roles: out, bots, actions: layout.actions };
 }
 
@@ -439,7 +446,7 @@ export function startTidy({ remove = [], countFrom = '' } = {}) {
       say(`Take ${r.fix.join(', ')} off "${r.name}"`);
       await discordFetch(`/guilds/${guild}/roles/${r.id}`, 'PATCH', { permissions: String(BigInt(now.permissions) & ~RISKY_ALL) }).catch((e) => say(`Couldn't change "${r.name}": ${e.message}`));
     }
-    const done = await buildServer({ apply: true, tidy: true, removing });
+    const done = await buildServer({ apply: true, tidy: true, removing, botOnly: new Set(scan.roles.filter((r) => r.bot).map((r) => r.id)) });
     return done;
   })()
     .then((r) => { building.done = r; building.log.push('Done.'); })
