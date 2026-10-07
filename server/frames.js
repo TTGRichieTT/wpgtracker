@@ -74,6 +74,8 @@ const lookOf = (f, extra = {}) => ({
   id: f.id, name: f.name, style: f.style, color: f.color, badge: f.badge, label: f.label, crown: f.crown,
   season: f.category === 'season' ? f.season_number || null : null, season_tag: f.season_tag !== false,
   image: f.style === 'image' ? imageUrl(f.image_id) : '', ...extra,
+  // The Officer frame shows the member's clan rank title across the top (and their rank badge in the corner).
+  ...(f.metric === 'officer' && extra.rank?.name ? { title: extra.rank.name } : {}),
 });
 // The clan rank badge a frame with badge 'rank' shows (WPG members with a rank only).
 const RANK_COLS = 'id, name, abbr, color, insignia';

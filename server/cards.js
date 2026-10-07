@@ -975,7 +975,7 @@ export function renderFrameUnlockCard(d) {
 }
 
 // ---------- /frames ----------
-// d: { name, avatar, frame (the one they wear), selected (its id), credit,
+// d: { name, avatar, frame (the one they wear), selected (its id), credit, rank (their clan rank: name, colour, insignia),
 //      groups: [{ label, frames: [{ ...look, unlocked, unlocked_at, progress{value,target,unit}, locked_reason }] }] }
 // Every frame drawn with its real art around the member's picture: earned ones bright with the date,
 // the rest dimmed with a lock and their progress.
@@ -998,12 +998,23 @@ function lock(g, cx, cy) {
 export function renderFramesCard(d) {
   const groups = (d.groups || []).filter((x) => x.frames.length);
   const groupH = (x) => 62 + Math.ceil(x.frames.length / FT_COLS) * FT_H;
-  const bodyH = groups.reduce((n, x) => n + groupH(x) + 14, 0) || 140;
+  const bodyH = (groups.reduce((n, x) => n + groupH(x) + 14, 0) || 140) + (d.rank?.name ? 38 : 0);
   const earned = groups.reduce((n, x) => n + x.frames.filter((f) => f.unlocked).length, 0);
   const total = groups.reduce((n, x) => n + x.frames.length, 0);
   return frame('FRAME COLLECTION', 76 + bodyH + 30, async (g, top) => {
     let y = await playerStrip(g, top, d.name, d.avatar, d.frame);
     const img = await icon(d.avatar);
+    // Their clan rank: badge and title, then how many frames they have.
+    if (d.rank?.name) {
+      g.font = `700 26px ${LABEL_FONT}`;
+      const text = upper(d.rank.name);
+      const tw = g.measureText(text).width;
+      const badgeArt = await loadImage(Buffer.from(rankBadge(d.rank, 64))).catch(() => null);
+      const bx = W / 2 - (tw + (badgeArt ? 44 : 0)) / 2;
+      if (badgeArt) g.drawImage(badgeArt, bx, y - 2, 34, 34);
+      label(g, text, bx + (badgeArt ? 44 : 0), y + 15, { size: 26, color: d.rank.color || AMBER });
+      y += 38;
+    }
     label(g, `${earned} / ${total} UNLOCKED`, W / 2, y + 2, { align: 'center', size: 22, color: CYAN });
     y += 18;
     if (!groups.length) {
@@ -1030,14 +1041,6 @@ export function renderFramesCard(d) {
         await framedPicture(g, img, fx, ty, size, f);
         g.restore();
         if (!f.unlocked) lock(g, fx + size / 2, ty + size / 2);
-        if (f.unlocked && f.id === d.selected) {
-          g.save();
-          g.fillStyle = CYAN;
-          roundRect(g, tx + FT_W / 2 - 42, ty - 4, 84, 22, 11);
-          g.fill();
-          g.restore();
-          label(g, 'WEARING', tx + FT_W / 2, ty + 7, { align: 'center', size: 14, color: '#04111d' });
-        }
         // Name (up to two lines), then the date earned or progress.
         g.font = `700 17px ${LABEL_FONT}`;
         g.fillStyle = f.unlocked ? WHITE : MUTED;
@@ -1047,7 +1050,8 @@ export function renderFramesCard(d) {
         lines.forEach((l, k) => g.fillText(l, tx + FT_W / 2, ty + size + 18 + k * 19));
         const infoY = ty + size + 22 + lines.length * 19;
         if (f.unlocked) {
-          label(g, f.unlocked_at ? shortDate(f.unlocked_at) : 'UNLOCKED', tx + FT_W / 2, infoY, { align: 'center', size: 14, color: GREEN });
+          const wearing = f.id === d.selected;
+          label(g, `${f.unlocked_at ? shortDate(f.unlocked_at) : 'UNLOCKED'}${wearing ? ' · WEARING' : ''}`, tx + FT_W / 2, infoY, { align: 'center', size: 14, color: wearing ? CYAN : GREEN });
         } else if (f.progress && f.progress.target > 0) {
           const p = f.progress;
           bar(g, tx + 18, infoY - 6, FT_W - 36, 8, p.value / p.target);

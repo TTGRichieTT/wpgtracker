@@ -444,7 +444,7 @@ async function cmdFrames(data, caller) {
       ...header(f.user),
       title: `Frames (${earned.length}/${all.length})`,
       color: GOLD,
-      description: earned.length ? 'Profile frames earned in WPG Barracks. 🔒 = still to earn.' : 'No frames earned yet. 🔒 = still to earn.',
+      description: (f.user.membership !== 'pmc' && f.pub?.rank?.name ? `**${f.pub.rank.name}**\n` : '') + (earned.length ? 'Profile frames earned in WPG Barracks. 🔒 = still to earn.' : 'No frames earned yet. 🔒 = still to earn.'),
       fields: fields.slice(0, 25),
       footer,
     }],
@@ -457,6 +457,7 @@ async function cmdFrames(data, caller) {
     avatar: avatarOf(f.user),
     frame: f.pub?.frame || null,
     selected: d.selected,
+    rank: f.user.membership !== 'pmc' ? f.pub?.rank || null : null,
     credit,
     groups: groups.map(([key, label]) => ({ label, frames: d.groups[key] || [] })),
   }), text, profileLink(f.user));
