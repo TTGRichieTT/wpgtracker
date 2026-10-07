@@ -735,7 +735,14 @@ async function discordServerTab(body) {
           <label class="field"><span>Count members from another server (optional: when testing on a copy, put the real server's ID here)</span><input type="text" id="dsCountFrom" inputmode="numeric" placeholder="Leave empty normally"></label>
         </div>
         <div class="row" style="margin-top:6px"><button class="btn" id="dsTidyScan">Scan</button>${d.backup_at ? `<a class="btn ghost" href="/api/admin/discord-server/backup">Download backup (${esc(when(d.backup_at))})</a>` : ''}</div>
-        <div id="dsTidyOut" class="small" style="margin-top:10px"></div></div>`,
+        <div id="dsTidyOut" class="small" style="margin-top:10px"></div></div>
+      <div class="panel"><div class="panel-title">Other bots</div>
+        <p class="small muted" style="margin-top:0">Lists every other bot on the server, what it can do and what bots have changed lately (from Discord's audit log).
+          You choose which bots to kick (security bots are ticked). The rest lose every role and permission: their own built-in role is left with no permissions,
+          roles only bots had are deleted and channel permissions given to bots are removed. Everything is backed up first. <b>Scan</b> changes nothing.
+          The WPG bot can only change bots whose role is <b>below</b> its own, so drag the WPG Barracks role to the top of the role list first.</p>
+        <div class="row"><button class="btn" id="dsBotScan">Scan bots</button></div>
+        <div id="dsBotOut" class="small" style="margin-top:10px"></div></div>`,
     entry: () => `<div class="panel"><div class="panel-title">Entry check &amp; rules</div>
         <p class="small muted" style="margin-top:0">New joiners only see #welcome and #rules. The button under the rules asks them to type a short code and answer
           one question; passing gives <b>WPG Community</b>. Accounts newer than the minimum age wait for staff (Let in / Kick in #staff-chat or below).
@@ -874,6 +881,49 @@ async function discordServerTab(body) {
           } catch (x) { fail(x); }
         };
       } catch (x) { tidyOut.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
+    };
+    const botOut = body.querySelector('#dsBotOut');
+    body.querySelector('#dsBotScan').onclick = async () => {
+      botOut.innerHTML = '<div class="spinner"></div>';
+      try {
+        const r = await api('admin/discord-server/bots/scan', { method: 'POST', body: {} });
+        const stuck = r.bots.filter((b) => b.above);
+        botOut.innerHTML = `<b>${esc(r.server)}</b> <span class="muted">· ${r.bots.length} other bot${r.bots.length === 1 ? '' : 's'}</span>
+          ${stuck.length ? `<p style="color:var(--red);margin:6px 0">${stuck.map((b) => esc(b.name)).join(', ')} ${stuck.length === 1 ? 'has a role' : 'have roles'} above the WPG bot's, so the WPG bot can't kick or change ${stuck.length === 1 ? 'it' : 'them'}. Drag the WPG Barracks role to the very top (Server Settings → Roles) and scan again, or the server owner can kick ${stuck.length === 1 ? 'it' : 'them'} by hand.</p>` : ''}
+          <div style="max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px">${r.bots.map((b) => `<label class="row" style="gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:nowrap;align-items:flex-start;${b.security ? 'background:rgba(229,72,77,.08)' : ''}">
+            <input type="checkbox" data-kick="${esc(b.id)}"${b.security && !b.above ? ' checked' : ''}${b.above ? ' disabled' : ''} title="Kick this bot" style="margin-top:3px">
+            <span class="grow" style="min-width:0"><b>${esc(b.name)}</b>${b.security ? ' <span style="color:var(--red)">· security bot</span>' : ''}${b.above ? ' <span style="color:var(--red)">· above the WPG bot</span>' : ''}
+              <br><span class="muted">Roles: ${b.roles.map((x) => `${esc(x.name)}${x.risky.length ? ` <span style="color:#f5a524">(${esc(x.risky.join(', '))})</span>` : ''}`).join(', ') || 'none'}</span>
+              ${b.made?.length ? `<br><span style="color:#f5a524">Made: ${esc(b.made.join(', '))}</span>` : ''}
+              ${b.channels.length ? `<br><span class="muted">Own permissions in: ${esc(b.channels.slice(0, 12).join(', '))}${b.channels.length > 12 ? ` and ${b.channels.length - 12} more` : ''}</span>` : ''}</span></label>`).join('') || '<div class="muted" style="padding:8px">No other bots.</div>'}</div>
+          <p class="muted" style="margin:4px 0 0">Ticked = kicked.</p>
+          <details style="margin-top:10px"${r.changes.length ? ' open' : ''}><summary><b>What bots changed lately</b> <span class="muted">· ${r.changes.length} change${r.changes.length === 1 ? '' : 's'}</span></summary>
+            ${r.audit_problem ? `<p style="color:var(--red)">${esc(r.audit_problem)}</p>` : ''}
+            <ul style="margin:6px 0 0;padding-left:18px;max-height:300px;overflow:auto">${r.changes.map((c) => `<li><span class="muted">${esc(when(c.at))}</span> <b>${esc(c.bot)}</b> ${esc(c.what)}${c.reason ? ` <span class="muted">(${esc(c.reason)})</span>` : ''}</li>`).join('') || '<li class="muted">Nothing in the audit log.</li>'}</ul></details>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="dsBotUndo" checked> Delete the channels and roles the kicked bots made (e.g. a security bot's verify channel and Unverified role), so new joiners go through the WPG entry check. Anyone still waiting to get in gets a fresh 24 hours.</label>
+          <label class="check"><input type="checkbox" id="dsBotStrip" checked> Take every role and permission off the bots that stay</label>
+          <label class="check"><input type="checkbox" id="dsBotLayout"${r.backup_at ? ' checked' : ''}> Then set the WPG layout's channel permissions again (as Tidy up does, no roles removed), so #welcome and #rules are open to new joiners</label>
+          ${r.backup_at ? `<label class="check"><input type="checkbox" id="dsBotOrder"> Put channels back in the order and categories they had before the tidy-up (backup of ${esc(when(r.backup_at))})</label>` : ''}
+          <div class="row" style="margin-top:12px"><button class="btn primary" id="dsBotGo">Back up &amp; clean up bots now</button></div>`;
+        botOut.querySelector('#dsBotGo').onclick = async () => {
+          const kick = [...botOut.querySelectorAll('[data-kick]:checked:not(:disabled)')].map((el) => el.dataset.kick);
+          const strip = botOut.querySelector('#dsBotStrip').checked;
+          const order = !!botOut.querySelector('#dsBotOrder')?.checked;
+          const undo = botOut.querySelector('#dsBotUndo').checked;
+          const relayout = botOut.querySelector('#dsBotLayout').checked;
+          if (!(await confirmBox(`Clean up bots on ${r.server} now? ${kick.length} bot${kick.length === 1 ? '' : 's'} will be kicked${strip ? ' and the others lose their roles and permissions' : ''}. A backup is made first.`))) return;
+          try {
+            await api('admin/discord-server/bots', { method: 'POST', body: { kick, strip, undo, order, relayout } });
+            const poll = async () => {
+              if (!document.body.contains(botOut)) return;
+              const st = (await api('admin/discord-server')).build;
+              botOut.innerHTML = `<b>${st.running ? 'Cleaning up…' : st.error ? 'Stopped' : 'Finished'}</b><ul style="margin:6px 0 0;padding-left:18px;max-height:360px;overflow:auto">${st.log.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${st.running ? '' : '<p class="muted"><a href="/api/admin/discord-server/bots/backup">Download the backup</a> · Scan bots again to check.</p>'}`;
+              if (st.running) setTimeout(poll, 1500);
+            };
+            poll();
+          } catch (x) { fail(x); }
+        };
+      } catch (x) { botOut.innerHTML = `<span style="color:var(--red)">${esc(x.message)}</span>`; }
     };
     body.querySelector('#dsSyncNow').onclick = async (e) => {
       e.target.disabled = true;

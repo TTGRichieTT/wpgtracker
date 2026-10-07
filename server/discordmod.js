@@ -770,6 +770,7 @@ export async function kickStragglers() {
   const since = Date.parse(c.map.entry_since || '');
   if (!since) return 0;
   const hours = await num('discord_entry_kick_hours', 24);
+  const grace = Date.parse(c.map.entry_grace || '') || 0; // set when another bot's verification was cleared away
   const held = new Set((await q("SELECT discord_id FROM discord_entries WHERE status='held'")).map((r) => r.discord_id));
   let members;
   try { members = await allMembers(c.guild); } catch { return 0; }
@@ -777,7 +778,7 @@ export async function kickStragglers() {
   for (const m of members) {
     if (m.user.bot || m.roles.length || held.has(m.user.id)) continue;
     const joined = Date.parse(m.joined_at);
-    if (!(joined > since) || joined > Date.now() - hours * 3600000) continue;
+    if (!(joined > since) || Math.max(joined, grace) > Date.now() - hours * 3600000) continue;
     await dm(m.user.id, `You didn't finish getting in to ${await serverName(c.guild)} (read the rules and press the button), so you've been removed. You're welcome to rejoin any time.`);
     await kickMember(c.guild, m.user.id).catch(() => {});
     await q(`INSERT INTO discord_entries (discord_id, guild_id, user_name, status) VALUES ($1,$2,$3,'kicked')

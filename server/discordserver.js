@@ -458,6 +458,230 @@ export async function lastBackup() {
   try { return JSON.parse((await setting('_discord_backup')) || 'null'); } catch { return null; }
 }
 
+// ---------- Other bots (Discord control → Server & roles → Other bots) ----------
+// Scan: every bot on the server except ours, its roles and their risky permissions, the channels that give it its
+// own access, whether its role is above ours (then we can't touch it), and what bots changed recently (audit log).
+// Clean up: back up, kick the ticked bots, then take every role off the other bots (their own built-in role keeps
+// no permissions), delete roles only bots had, and remove the channel permissions given to bots.
+const SECURITY_BOT = /secur|wick|nuke|guard|shield|protect|beemo|anti.?raid|captcha|bouncer/i;
+const AUDIT = {
+  1: 'changed the server settings', 10: 'made channel', 11: 'changed channel', 12: 'deleted channel', 13: 'added permissions on',
+  14: 'changed permissions on', 15: 'removed permissions on', 20: 'kicked', 21: 'pruned members', 22: 'banned', 23: 'unbanned',
+  24: 'changed member', 25: "changed someone's roles", 26: 'moved someone in voice', 27: 'disconnected someone from voice', 28: 'added bot',
+  30: 'made', 31: 'changed', 32: 'deleted', 40: 'made invite', 50: 'made webhook', 51: 'changed webhook', 52: 'deleted webhook',
+  72: 'deleted messages', 73: 'bulk-deleted messages', 74: 'pinned a message', 140: 'made AutoMod rule', 141: 'changed AutoMod rule', 142: 'deleted AutoMod rule',
+};
+const snowTime = (id) => new Date(Number(BigInt(id) >> 22n) + 1420070400000).toISOString();
+const riskyNames = (perms) => Object.entries(RISKY).filter(([, b]) => BigInt(perms || 0) & b).map(([n]) => n);
+
+async function botPicture(guild) {
+  const [roles, channels, members, me] = await Promise.all([
+    discordFetch(`/guilds/${guild}/roles`), discordFetch(`/guilds/${guild}/channels`),
+    allMembers(guild).catch(() => { throw new Error("Discord won't list the server's members: switch on SERVER MEMBERS INTENT in the Developer Portal → Bot."); }),
+    discordFetch('/users/@me'),
+  ]);
+  const pos = new Map(roles.map((r) => [r.id, r.position]));
+  const byId = new Map(roles.map((r) => [r.id, r]));
+  const mineM = members.find((m) => m.user.id === me.id);
+  const mine = new Set(mineM?.roles || []);
+  const myTop = Math.max(0, ...[...mine].map((id) => pos.get(id) || 0));
+  const humans = new Set(members.filter((m) => !m.user.bot).flatMap((m) => m.roles));
+  const others = members.filter((m) => m.user.bot && m.user.id !== me.id);
+  return { roles, channels, members, me, pos, byId, mine, myTop, humans, others };
+}
+
+export async function botScan() {
+  const guild = await guildId();
+  if (!/^\d{15,22}$/.test(guild)) throw new Error('Set the Discord server ID first.');
+  const info = await discordFetch(`/guilds/${guild}`);
+  const p = await botPicture(guild);
+  const bots = p.others.map((m) => {
+    const roles = m.roles.map((id) => p.byId.get(id)).filter(Boolean).sort((a, b) => b.position - a.position);
+    const top = Math.max(0, ...roles.map((r) => r.position));
+    const own = new Set([m.user.id, ...roles.filter((r) => r.managed || !p.humans.has(r.id)).map((r) => r.id)]);
+    const name = m.user.global_name || m.user.username;
+    return {
+      id: m.user.id, name,
+      security: SECURITY_BOT.test(`${m.user.username} ${name} ${roles.map((r) => r.name).join(' ')}`),
+      above: top >= p.myTop, // its highest role is level with or above ours: Discord won't let our bot touch it
+      roles: roles.map((r) => ({ id: r.id, name: r.name, own: !!r.managed, shared: p.humans.has(r.id), risky: riskyNames(r.permissions) })),
+      channels: p.channels.filter((c) => (c.permission_overwrites || []).some((o) => own.has(o.id))).map((c) => c.name),
+    };
+  }).sort((a, b) => b.security - a.security || a.name.localeCompare(b.name));
+  const audit = await botAudit(guild, p);
+  for (const b of bots) b.made = madeBy(audit, p, b.id).map((x) => x.label);
+  const b = await lastBackup();
+  return { server: info.name, guild, bots, changes: audit.changes, audit_problem: audit.problem, backup_at: b?.guild === guild ? b.at : null };
+}
+
+// What bots changed lately: the newest 300 audit log entries made by bots other than ours (bots that have since
+// left included). Discord keeps the audit log for 45 days.
+async function botAudit(guild, p) {
+  const botIds = new Set(p.others.map((m) => m.user.id));
+  const names = new Map([...p.roles.map((r) => [r.id, `role "${r.name}"`]), ...p.channels.map((c) => [c.id, `#${c.name}`]), ...p.members.map((m) => [m.user.id, m.user.global_name || m.user.username])]);
+  const entries = [];
+  const changes = [];
+  let problem = null;
+  try {
+    let before = '';
+    for (let page = 0; page < 3; page++) {
+      const a = await discordFetch(`/guilds/${guild}/audit-logs?limit=100${before ? `&before=${before}` : ''}`);
+      const list = a.audit_log_entries || [];
+      for (const u of a.users || []) {
+        if (!names.has(u.id)) names.set(u.id, u.global_name || u.username);
+        if (u.bot && u.id !== p.me.id) botIds.add(u.id);
+      }
+      for (const e of list.filter((x) => botIds.has(x.user_id))) {
+        entries.push(e);
+        const nm = (e.changes || []).find((c) => c.key === 'name');
+        const was = nm?.old_value ?? nm?.new_value;
+        const kind = e.action_type >= 30 && e.action_type <= 32 ? 'role ' : '';
+        const target = names.get(e.target_id) || (was ? `${kind}"${was}"` : e.target_id ? `${kind}(${e.target_id})` : '');
+        changes.push({ at: snowTime(e.id), bot: names.get(e.user_id) || e.user_id, what: `${AUDIT[e.action_type] || `did action ${e.action_type} on`} ${target}`.trim(), reason: e.reason || '' });
+      }
+      if (list.length < 100) break;
+      before = list[list.length - 1].id;
+    }
+  } catch (e) {
+    problem = `Couldn't read the audit log: ${e.message}`;
+  }
+  return { entries, changes, problem };
+}
+
+// Channels and roles a bot made (e.g. a security bot's #verify channel and Unverified role) that are still there.
+function madeBy(audit, p, botId) {
+  const out = [];
+  for (const e of audit.entries.filter((x) => x.user_id === botId)) {
+    const c = e.action_type === 10 && p.channels.find((x) => x.id === e.target_id);
+    const r = e.action_type === 30 && p.byId.get(e.target_id);
+    if (c && !out.some((x) => x.id === c.id)) out.push({ kind: 'channel', id: c.id, label: `#${c.name}` });
+    if (r && !r.managed && !out.some((x) => x.id === r.id)) out.push({ kind: 'role', id: r.id, label: `role "${r.name}"` });
+  }
+  return out;
+}
+
+export async function lastBotBackup() {
+  try { return JSON.parse((await setting('_discord_bot_backup')) || 'null'); } catch { return null; }
+}
+
+// kick: bot ids to remove from the server. strip: take roles and permissions off the bots that stay.
+// undo: delete the channels and roles the kicked bots made (e.g. a security bot's #verify and Unverified role).
+// order: put channels back in the order and categories they had in the last Tidy up backup.
+// relayout: then set the WPG layout's channel permissions again (Tidy up without removing roles).
+export function startBotCleanup({ kick = [], strip = true, undo = false, order = false, relayout = false } = {}) {
+  if (building.running) throw new Error('A build is already running.');
+  Object.assign(building, { running: true, log: [], done: null, error: null, at: new Date().toISOString() });
+  const say = (t) => building.log.push(t);
+  (async () => {
+    const guild = await guildId();
+    if (!/^\d{15,22}$/.test(guild)) throw new Error('Set the Discord server ID first.');
+    let p = await botPicture(guild);
+    await saveSetting('_discord_bot_backup', JSON.stringify({
+      guild, at: new Date().toISOString(), roles: p.roles, channels: p.channels,
+      bots: p.others.map((m) => ({ id: m.user.id, name: m.user.username, roles: m.roles })),
+    }));
+    say(`Backed up ${p.roles.length} roles, ${p.channels.length} channels and ${p.others.length} bots' roles.`);
+    const top = (m) => Math.max(0, ...m.roles.map((id) => p.pos.get(id) || 0));
+    const blocked = (m) => `${m.user.username}'s role is above WPG Barracks's role, so Discord won't let the bot touch it. Drag WPG Barracks's role to the very top (Server Settings → Roles) and run this again, or the server owner can kick it by hand.`;
+    // 1. Kick first, so a security bot can't undo the rest.
+    const audit = undo ? await botAudit(guild, p) : null;
+    const made = new Map(p.others.map((m) => [m.user.id, audit ? madeBy(audit, p, m.user.id) : []]));
+    const kicked = [];
+    for (const id of new Set(kick)) {
+      const m = p.others.find((x) => x.user.id === id);
+      if (!m) continue;
+      if (top(m) >= p.myTop) { say(`Couldn't kick ${m.user.username}: ${blocked(m)}`); continue; }
+      await discordFetch(`/guilds/${guild}/members/${id}`, 'DELETE')
+        .then(() => { kicked.push(id); say(`Kicked ${m.user.username}`); })
+        .catch((e) => say(`Couldn't kick ${m.user.username}: ${e.message}`));
+    }
+    // 2. What the kicked bots set up (their verify channel, Unverified role…), so new joiners get the WPG entry check.
+    if (undo) {
+      if (audit.problem) say(audit.problem);
+      const map = await loadMap(guild);
+      const ours = new Set([...Object.values(map.roles || {}), ...Object.values(map.channels || {}), ...p.mine, guild]);
+      let n = 0;
+      for (const x of kicked.flatMap((id) => made.get(id) || []).filter((y) => !ours.has(y.id))) {
+        const path = x.kind === 'channel' ? `/channels/${x.id}` : `/guilds/${guild}/roles/${x.id}`;
+        await discordFetch(path, 'DELETE').then(() => { n++; say(`Deleted ${x.label} (made by a kicked bot)`); }).catch((e) => say(`Couldn't delete ${x.label}: ${e.message}`));
+      }
+      if (!n) say(kicked.length ? 'The kicked bots made no channels or roles that are still here (Discord keeps 45 days of history).' : 'No bot was kicked, so nothing they made was deleted.');
+      else {
+        // People stuck in the old bot's verification start a fresh entry-check clock (not removed straight away).
+        map.entry_grace = new Date().toISOString();
+        await saveMap(map);
+        say('Everyone still waiting to get in has a fresh 24 hours to pass the WPG entry check.');
+      }
+    }
+    if (strip) {
+      p = await botPicture(guild);
+      const gone = new Set(); // bot ids, their own roles and bot-only roles: their channel permissions go too
+      const botOnly = new Set();
+      for (const m of p.others) {
+        if (top(m) >= p.myTop) { say(`Couldn't change ${m.user.username}: ${blocked(m)}`); continue; }
+        gone.add(m.user.id);
+        for (const id of m.roles) {
+          const r = p.byId.get(id);
+          if (!r) continue;
+          if (r.managed) {
+            // Its own built-in role can't be taken off or deleted: it just keeps no permissions.
+            gone.add(r.id);
+            if (BigInt(r.permissions || 0) === 0n) continue;
+            await discordFetch(`/guilds/${guild}/roles/${r.id}`, 'PATCH', { permissions: '0' })
+              .then(() => say(`Took every permission off ${m.user.username}'s role "${r.name}"`))
+              .catch((e) => say(`Couldn't change "${r.name}": ${e.message}`));
+          } else {
+            if (!p.humans.has(r.id) && !p.mine.has(r.id)) botOnly.add(r.id);
+            await discordFetch(`/guilds/${guild}/members/${m.user.id}/roles/${r.id}`, 'DELETE')
+              .then(() => say(`Took "${r.name}" off ${m.user.username}`))
+              .catch((e) => say(`Couldn't take "${r.name}" off ${m.user.username}: ${e.message}`));
+          }
+        }
+      }
+      // Roles only bots had are deleted (never the layout's roles or one our bot has).
+      const map = await loadMap(guild);
+      const layout = new Set(Object.values(map.roles || {}));
+      for (const id of botOnly) {
+        const r = p.byId.get(id);
+        if (layout.has(id) || r.position >= p.myTop) continue;
+        gone.add(id);
+        await discordFetch(`/guilds/${guild}/roles/${id}`, 'DELETE')
+          .then(() => say(`Deleted role "${r.name}" (only bots had it)`))
+          .catch((e) => say(`Couldn't delete "${r.name}": ${e.message}`));
+      }
+      // Channel permissions given to those bots or their roles.
+      let n = 0;
+      for (const c of p.channels) {
+        for (const o of (c.permission_overwrites || []).filter((x) => gone.has(x.id))) {
+          await discordFetch(`/channels/${c.id}/permissions/${o.id}`, 'DELETE').then(() => { n++; }).catch((e) => say(`Couldn't change #${c.name}: ${e.message}`));
+        }
+      }
+      say(n ? `Removed ${n} bot permission${n === 1 ? '' : 's'} from channels` : 'No channel gave bots their own permissions');
+    }
+    // 3. Channels back in the order and categories they had before the tidy-up.
+    if (order) {
+      const b = await lastBackup();
+      if (!b || b.guild !== guild) say('No Tidy up backup for this server, so the channel order was left as it is.');
+      else {
+        const now = new Set((await discordFetch(`/guilds/${guild}/channels`)).map((c) => c.id));
+        const list = b.channels.filter((c) => now.has(c.id)).map((c) => ({ id: c.id, position: c.position, parent_id: c.parent_id && now.has(c.parent_id) ? c.parent_id : null }));
+        await discordFetch(`/guilds/${guild}/channels`, 'PATCH', list)
+          .then(() => say(`Put ${list.length} channels back in their places from the backup of ${b.at.slice(0, 16).replace('T', ' ')}`))
+          .catch((e) => say(`Couldn't put the channels back: ${e.message}`));
+      }
+    }
+    if (relayout) {
+      say('Setting the WPG layout\'s channel permissions again…');
+      const r = await buildServer({ apply: true, tidy: true });
+      say(r.actions.length ? `Layout: ${r.actions.length} change${r.actions.length === 1 ? '' : 's'}` : 'Layout was already right');
+    }
+    return { server: guild };
+  })()
+    .then((r) => { building.done = r; building.log.push('Done.'); })
+    .catch((e) => { building.error = e.message; building.log.push(`Stopped: ${e.message}`); })
+    .finally(() => { building.running = false; scheduleSync(3000); });
+}
+
 // ---------- Role sync ----------
 export async function allMembers(guild) {
   const out = [];
