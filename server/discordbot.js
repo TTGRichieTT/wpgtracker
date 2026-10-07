@@ -11,7 +11,7 @@ import { bus } from './bus.js';
 import { MOD_COMMANDS, modCommandDefinitions, handleComponent } from './discordmod.js';
 import { guildId } from './discord.js';
 import { usersWithRanks, topTierOnly, ACCOUNT_WORTH_SQL } from './routes.js';
-import { shownFrames, frameLookFor, TRACKER_METRICS } from './frames.js';
+import { shownFrames, frameLookFor, TRACKER_METRICS, framesFor } from './frames.js';
 import { liveMatch } from './servers.js';
 import { cleanName } from './util.js';
 import { rankProgress } from './wpgxp.js';
@@ -400,6 +400,59 @@ async function cmdMedals(data, caller) {
   // Class / career level medals come from wardogs.tools stats.
   if (awards.some(trackerMedal)) {
     out.content = `${out.content ? `${out.content}\n` : ''}Class and career level medals: ${TRACKER_CREDIT}`;
+    withTrackerButton(out);
+  }
+  return out;
+}
+
+// /frames: a member's profile frames as an achievement list, earned ones first, then what's left to earn.
+async function cmdFrames(data, caller) {
+  const f = await findMember(data, caller);
+  if (f.error) return { content: f.error };
+  const d = await framesFor(f.user);
+  const groups = [
+    ['permanent', 'Permanent'], ['clan', 'Clan'],
+    ['season', d.season ? `Season ${d.season.number}${d.season.name && d.season.name.trim().toLowerCase() !== `season ${d.season.number}` ? ` · ${d.season.name}` : ''}` : 'This season'], ['past', 'Past seasons'],
+  ];
+  const all = groups.flatMap(([k]) => d.groups[k] || []);
+  const earned = all.filter((x) => x.unlocked);
+  const when = (iso) => (iso ? ` · <t:${Math.floor(Date.parse(iso) / 1000)}:d>` : '');
+  const progress = (x) => {
+    if (x.locked_reason) return ` · ${x.locked_reason}`;
+    const p = x.progress;
+    if (!p) return '';
+    const amount = (v) => (p.unit === '$' ? `$${num(v)}` : `${num(v)}${p.unit ? ` ${p.unit}` : ''}`);
+    return ` · ${amount(p.value)} / ${amount(p.target)}`;
+  };
+  const fields = [];
+  for (const [key, label] of groups) {
+    const list = d.groups[key] || [];
+    if (!list.length) continue;
+    const got = list.filter((x) => x.unlocked);
+    const todo = list.filter((x) => !x.unlocked);
+    const lines = [
+      ...got.map((x) => `🏅 **${x.name}**${x.id === d.selected ? ' · *wearing*' : ''}${when(x.unlocked_at)}`),
+      ...todo.slice(0, 4).map((x) => `🔒 ${x.name}${progress(x)}`),
+      ...(todo.length > 4 ? [`…and ${todo.length - 4} more to earn`] : []),
+    ];
+    let value = '';
+    for (const l of lines) { if ((value + l).length > 1000) { value += '\n…'; break; } value += `${value ? '\n' : ''}${l}`; }
+    fields.push({ name: `${label} (${got.length}/${list.length})`, value: value || '—' });
+  }
+  const out = {
+    embeds: [{
+      ...header(f.user),
+      title: `Frames (${earned.length}/${all.length})`,
+      color: GOLD,
+      description: earned.length ? 'Profile frames earned in WPG Barracks. 🔒 = still to earn.' : 'No frames earned yet. 🔒 = still to earn.',
+      fields: fields.slice(0, 25),
+      footer,
+    }],
+    components: [{ type: 1, components: [{ type: 2, style: 5, ...profileLink(f.user) }] }],
+  };
+  // Frames worked out from wardogs.tools stats are credited.
+  if (earned.some((x) => x.source === 'wardogs.tools')) {
+    out.content = `Class, Wardog level and cash frames: ${TRACKER_CREDIT}`;
     withTrackerButton(out);
   }
   return out;
@@ -872,6 +925,7 @@ const COMMANDS = {
   stats: { run: cmdStats, description: 'Wardogs stats: level, cash, worth, classes, world ranks' },
   rank: { run: cmdRank, description: 'WPG rank + WPG XP, and clan rank' },
   medals: { run: cmdMedals, description: 'Medals earned' },
+  frames: { run: cmdFrames, description: 'Profile frames earned (and still to earn) as an achievement list' },
   server: { run: cmdServer, description: 'WPG server stats: kills, K/D, matches, playtime' },
   progress: { run: cmdProgress, description: 'Next unlocks for each class' },
   leaderboard: { run: cmdLeaderboard, description: 'Top 10 leaderboards' },
@@ -942,7 +996,7 @@ async function commandDefinitions() {
 function baseDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
-    if (['stats', 'rank', 'medals', 'server', 'progress'].includes(name)) def.options = WHO;
+    if (['stats', 'rank', 'medals', 'frames', 'server', 'progress'].includes(name)) def.options = WHO;
     if (name === 'leaderboard') {
       def.options = [{
         type: 3, name: 'board', description: 'Which leaderboard', required: false,

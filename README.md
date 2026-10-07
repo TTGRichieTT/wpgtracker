@@ -193,6 +193,10 @@ switches control the bot, not Discord's own server settings. The Discord parts o
   Content Creator, Partner, Military Vet and 18+ are given by hand. Roles on members who haven't linked are never
   taken away; unlinking takes the app's roles off again.
 
+**/frames** in Discord shows a member's profile frames as an achievement list (yours, or another member's with the member
+or name option): what they've earned with the date, the frame they're wearing, and the next few still to earn with
+progress, by Permanent, Clan, this season and past seasons.
+
 ### Entry check, rules and moderation (same page)
 
 The bot also does what mod bots like Carl-bot, Captcha.bot and Ticket Tool did. It keeps a live connection to Discord,

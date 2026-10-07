@@ -978,7 +978,7 @@ async function discordBotPanel(el) {
       <button type="button" class="btn" id="dbTest"${d.token && d.post_channel ? '' : ' disabled'}>Send a test post</button>
       <button type="button" class="btn ghost" id="dbReg"${d.token ? '' : ' disabled'}>Re-check &amp; fix Discord setup</button>
     </div>
-    <p class="muted small" style="margin:10px 0 0">Commands: /stats /rank /medals /server /progress /leaderboard /serverboard /live /report /link /unlink. Members type /link once to connect their Discord.</p>
+    <p class="muted small" style="margin:10px 0 0">Commands: ${(d.commands_wanted || []).map((c) => `/${esc(c)}`).join(' ')}. Members type /link once to connect their Discord. Choose who can use each one in the Commands section.</p>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
       <b>Preview a card</b> <span class="muted small">— made here exactly as the bot makes it, without Discord.</span>
       <div class="row" style="margin-top:8px">
