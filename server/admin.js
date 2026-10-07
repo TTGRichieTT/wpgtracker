@@ -7,7 +7,7 @@ import { usersWithRanks } from './routes.js';
 import { testConnection, DEVELOPER_EXAMPLE_ID } from './ranking.js';
 import { giveAutoMedalsToAll } from './medals.js';
 import { botStatus, discordAppId, inviteUrl, postToChannel, setupDiscord, previewCommand, latestProblem, registerCommands, commandAccess, commandList, COMMAND_GROUPS } from './discordbot.js';
-import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup } from './discordserver.js';
+import { buildServer, startBuild, buildStatus, syncRoles, lastSync, guildId, loadMap, saveMap, tidyScan, startTidy, lastBackup, botScan, startBotCleanup, lastBotBackup } from './discordserver.js';
 import { refreshPosts, decideHeld, SWITCHES } from './discordmod.js';
 import { gatewayStatus, reconnectGateway } from './discordgateway.js';
 import { HttpError, role, roleAtLeast, ROLE_LEVEL, str, int, bool, color, safeUrl, isOwner } from './util.js';
@@ -566,6 +566,32 @@ admin.get('/discord-server/backup', role('admin'), async (_req, res) => {
   const b = await lastBackup();
   if (!b) throw new HttpError(404, 'No backup yet: one is made each time Tidy up runs.');
   res.setHeader('Content-Disposition', `attachment; filename="discord-backup-${b.guild}-${String(b.at).slice(0, 10)}.json"`);
+  res.json(b);
+});
+
+// Other bots: scan (nothing changes), then kick the ticked ones and take roles / permissions off the rest.
+admin.post('/discord-server/bots/scan', role('admin'), async (_req, res) => {
+  try {
+    res.json(await botScan());
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+});
+admin.post('/discord-server/bots', role('admin'), async (req, res) => {
+  const kick = Array.isArray(req.body?.kick) ? req.body.kick.map((x) => String(x)).filter((x) => /^\d{15,22}$/.test(x)) : [];
+  const opts = { kick, strip: bool(req.body?.strip), order: bool(req.body?.order) };
+  try {
+    startBotCleanup(opts);
+  } catch (e) {
+    throw new HttpError(400, e.message);
+  }
+  await audit(req.user.id, 'discord.server.bots', await guildId(), opts);
+  res.json({ ok: true });
+});
+admin.get('/discord-server/bots/backup', role('admin'), async (_req, res) => {
+  const b = await lastBotBackup();
+  if (!b) throw new HttpError(404, 'No backup yet: one is made each time the bot clean-up runs.');
+  res.setHeader('Content-Disposition', `attachment; filename="discord-bots-backup-${b.guild}-${String(b.at).slice(0, 10)}.json"`);
   res.json(b);
 });
 
