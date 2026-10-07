@@ -48,7 +48,9 @@ export async function profileFramesPanel(box, user) {
       ${framedPreview(f, user.avatar, 88)}
       <div class="nm">${esc(f.name)}</div>
       ${f.season_number && f.category === 'season' ? `<div class="small" style="color:var(--accent2);font:700 12px var(--head);text-transform:uppercase">Season ${f.season_number}</div>` : ''}
-      <div class="muted small">${esc(f.description)}</div>
+      ${f.position || f.unit_role
+        ? `${f.position ? `<div class="small" style="color:var(--accent2);font:700 14px var(--head);text-transform:uppercase;margin-top:2px">${esc(f.position)}</div>` : ''}${f.unit_role ? `<div class="muted small">Role: ${esc(f.unit_role)}</div>` : ''}`
+        : `<div class="muted small">${esc(f.description)}</div>`}
       ${f.locked_reason ? `<div class="small" style="color:#f5a524;margin-top:6px">${esc(f.locked_reason)}</div>` : progressHtml(f.progress)}
       ${f.source === 'wardogs.tools' ? '<div class="small muted" style="margin-top:4px">Data: <a href="https://wardogs.tools" target="_blank" rel="noopener">wardogs.tools</a></div>' : ''}
       ${d.mine && f.unlocked ? (sel ? `<span class="pill mod" style="margin-top:8px">✓ Showing</span>` : `<button class="btn small" style="margin-top:8px" data-use-frame="${f.id}">Use this frame</button>`) : ''}
