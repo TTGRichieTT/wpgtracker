@@ -286,6 +286,9 @@ a.item:hover { background: rgba(41,182,246,.05); }
 .wpg-place .num { font: 700 30px/1.1 var(--head); color: var(--text); }
 @media (max-width: 640px) { .wpg-me { flex-direction: column; align-items: stretch; } }
 .tiles > .tile { align-self: start; } /* a tile with a progress bar is taller: keep its row lined up at the top */
+.recent-rewards { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+.recent-rewards .tile { display: flex; padding: 12px 8px; }
+.recent-rewards .ribbon { display: block; width: 64px; height: 20px; }
 .tile-progress .xpbar { height: 7px; margin-bottom: 3px; }
 .admin-section select { font: 700 15px var(--head); text-transform: uppercase; cursor: pointer; }
 .table-wrap { overflow-x: auto; }

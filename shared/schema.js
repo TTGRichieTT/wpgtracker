@@ -208,6 +208,8 @@ export const userAwards = pgTable('user_awards', {
   given_by: integer().references(() => users.id, { onDelete: 'set null' }),
   reason: text().notNull().default(''),
   given_at: now(),
+  // The season a level medal was earned in (0 = not a season medal): levels reset each season, so they can be won again.
+  season_id: integer().notNull().default(0),
 });
 
 export const announcements = pgTable('announcements', {

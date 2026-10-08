@@ -167,8 +167,10 @@ admin.post('/users/:id/awards', role('mod'), async (req, res) => {
   const target = await one('SELECT * FROM users WHERE id=$1', [int(req.params.id)]);
   const award = await one('SELECT * FROM awards WHERE id=$1', [int(req.body?.award_id)]);
   if (!target || !award) throw new HttpError(404, 'Member or award not found.');
-  await q('INSERT INTO user_awards (user_id, award_id, given_by, reason) VALUES ($1,$2,$3,$4)', [
-    target.id, award.id, req.user.id, str(req.body?.reason, 300),
+  const { isSeasonalRule } = await import('./medals.js');
+  const season = isSeasonalRule(award.auto_rule) ? await one("SELECT id FROM seasons WHERE status='active' ORDER BY number DESC LIMIT 1") : null;
+  await q('INSERT INTO user_awards (user_id, award_id, given_by, reason, season_id) VALUES ($1,$2,$3,$4,$5)', [
+    target.id, award.id, req.user.id, str(req.body?.reason, 300), season?.id || 0,
   ]);
   await audit(req.user.id, 'award.give', `${target.persona_name} (#${target.id})`, { award: award.name });
   bus.emit('notify', target.id, { title: 'Medal awarded!', body: `You received: ${award.name}` });

@@ -260,7 +260,7 @@ export async function checkBadges(userId, { announce = true } = {}) {
       bus.emit('notify', userId, {
         title: loud.length === 1 ? '🏅 New badge!' : `🏅 ${loud.length} new badges!`,
         body: loud.slice(0, 3).map((b) => b.name).join(', ') + (loud.length > 3 ? ` and ${loud.length - 3} more` : ''),
-        link: `#/u/${userId}`,
+        link: `#/u/${userId}/rewards`,
       });
       bus.emit('announce', { type: 'badges', userId, badgeIds: loud.map((b) => b.id) });
     }
@@ -371,6 +371,36 @@ badgesRouter.get('/users/:id/badges', member, async (req, res) => {
   const u = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [int(req.params.id)]);
   if (!u) throw new HttpError(404, 'Member not found.');
   res.json(await collectionFor(u));
+});
+// Newest rewards on a profile: the last 5 medals, badges and frames earned, newest first.
+badgesRouter.get('/users/:id/recent-rewards', member, async (req, res) => {
+  const u = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [int(req.params.id)]);
+  if (!u) throw new HttpError(404, 'Member not found.');
+  const rows = await q(`SELECT * FROM (
+      SELECT 'medal' AS kind, ua.award_id AS ref, ua.given_at AS at, ua.season_id FROM user_awards ua WHERE ua.user_id=$1
+      UNION ALL SELECT 'badge', ub.badge_id, ub.earned_at, 0 FROM user_badges ub WHERE ub.user_id=$1
+      UNION ALL SELECT 'frame', uf.frame_id, uf.unlocked_at, uf.season_id FROM user_frames uf WHERE uf.user_id=$1
+    ) r ORDER BY at DESC LIMIT 5`, [u.id]);
+  const ids = (k) => rows.filter((r) => r.kind === k).map((r) => r.ref);
+  const [medals, frames, seasons] = await Promise.all([
+    ids('medal').length ? q('SELECT id, name, description, colors, rarity, points FROM awards WHERE id = ANY($1)', [ids('medal')]) : [],
+    ids('frame').length ? q('SELECT f.*, s.number AS season_number FROM frames f LEFT JOIN seasons s ON s.id = f.season_id WHERE f.id = ANY($1)', [ids('frame')]) : [],
+    q('SELECT id, number FROM seasons'),
+  ]);
+  const badgeBy = new Map((await allBadges()).map((b) => [b.id, b]));
+  const seasonNo = new Map(seasons.map((s) => [s.id, s.number]));
+  const { frameLookFor } = await import('./frames.js');
+  const out = [];
+  for (const r of rows) {
+    const base = { kind: r.kind, at: r.at, season: seasonNo.get(r.season_id) || null };
+    if (r.kind === 'medal') { const m = medals.find((x) => x.id === r.ref); if (m) out.push({ ...base, ...m }); }
+    if (r.kind === 'badge') { const b = badgeBy.get(r.ref); if (b) out.push({ ...base, ...badgeOut(b) }); }
+    if (r.kind === 'frame') {
+      const f = frames.find((x) => x.id === r.ref);
+      if (f) out.push({ ...base, name: f.name, description: f.description || '', frame: await frameLookFor(u, f) });
+    }
+  }
+  res.json(out);
 });
 // Share one of your badges to Discord (the badge posts channel). Once a minute, and each badge once an hour.
 const shared = new Map(); // `${userId}` → time, `${userId}:${badgeId}` → time
@@ -631,7 +661,7 @@ badgesRouter.post('/admin/users/:id/badges', role('mod'), async (req, res) => {
   const r = await q('INSERT INTO user_badges (user_id, badge_id, given_by, reason) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id', [userId, b.id, req.user.id, reason]);
   if (!r.length) throw new HttpError(400, 'They already have that badge.');
   await audit(req.user.id, 'badge.give', userId, { badge: b.name, reason });
-  bus.emit('notify', userId, { title: '🏅 New badge!', body: `${b.name}: ${reason}`, link: `#/u/${userId}` });
+  bus.emit('notify', userId, { title: '🏅 New badge!', body: `${b.name}: ${reason}`, link: `#/u/${userId}/rewards` });
   bus.emit('announce', { type: 'badges', userId, badgeIds: [b.id], reason });
   bus.emit('user:changed', userId);
   res.json({ ok: true });
