@@ -12,15 +12,12 @@ import { maySeeRoom, sitHeartbeat } from './sitrooms.js';
 const APP_VERSION = (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 12);
 
 // Who has the app open (for reminders that should reach someone while they're there).
-let onlineRef = null;
-export const onlineUserIds = () => (onlineRef ? [...onlineRef.keys()] : []);
 
 export function startRealtime(httpServer, sessionMiddleware) {
   const io = new Server(httpServer, { cors: { origin: false } });
   io.engine.use(sessionMiddleware);
 
   const online = new Map(); // userId -> open socket count
-  onlineRef = online;
   const broadcastPresence = () => io.emit('presence', [...online.keys()]);
 
   async function joinChannels(socket, user) {
