@@ -387,6 +387,37 @@ function nextIn(c, series) {
   return c.badges.filter((b) => b.series === series && !b.unlocked && b.progress).sort((a, b) => a.progress.target - b.progress.target)[0] || null;
 }
 const hrs = (h) => (h >= 1 ? `${Math.round(h * 10) / 10}h` : `${Math.round(h * 60)}m`);
+// /badges: a member's badge collection, or one badge in detail (badge: its name, or part of it).
+async function cmdBadges(data, caller) {
+  const f = await findMember(data, caller);
+  if (f.error) return { content: f.error };
+  const { collectionFor, slug } = await import('./badges.js');
+  const c = await collectionFor(f.user);
+  const want = String(option(data, 'badge') || '').trim();
+  if (want) {
+    const s = slug(want);
+    const b = c.badges.find((x) => slug(x.name) === s) || c.badges.find((x) => slug(x.name).includes(s));
+    if (!b) return { content: `There's no badge called "${want}". Try part of its name, e.g. "one-year" or "marathon".` };
+    return badgeCardPost(f.user, b, { heading: 'BADGE' });
+  }
+  const earned = c.badges.filter((b) => b.unlocked).sort((a, b) => new Date(b.earned_at) - new Date(a.earned_at));
+  const text = () => ({ embeds: [{ color: GOLD, title: `🏅 ${f.user.persona_name}: badges`, url: `${SITE()}/#/u/${f.user.id}`,
+    description: earned.length ? earned.slice(0, 25).map((b) => `• **${b.name}** (${RARITY_NAME[b.rarity] || ''})`).join('\n') : 'No badges yet.', footer }] });
+  return asPicture('badges', async (cards) => cards.renderBadgesCard({
+    name: await cardName(f.user), avatar: avatarOf(f.user), frame: await frameOf(f.user), totals: c.totals, badges: earned,
+  }), text, profileLink(f.user));
+}
+// One badge as a big picture card (with how many members have it).
+async function badgeCardPost(u, b, { heading = 'BADGE', text = '' } = {}) {
+  const holders = (await one('SELECT COUNT(*)::int n FROM user_badges WHERE badge_id=$1', [b.id])).n;
+  const out = await asPicture('badge', async (cards) => cards.renderBadgeCard({
+    heading, name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), holders,
+    badge: { ...b, earned_at: b.unlocked ? b.earned_at : null },
+  }), () => ({ embeds: [{ color: GOLD, title: `🏅 ${b.name}`, url: `${SITE()}/#/u/${u.id}`,
+    description: `${RARITY_NAME[b.rarity] || ''} badge · ${num(b.points)} Achievement Points\n${b.description}${b.unlocked ? `\nEarned ${new Date(b.earned_at).toLocaleDateString('en-GB')}` : ''}`, footer }] }), profileLink(u));
+  return text && out.files ? { content: text, ...out } : out;
+}
+
 async function cmdStreamStats(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
@@ -1076,6 +1107,7 @@ const COMMANDS = {
   money: { run: cmdMoney, description: "Live Wardogs match money: who's in a match and the last 24 hours' totals" },
   serverboard: { run: cmdServerBoard, description: 'The WPG server leaderboard (top 14)' },
   achievements: { run: cmdAchievements, description: 'Achievement Points, badges and showcase' },
+  badges: { run: cmdBadges, description: 'Badge collection with artwork, or one badge in detail' },
   streamstats: { run: cmdStreamStats, description: 'Verified streaming stats: streams, hours, best day, streaks' },
   loyalty: { run: cmdLoyalty, description: 'Time in WPG and loyalty badges' },
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
@@ -1151,6 +1183,7 @@ function baseDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
     if (['stats', 'rank', 'medals', 'frames', 'server', 'progress', 'achievements', 'streamstats', 'loyalty'].includes(name)) def.options = WHO;
+    if (name === 'badges') def.options = [...WHO, { type: 3, name: 'badge', description: 'One badge to show (its name, e.g. One-Year Veteran)', required: false, max_length: 60 }];
     if (name === 'leaderboard') {
       def.options = [{
         type: 3, name: 'board', description: 'Which leaderboard', required: false,
@@ -1643,6 +1676,12 @@ bus.on('announce', async (a) => {
       const quiet = await quietCategories();
       const list = (await q('SELECT * FROM badges WHERE id = ANY($1) ORDER BY points DESC, sort_order', [a.badgeIds || []])).filter((b) => !quiet.has(b.category));
       if (isWpgMember(u) && list.length) await postToChannel(await badgesPost(u, list, a.reason), await badgeChannelKey());
+    } else if (a.type === 'badge-share') {
+      // A member sharing one of their badges from the app.
+      const u = await one("SELECT * FROM users WHERE id=$1 AND status='active'", [a.userId]);
+      const { collectionFor } = await import('./badges.js');
+      const b = u ? (await collectionFor(u)).badges.find((x) => x.id === a.badgeId && x.unlocked) : null;
+      if (b) await postToChannel(await badgeCardPost(u, b, { heading: 'BADGE EARNED', text: `🏅 **${u.persona_name}**${mentionFor(u)} is showing off their **${b.name}** badge.` }), await badgeChannelKey());
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
       if (isWpgMember(u)) await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));
