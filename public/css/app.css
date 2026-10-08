@@ -418,7 +418,8 @@ h1 { font-size: 34px; margin-bottom: 14px; }
 .profile-info { margin-top: 16px; padding-top: 16px; border-top: 1px solid #13263d; }
 
 /* Role cards with the real artwork */
-.roles { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+.roles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+@media (min-width: 1200px) { .roles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 .role-card { padding: 0 0 8px; border-width: 1px; border-radius: 6px; background: #050b13; box-shadow: 0 0 14px color-mix(in srgb, var(--rc) 35%, transparent); }
 .role-card .art { display: block; width: 100%; aspect-ratio: 118 / 108; object-fit: cover; }
 .role-card .rn { margin-top: 4px; }
@@ -527,8 +528,10 @@ body::after { display: none; }
 .xp-rule .grow { min-width: 90px; }
 
 /* Unlocks: last/next under class cards + Tools progression list */
-.role-card .ul { margin: 6px 6px 0; text-align: left; font-size: 11px; line-height: 1.35; }
-.role-card .ul div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role-card .ul { margin: 6px 6px 0; text-align: left; font-size: 12.5px; line-height: 1.35; }
+.role-card .ul div { display: flex; gap: 6px; align-items: baseline; margin-top: 3px; overflow-wrap: anywhere; }
+.role-card .ul span { flex: none; }
+.role-card .ul i { font-style: normal; min-width: 0; }
 .role-card .ul span { display: inline-block; width: 30px; color: var(--muted); text-transform: uppercase; font: 700 10px var(--head); letter-spacing: .5px; }
 .role-card .ul em { font-style: normal; color: var(--rc); font-weight: 700; }
 .career-unlock { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 14px; padding: 8px 10px; background: #07121f; border: 1px solid rgba(58,120,180,.25); border-radius: 6px; }
