@@ -1406,7 +1406,7 @@ async function discordBotPanel(el) {
       <b>Preview a card</b> <span class="muted small">— made here exactly as the bot makes it, without Discord.</span>
       <div class="row" style="margin-top:8px">
         <select id="dbCmd">${(d.commands_wanted || []).filter((c) => !['link', 'unlink', 'report'].includes(c)).map((c) => `<option value="${esc(c)}">/${esc(c)}</option>`).join('')}
-          <optgroup label="Channel posts"><option value="post:promotion">Promotion post</option><option value="post:medal">Medal post</option><option value="post:wpgrank">WPG rank-up post</option></optgroup></select>
+          <optgroup label="Channel posts"><option value="post:promotion">Promotion post</option><option value="post:medal">Medal post</option><option value="post:wpgrank">WPG rank-up post</option><option value="post:bigwin">Big win post</option></optgroup></select>
         <button type="button" class="btn" id="dbPreview">Preview</button>
       </div>
       <div id="dbPreviewOut" style="margin-top:10px"></div>

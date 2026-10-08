@@ -1635,6 +1635,20 @@ async function framePost(u, f) {
   }), () => ({ embeds: [{ color: GOLD, title: '🖼️ Profile frame unlocked', description: `${text.replace(/^🖼️ /, '')}\n${f.description}`, url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
   return tracker ? withTrackerButton(out) : out;
 }
+// A big Wardogs match (live match money, steambot.js): the WPG picture card, with their last 24 hours and a "new
+// personal best" when it is one.
+async function bigWinPost(u, money) {
+  const text = `💰 **${u.persona_name}**${mentionFor(u)} just made **+$${num(money)}** profit in one Wardogs match!`;
+  const { TONIGHT_ROWS } = await import('./steambot.js');
+  const [day, best] = await Promise.all([
+    one(`SELECT COALESCE(SUM(money),0)::int total, COUNT(*) FILTER (WHERE done)::int matches FROM (${TONIGHT_ROWS}) t WHERE user_id=$1`, [u.id]).catch(() => null),
+    one('SELECT MAX(money)::int AS m FROM presence_results WHERE user_id=$1', [u.id]).catch(() => null),
+  ]);
+  const button = { label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` };
+  return announcePicture('bigwin', text, async (cards) => cards.renderBigWinCard({
+    name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), money, best: !best?.m || money >= best.m, day,
+  }), () => ({ content: text, components: [{ type: 1, components: [{ type: 2, style: 5, ...button }] }] }), button);
+}
 // A new season (the game wiped), and the last season's results: one post each.
 async function seasonPost(a) {
   const open = { type: 1, components: [{ type: 2, style: 5, label: 'Open WPG Barracks', url: `${SITE()}/#/leaderboard` }] };
@@ -1699,6 +1713,7 @@ const POST_PREVIEWS = {
     const p = await one('SELECT * FROM server_progress WHERE steam_id=$1', [u.steam_id]);
     return wpgRankPost(u, u.persona_name, p?.rank_name || 'RECRUIT I', p?.xp || 0, p?.rank_level || 1);
   },
+  bigwin: async (u) => bigWinPost(u, 110726),
 };
 // Promotion, medal and WPG rank-up posts are for WPG members only (not PMC guests or players who aren't in the
 // app), so the clan channel isn't filled with news about people outside the clan. PMCs who want them apply to join.
@@ -1737,10 +1752,7 @@ bus.on('announce', async (a) => {
       if (isWpgMember(u)) {
         // The live match money channel (Admin → Steam bot), else the channel for the other automatic posts.
         const key = String((await setting('discord_money_channel')) || '').trim() ? 'discord_money_channel' : 'discord_post_channel';
-        await postToChannel({
-          content: `💰 **${u.persona_name}**${mentionFor(u)} just made **+$${num(a.money)}** profit in one Wardogs match!`,
-          components: [{ type: 1, components: [{ type: 2, style: 5, label: '24-hour money', url: `${SITE()}/#/leaderboard?by=tonight` }] }],
-        }, key);
+        await postToChannel(await bigWinPost(u, a.money), key);
       }
     } else if (a.type === 'frame' && (await flag('discord_post_frames'))) {
       const [u, f] = await Promise.all([one('SELECT * FROM users WHERE id=$1', [a.userId]), one('SELECT * FROM frames WHERE id=$1', [a.frameId])]);
