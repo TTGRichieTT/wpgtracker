@@ -872,3 +872,10 @@ input[type=datetime-local] { color-scheme: dark; }
 .dc-cmd.head{font:700 11px var(--head);letter-spacing:.05em;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--line)}
 .dc-cmd.group{display:block;padding:12px 0 4px;border-bottom:0;font-size:13px}
 @media (max-width:560px){.dc-cmd{grid-template-columns:minmax(0,1fr) repeat(5,44px)}.dc-cmd em{display:none}.dc-cmd.head{font-size:9px;letter-spacing:0}}
+/* Discord control → Rooms / Bot posts */
+.dc-room { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 0; border-top: 1px solid var(--line); }
+.dc-room:first-of-type { border-top: 0; }
+.dc-room.off { opacity: .55; }
+.dc-room .grow { min-width: 180px; }
+.dc-room > label { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+.dc-room select { width: auto; min-width: 120px; padding: 4px 8px; margin: 0; }

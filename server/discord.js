@@ -63,19 +63,24 @@ discord.get('/discord/voice', member, async (_req, res) => {
       members: members.filter((m) => String(m.channel_id || '') === String(c.id)).map(person),
     }));
   // Discord hides the names of voice channels @everyone can't see, but still says who is in voice.
-  // Show those people too, grouped by channel, without the (hidden) channel name.
+  // Rooms the admins chose to show (Discord control → Rooms) get their real name, with a lock: joining still needs
+  // the role in Discord. Shown rooms are listed even when empty. The rest show as "Members-only voice".
   const known = new Set(channels.map((c) => c.id));
+  const shown = await import('./discordrooms.js').then((m) => m.shownVoiceRooms()).catch(() => []);
+  const named = new Map(shown.map((r) => [r.channel_id, r]));
   const hidden = new Map();
+  for (const r of shown) if (!known.has(r.channel_id)) hidden.set(r.channel_id, []);
   for (const m of members) {
     const id = String(m.channel_id || '');
     if (!id || known.has(id)) continue;
     if (!hidden.has(id)) hidden.set(id, []);
     hidden.get(id).push(person(m));
   }
-  let n = 0;
+  const unnamed = [...hidden.keys()].filter((id) => !named.has(id));
   for (const [id, people] of hidden) {
-    n += 1;
-    channels.push({ id, name: hidden.size > 1 ? `Members-only voice ${n}` : 'Members-only voice', hidden: true, members: people });
+    const r = named.get(id);
+    const n = unnamed.indexOf(id) + 1;
+    channels.push({ id, name: r ? String(r.name).slice(0, 60) : unnamed.length > 1 ? `Members-only voice ${n}` : 'Members-only voice', hidden: true, named: !!r, members: people });
   }
   res.json({
     enabled: true,
@@ -83,7 +88,7 @@ discord.get('/discord/voice', member, async (_req, res) => {
     online: Number(d.presence_count) || members.length,
     invite: (await setting('discord_invite')) || d.instant_invite || '',
     inVoice: channels.reduce((sum, c) => sum + c.members.length, 0),
-    hiddenChannels: hidden.size > 0,
+    hiddenChannels: channels.some((c) => c.hidden && !c.named),
     channels,
   });
 });

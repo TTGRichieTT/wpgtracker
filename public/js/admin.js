@@ -612,7 +612,7 @@ async function editUser(id, ranks, awards, reload) {
 // ---------- Discord control panel: everything the WPG Discord bot does, in one place ----------
 const DISCORD_SECTIONS = [
   ['bot', 'Bot'], ['server', 'Server & roles'], ['entry', 'Entry & rules'], ['commands', 'Commands'], ['filters', 'Filters & moderation'],
-  ['logs', 'Logs & extras'], ['posts', 'Posts & channels'], ['cases', 'Cases'],
+  ['logs', 'Logs & extras'], ['posts', 'Posts & channels'], ['rooms', 'Rooms'], ['botposts', 'Bot posts & guides'], ['cases', 'Cases'],
 ];
 // [setting, label, help] for the on / off switches, by section.
 const DISCORD_SWITCHES = {
@@ -713,6 +713,139 @@ export async function viewDiscordControl(main) {
   return discordServerTab(main.querySelector('#dcBody'));
 }
 
+// ---------- Discord control → Rooms: view only and auto-clear, per room (server/discordrooms.js) ----------
+const clearLabel = (m) => (!m ? 'Off' : m < 60 ? `${m} minutes` : m < 1440 ? `${m / 60} hour${m === 60 ? '' : 's'}` : `${m / 1440} day${m === 1440 ? '' : 's'}`);
+async function roomsPanel(box) {
+  let d;
+  try { d = await api('admin/discord-rooms'); } catch (x) { box.innerHTML = `<p class="muted small">${esc(x.message)}</p>`; return; }
+  const row = (r) => {
+    if (!r.text) return `<div class="dc-room off"><span class="grow">${r.type === 2 ? '🔊' : '#'} ${esc(r.name)}</span><span class="muted small">${r.type === 2 ? 'voice' : 'not a text room'}</span></div>`;
+    return `<div class="dc-room" data-room="${esc(r.id)}">
+      <span class="grow"><b># ${esc(r.name)}</b>${r.posts ? ` <span class="pill" title="Bot posts in this room">${r.posts} bot post${r.posts === 1 ? '' : 's'}</span>` : ''}
+        <span class="muted small">${r.last_cleared_at ? `Cleared ${esc(timeAgo(r.last_cleared_at))} (${r.last_cleared_count})` : ''}</span>
+        ${r.problem ? `<br><span class="small" style="color:var(--red)">${esc(r.problem)}</span>` : ''}</span>
+      <label class="check small" title="Members can read but not post or use /commands. Staff and the bot still can."><input type="checkbox" data-view ${r.view_only ? 'checked' : ''}> View only</label>
+      ${r.no_clear ? '<span class="muted small" title="Rules, logs, tickets and friend codes are never auto-cleared">Never cleared</span>'
+    : `<label class="small" title="Members' messages and the replies to their /commands are deleted after this">Auto-clear <select data-clear>${d.clear_choices.map((m) => `<option value="${m}"${m === r.clear_minutes ? ' selected' : ''}>${clearLabel(m)}</option>`).join('')}</select></label>`}
+    </div>`;
+  };
+  box.innerHTML = `<div class="panel">
+      <p class="muted small" style="margin-top:0"><b>View only</b>: members can read the room (leaderboards, live cash…) but not post, start threads or use /commands; staff and the bot still can, and the room's permissions are put back exactly when you switch it off.
+        <b>Auto-clear</b>: members' messages and the replies to their /commands are deleted after the time you pick. Staff messages, the bot's own posts and announcements, other bots' posts and pinned messages are never auto-deleted (remove those by hand).
+        New rooms and categories made in Discord show up here by themselves.</p>
+      <div class="row"><button class="btn small" id="dsRoomsSync">${icon('refresh')} Refresh from Discord</button>${d.guild ? '' : '<span class="muted small">Set the Discord server first (Server &amp; roles).</span>'}</div>
+    </div>
+    ${d.groups.map((g) => {
+    const others = g.rooms.filter((r) => !r.text);
+    return `<div class="panel"><div class="panel-title" style="margin-bottom:6px">${esc(g.name)}</div>${g.rooms.filter((r) => r.text).map(row).join('')}
+      ${others.filter((r) => r.voice).length ? `<div class="dc-room"><span class="grow small">🔊 <b>Voice rooms</b> <span class="muted">· tick to show the real name in the app's Discord comms panel (rooms that need a role stay locked on Discord)</span>
+        <span class="row" style="gap:6px 14px;margin-top:6px;flex-wrap:wrap">${others.filter((r) => r.voice).map((r) => `<label class="check small"><input type="checkbox" data-show="${esc(r.id)}"${r.show_in_app ? ' checked' : ''}> ${esc(r.name)}</label>`).join('')}</span></span></div>` : ''}
+      ${others.filter((r) => !r.voice).length ? `<div class="dc-room off"><span class="grow small">${others.filter((r) => !r.voice).map((r) => esc(r.name)).join(' · ')}</span><span class="muted small">other</span></div>` : ''}
+      ${g.rooms.length ? '' : '<p class="muted small" style="margin:0">No rooms.</p>'}</div>`;
+  }).join('')}`;
+  box.querySelector('#dsRoomsSync').onclick = async () => {
+    try { const r = await api('admin/discord-rooms/sync', { method: 'POST', body: {} }); if (r.ok === false) throw new Error(r.reason); toast('Rooms up to date'); roomsPanel(box); } catch (x) { fail(x); }
+  };
+  box.querySelectorAll('[data-show]').forEach((el) => {
+    el.onchange = async () => {
+      try { await api(`admin/discord-rooms/${el.dataset.show}`, { method: 'PUT', body: { show_in_app: el.checked } }); toast(el.checked ? 'Shown in the app' : 'Hidden in the app'); } catch (x) { el.checked = !el.checked; fail(x); }
+    };
+  });
+  box.querySelectorAll('[data-room]').forEach((el) => {
+    const save = async (body, undo) => {
+      try {
+        const r = await api(`admin/discord-rooms/${el.dataset.room}`, { method: 'PUT', body });
+        if (r.problem) toast('Saved, with a problem', r.problem); else toast('Saved');
+      } catch (x) { undo(); fail(x); }
+    };
+    const v = el.querySelector('[data-view]');
+    v.onchange = () => save({ view_only: v.checked }, () => { v.checked = !v.checked; });
+    const c = el.querySelector('[data-clear]');
+    if (c) { const was = c.value; c.onchange = () => save({ clear_minutes: Number(c.value) }, () => { c.value = was; }); }
+  });
+}
+
+// ---------- Discord control → Bot posts & guides ----------
+async function botPostsPanel(box) {
+  let d;
+  try { d = await api('admin/discord-rooms'); } catch (x) { box.innerHTML = `<p class="muted small">${esc(x.message)}</p>`; return; }
+  const kinds = Object.fromEntries(d.kinds.map((k) => [k.key, k]));
+  const roomOptions = (sel) => d.groups.map((g) => {
+    const list = g.rooms.filter((r) => r.text);
+    return list.length ? `<optgroup label="${esc(g.name)}">${list.map((r) => `<option value="${esc(r.id)}"${r.id === sel ? ' selected' : ''}># ${esc(r.name)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  box.innerHTML = `<div class="panel">
+      <p class="muted small" style="margin-top:0">The bot posts these in the room you pick, pins them and keeps them up to date by editing the same message.
+        Ready-made guides rebuild themselves when commands are added or who can use them changes. Your own posts can be a picture in the WPG artwork or plain text.</p>
+      <button class="btn primary" id="bpNew">${icon('plus')} New bot post</button></div>
+    <div class="panel"><div class="panel-title">Posts</div>
+      ${d.posts.length ? d.posts.map((p) => `<div class="dc-room"><span class="grow"><b>${esc(p.title || kinds[p.kind]?.label || 'Post')}</b> <span class="muted small">in # ${esc(p.room)} · ${esc(kinds[p.kind]?.label || p.kind)} · ${p.style === 'text' ? 'text' : 'picture'}${p.message_id ? '' : ' · not posted yet'}</span>
+          ${p.problem ? `<br><span class="small" style="color:var(--red)">${esc(p.problem)}</span>` : ''}</span>
+        <button class="btn small" data-edit="${p.id}">${icon('edit')} Edit</button><button class="btn small ghost" data-repost="${p.id}">Update now</button><button class="btn small danger" data-del="${p.id}">Delete</button></div>`).join('')
+    : '<p class="muted small" style="margin:0">No bot posts yet.</p>'}</div>`;
+  const open = (p) => {
+    const v = p || { channel_id: '', kind: 'custom', title: '', body: '', style: 'card', pin: true };
+    const m = modal(`<form class="stack" id="bpForm">
+      <div class="row between"><h3 style="margin:0">${p ? 'Edit' : 'New'} bot post</h3><button type="button" class="btn ghost small" data-close>✕</button></div>
+      <label class="field"><span>Room</span><select name="channel_id" required><option value="">Pick a room…</option>${roomOptions(v.channel_id)}</select></label>
+      <label class="field"><span>What to post</span><select name="kind">${d.kinds.map((k) => `<option value="${k.key}"${k.key === v.kind ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select></label>
+      <p class="muted small" id="bpHelp" style="margin:0"></p>
+      <label class="field" data-custom><span>Title (on the picture)</span><input type="text" name="title" maxlength="60" value="${esc(v.title)}"></label>
+      <label class="field" data-custom><span>Text: "## Heading" starts a section, "name - text" shows the name in blue</span><textarea name="body" rows="9">${esc(v.body)}</textarea></label>
+      <div class="row" style="gap:16px">
+        <label class="check small"><input type="radio" name="style" value="card"${v.style !== 'text' ? ' checked' : ''}> Picture (WPG artwork)</label>
+        <label class="check small"><input type="radio" name="style" value="text"${v.style === 'text' ? ' checked' : ''}> Plain text</label>
+        <label class="check small"><input type="checkbox" name="pin"${v.pin !== false ? ' checked' : ''}> Pin it</label>
+      </div>
+      <div id="bpPreview"></div>
+      <div class="row"><button type="button" class="btn" id="bpPrev">Preview</button><button class="btn primary">${p ? 'Save & update on Discord' : 'Post on Discord'}</button></div>
+    </form>`);
+    const f = m.el.querySelector('#bpForm');
+    const sync = () => {
+      const custom = f.kind.value === 'custom';
+      f.querySelectorAll('[data-custom]').forEach((el) => { el.style.display = custom ? '' : 'none'; });
+      m.el.querySelector('#bpHelp').textContent = kinds[f.kind.value]?.help || '';
+    };
+    f.kind.onchange = sync;
+    sync();
+    const body = () => ({ channel_id: f.channel_id.value, kind: f.kind.value, title: f.title.value, body: f.body.value, style: f.style.value, pin: f.pin.checked });
+    m.el.querySelector('#bpPrev').onclick = async () => {
+      const out = m.el.querySelector('#bpPreview');
+      out.innerHTML = '<div class="spinner"></div>';
+      try {
+        const res = await fetch('/api/admin/discord-posts/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body()), credentials: 'same-origin' });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Preview failed');
+        if ((res.headers.get('content-type') || '').startsWith('image/')) {
+          const blob = await res.blob();
+          const src = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(blob); });
+          out.innerHTML = `<img src="${src}" alt="Preview" style="width:100%;border-radius:8px">`;
+        }
+        else out.innerHTML = `<pre class="small" style="white-space:pre-wrap;margin:0;padding:10px;background:#07121f;border-radius:8px">${esc((await res.json()).text)}</pre>`;
+      } catch (x) { out.innerHTML = ''; fail(x); }
+    };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api(p ? `admin/discord-posts/${p.id}` : 'admin/discord-posts', { method: p ? 'PUT' : 'POST', body: body() });
+        if (r.problem) toast('Saved, with a problem', r.problem); else toast(p ? 'Updated on Discord' : 'Posted on Discord');
+        m.close();
+        botPostsPanel(box);
+      } catch (x) { fail(x); }
+    };
+  };
+  box.querySelector('#bpNew').onclick = () => open(null);
+  box.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = () => open(d.posts.find((x) => x.id === Number(b.dataset.edit))); });
+  box.querySelectorAll('[data-repost]').forEach((b) => {
+    b.onclick = async () => { try { const r = await api(`admin/discord-posts/${b.dataset.repost}/repost`, { method: 'POST', body: {} }); toast(r.problem ? 'Problem' : 'Updated', r.problem || ''); botPostsPanel(box); } catch (x) { fail(x); } };
+  });
+  box.querySelectorAll('[data-del]').forEach((b) => {
+    b.onclick = async () => {
+      if (!(await confirmBox('Delete this post from Discord too?'))) return;
+      try { await api(`admin/discord-posts/${b.dataset.del}`, { method: 'DELETE' }); toast('Deleted'); botPostsPanel(box); } catch (x) { fail(x); }
+    };
+  });
+}
+
 async function discordServerTab(body) {
   const d = await api('admin/discord-server');
   const s = d.sync || {};
@@ -727,6 +860,8 @@ async function discordServerTab(body) {
     filters: onCount(DISCORD_SWITCHES.filters),
     logs: `${onCount(DISCORD_SWITCHES.logs)}${d.tickets ? ` · ${d.tickets} open ticket${d.tickets === 1 ? '' : 's'}` : ''}`,
     posts: 'channels for automatic posts',
+    rooms: 'view only & auto-clear, per room',
+    botposts: 'guides and your own posts as the bot',
     cases: d.cases.length ? `${d.cases.length} recent` : 'none yet',
   };
   const status = `<p class="small" style="margin:0 0 10px">${d.gateway.connected
@@ -843,6 +978,8 @@ async function discordServerTab(body) {
           <div class="row"><button class="btn primary">Save</button></div></form>
         ${d.tickets ? `<p class="small" style="margin:10px 0 0"><b>${d.tickets} open ticket${d.tickets === 1 ? '' : 's'}</b> in 🎫 TICKETS.</p>` : ''}</div>`,
     posts: () => '<div id="dsPostsBox"><div class="spinner"></div></div>',
+    rooms: () => '<div id="dsRoomsBox"><div class="spinner"></div></div>',
+    botposts: () => '<div id="dsBotPostsBox"><div class="spinner"></div></div>',
     cases: () => `<div class="panel"><div class="panel-title">Cases <span class="sub">newest 40</span></div>
         ${d.cases.length ? `<div class="small">${d.cases.map((c) => `<div style="padding:6px 0;border-bottom:1px solid var(--line)${c.removed ? ';opacity:.5;text-decoration:line-through' : ''}">
           <b>#${c.id}</b> ${esc(c.action)}${c.minutes ? ` ${c.minutes} min` : ''} · <b>${esc(c.user_name)}</b> <span class="muted">(${esc(c.user_id)})</span> · by ${esc(c.mod_name)} · ${esc(when(c.created_at))}${c.reason ? `<br><span class="muted">${esc(c.reason)}</span>` : ''}</div>`).join('')}</div>` : '<p class="muted small" style="margin:0">None yet.</p>'}
@@ -858,6 +995,8 @@ async function discordServerTab(body) {
     loaded.add(k);
     if (k === 'bot') discordBotPanel(body.querySelector('#discordBot'));
     if (k === 'posts') loadPosts();
+    if (k === 'rooms') roomsPanel(body.querySelector('#dsRoomsBox'));
+    if (k === 'botposts') botPostsPanel(body.querySelector('#dsBotPostsBox'));
   };
   body.querySelectorAll('details.dc-sec').forEach((el) => {
     if (el.open) load(el.dataset.sec);

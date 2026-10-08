@@ -29,7 +29,7 @@ const VOICE = 2;
 const CATEGORY = 4;
 const NEWS = 5;
 
-const FACTIONS = [['lonestar', 'Lonestar', '#4cb1ef'], ['valkyra', 'Valkyra', '#e5484d'], ['manticore', 'Manticore', '#3ddc84']];
+export const FACTIONS = [['lonestar', 'Lonestar', '#4cb1ef'], ['valkyra', 'Valkyra', '#e5484d'], ['manticore', 'Manticore', '#3ddc84']];
 const GAME_COLOR = '#7f8c8d';
 const MAX_GAME_ROLES = 100;
 
