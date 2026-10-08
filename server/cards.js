@@ -997,6 +997,41 @@ export function renderWpgRankUpCard(d) {
   });
 }
 
+// ---------- Big match win (steambot.js: live match money) ----------
+// d: { name, avatar, frame, money, best (true: their biggest ever), day: { total, matches } }
+export function renderBigWinCard(d) {
+  return frame('BIG WIN', 76 + 300 + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    panel(g, 28, y + 6, 1480, 290);
+    // A gold coin with a dollar sign.
+    const cx = 170;
+    const cy = y + 150;
+    const coin = g.createRadialGradient(cx - 30, cy - 34, 10, cx, cy, 104);
+    coin.addColorStop(0, '#fff3b0');
+    coin.addColorStop(0.55, '#e3b341');
+    coin.addColorStop(1, '#8a5a00');
+    g.save();
+    g.shadowColor = 'rgba(227,179,65,0.6)';
+    g.shadowBlur = 24;
+    g.beginPath(); g.arc(cx, cy, 100, 0, Math.PI * 2); g.fillStyle = coin; g.fill();
+    g.restore();
+    g.beginPath(); g.arc(cx, cy, 80, 0, Math.PI * 2); g.strokeStyle = 'rgba(90,58,0,0.55)'; g.lineWidth = 5; g.stroke();
+    g.font = `800 120px ${VALUE_FONT}`;
+    g.fillStyle = '#5a3a00';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('$', cx, cy + 6);
+    label(g, d.best ? 'NEW PERSONAL BEST · PROFIT IN ONE MATCH' : 'PROFIT IN ONE WARDOGS MATCH', 320, y + 60, { size: 26, color: d.best ? AMBER : LABEL });
+    bigValue(g, `+${money(d.money)}`, 320, y + 140, 1150, { size: 110, color: GREEN, weight: 800 });
+    if (d.day) {
+      label(g, 'LAST 24 HOURS', 322, y + 222);
+      bigValue(g, `${d.day.total < 0 ? '-' : '+'}${money(Math.abs(d.day.total))}`, 322, y + 258, 360, { size: 38, color: moneyColor(d.day.total) });
+      label(g, 'MATCHES', 760, y + 222);
+      bigValue(g, fmt(d.day.matches), 760, y + 258, 200, { size: 38 });
+    }
+  });
+}
+
 // ---------- Profile frame unlocked (frames.js) ----------
 // d: { name, avatar, frame{style,color,badge,label,crown,name}, description, kind }  kind: e.g. "PERMANENT FRAME"
 export function renderFrameUnlockCard(d) {
