@@ -344,12 +344,12 @@ async function seedFrames() {
   // Once: frames unlocked by Achievement Points (badges and achievement medals, badges.js).
   if (!(await one("SELECT value FROM settings WHERE key='_frames_points'"))) {
     const POINTS = [
-      ['points250', 'Achiever', 250, 'metal-bronze', '', 'medal', '', false],
-      ['points500', 'Collector', 500, 'metal-silver', '', 'medal', '', false],
-      ['points1000', 'Decorated', 1000, 'metal-gold', '', 'medal', '', false],
-      ['points2500', 'Elite Achiever', 2500, 'laurel-silver', '', '', '2.5K', false],
-      ['points5000', 'Legendary Achiever', 5000, 'laurel-gold', '', '', '5K', true],
-      ['points10000', 'WPG Hall of Honour', 10000, 'glow', '#ffe066', 'crown', '', false],
+      ['points2500', 'Achiever', 2500, 'metal-bronze', '', 'medal', '', false],
+      ['points5000', 'Collector', 5000, 'metal-silver', '', 'medal', '', false],
+      ['points10000', 'Decorated', 10000, 'metal-gold', '', 'medal', '', false],
+      ['points25000', 'Elite Achiever', 25000, 'laurel-silver', '', '', '25K', false],
+      ['points50000', 'Legendary Achiever', 50000, 'laurel-gold', '', '', '50K', true],
+      ['points100000', 'WPG Hall of Honour', 100000, 'glow', '#ffe066', 'crown', '', false],
     ];
     for (const [i, [key, name, target, style, col, badge, label, crown]] of POINTS.entries()) {
       await q(
