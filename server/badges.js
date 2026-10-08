@@ -183,7 +183,40 @@ export async function seedAchievements() {
     const { giveAutoMedalsToAll } = await import('./medals.js');
     await giveAutoMedalsToAll().catch(() => {});
   }
+  await pointsForOlderMedals().catch((e) => console.warn('[badges] older medal points', e.message));
   return added;
+}
+
+// Older medals (made before Achievement Points, so no rarity and 0 points) get a rarity and points once, on the same
+// scale as the achievement medals: each series (e.g. Recon levels, hours played, one tracked stat) climbs from Common
+// up to Legendary as its target gets harder; medals staff give by hand are Rare. Staff can change any of them after
+// in Admin → Medals, and this never runs again.
+const LADDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+export function olderMedalRarities(medals) {
+  const out = new Map();
+  const series = new Map();
+  for (const m of medals) {
+    const parts = String(m.auto_rule || '').trim().toLowerCase().split(':');
+    if (!parts[0]) { out.set(m.id, 'rare'); continue; }
+    const target = Number(parts[parts.length - 1]) || 0;
+    const key = parts.slice(0, -1).join(':') || parts[0];
+    if (!series.has(key)) series.set(key, []);
+    series.get(key).push({ id: m.id, target });
+  }
+  for (const list of series.values()) {
+    list.sort((a, b) => a.target - b.target);
+    const n = list.length;
+    list.forEach((m, i) => out.set(m.id, LADDER[n <= LADDER.length ? i : Math.round((i * (LADDER.length - 1)) / (n - 1))]));
+  }
+  return out;
+}
+async function pointsForOlderMedals() {
+  if (await setting('_older_medal_points')) return;
+  const older = await q("SELECT id, auto_rule FROM awards WHERE COALESCE(rarity, '') = '' AND COALESCE(points, 0) = 0");
+  const rarities = olderMedalRarities(older);
+  for (const [id, rarity] of rarities) await q('UPDATE awards SET rarity=$2, points=$3 WHERE id=$1', [id, rarity, await rarityPoints(rarity)]);
+  await q("INSERT INTO settings (key, value) VALUES ('_older_medal_points', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+  if (rarities.size) console.log(`[badges] Gave ${rarities.size} older medals a rarity and Achievement Points`);
 }
 
 // ---------- Earning ----------
