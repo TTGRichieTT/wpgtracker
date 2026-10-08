@@ -372,6 +372,72 @@ const KINDS = {
       };
     },
   },
+  setup: {
+    label: 'App setup guide',
+    help: 'Step by step from the web address to every profile field, linking Discord and wardogs.tools, and the extras. Uses your web address, profile fields and join settings, and updates when they change.',
+    build: async () => {
+      const { setting, flag } = await import('./db.js');
+      const site = SITE();
+      const approval = await flag('require_approval');
+      const fields = await q('SELECT key, label, type, options FROM profile_fields ORDER BY sort_order, key');
+      const tag = String((await setting('clan_tag')) || 'WPG');
+      const fieldText = (f) => {
+        if (f.key === 'wardogs_name') return 'Your Wardogs name with its 4 numbers (Name#1234). Only needed if wardogs.tools can\'t find you by your Steam account.';
+        if (f.key === 'discord') return 'Your Discord name, shown on your profile.';
+        return f.type === 'select' ? `Pick one: ${String(f.options || '').split(',').map((o) => o.trim()).filter(Boolean).join(', ')}.` : 'Fill it in (optional).';
+      };
+      return {
+        heading: 'APP SETUP GUIDE',
+        intro: `Everything you need to get set up in ${tag} Barracks, the ${tag} app: your profile, stats, medals, badges, Combat Command and more. It takes about 5 minutes. Do the steps in order.`,
+        sections: [
+          { title: 'Step 1', accent: 'open the app', rows: [
+            { name: 'Web address', text: site },
+            { name: 'On your phone', text: 'Open it in your browser, then use the browser menu → Add to Home Screen. It then opens like an app.' },
+          ] },
+          { title: 'Step 2', accent: 'sign in with Steam', rows: [
+            { name: 'Sign in', text: 'Press Sign in through Steam and log in on Steam\'s own page. The app never sees your Steam password. Your name and picture come from Steam.' },
+            { name: 'New here?', text: approval ? 'Staff approve new accounts first: you\'ll get in once they have.' : `You start as a PMC guest. Staff make you a ${tag} member once you've joined the clan (apply in Step 8).` },
+            { name: 'Steam privacy', text: 'In Steam → Edit Profile → Privacy Settings, set Game details to Public so your hours and achievements show.' },
+          ] },
+          { title: 'Step 3', accent: 'your profile', rows: [
+            { name: 'Where', text: 'Open My Career (your profile), then press Edit profile.' },
+            { name: 'Callsign', text: 'Your nickname, shown under your name.' },
+            { name: 'Country', text: 'Your flag on your profile and the boards.' },
+            ...fields.map((f) => ({ name: f.label.replace(/\s*\(.*\)$/, ''), text: fieldText(f) })),
+            { name: 'About me', text: 'A few lines about you.' },
+            { name: 'My skills', text: 'Tick what you\'re good at (shown on your profile and to Combat Command).' },
+            { name: 'Picture link', text: 'Optional: an https picture link instead of your Steam picture.' },
+            { name: 'Banner colour', text: 'The colour behind your name box.' },
+            { name: 'Save', text: 'Press Save profile at the bottom of that box.' },
+          ] },
+          { title: 'Step 4', accent: 'friends & Steam', rows: [
+            { name: 'Friend requests', text: 'Leave ticked so members can add you in the app.' },
+            { name: 'Steam buttons', text: 'Leave ticked to show Add on Steam, Steam profile and your friend code on your profile.' },
+            { name: 'Invite link', text: 'In Steam: Friends → Add a Friend → copy your Quick Invite link and paste it in Edit profile. Steam links last 30 days: the bot reminds you from day 27 to paste a new one.' },
+          ] },
+          { title: 'Step 5', accent: 'link Discord', rows: [
+            { name: 'In Discord', text: 'Type /link anywhere on the server. The bot gives you a code (only you see it).' },
+            { name: 'In the app', text: 'Edit profile → Discord box → type the code → Link.' },
+            { name: 'You get', text: 'Your clan, unit, faction and game roles here automatically, and every bot command shows your stats.' },
+          ] },
+          { title: 'Step 6', accent: 'Wardogs stats', rows: [
+            { name: 'wardogs.tools', text: 'Open https://wardogs.tools, sign in and link your Wardogs account (one time only).' },
+            { name: 'Check now', text: 'Back on your profile press Check now. Your level, cash, gold, class levels and world rank then update by themselves about 30 minutes after you close Wardogs.' },
+            { name: 'Not found?', text: 'Add your in-game name with its 4 numbers in Edit profile (Step 3), then press Check now again.' },
+          ] },
+          { title: 'Step 7', accent: 'extras', rows: [
+            { name: 'Live money', text: 'On your profile tick Show my live match money, then add the WPG Barracks Steam account as a friend when asked. Your match money then shows live in the app and in /money.' },
+            { name: 'Streams', text: 'Edit profile → My streams: add your Twitch, YouTube or Kick so your go-live posts here and your streaming badges work.' },
+            { name: 'Showcase', text: 'My Career → Medals, badges & frames: pick up to 5 badges to show under your name, and the frame around your picture.' },
+          ] },
+          { title: 'Step 8', accent: 'join a unit', rows: [
+            { name: 'Apply', text: `Recruitment in the app (or /apply here) to join a ${tag} combat unit. Staff look at every application.` },
+          ] },
+        ],
+        footer: ['Stuck? Ask in #app-help or press Contact staff in #contact-staff'],
+      };
+    },
+  },
   leaderboards: {
     label: 'Leaderboards guide',
     help: 'What the live boards in this room show and how often they update.',
@@ -418,7 +484,9 @@ function embedsFor(d, ids) {
     const n = String(name).replace(/^\//, '');
     return name.startsWith('/') && ids.get(n) ? `</${n}:${ids.get(n)}>` : `**${name}**`;
   };
-  const lines = (s) => s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${r.text}` : r.text)).join('\n');
+  // "/link" written in the text is clickable too (when it's one of the bot's commands).
+  const inline = (t) => String(t || '').replace(/(^|\s)\/([a-z]+)\b/g, (m, pre, n) => (ids.get(n) ? `${pre}</${n}:${ids.get(n)}>` : m));
+  const lines = (s) => s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${inline(r.text)}` : inline(r.text))).join('\n');
   // The banner on its own first (Discord puts an embed's picture under its text), then the intro.
   const out = [{ color: EMBED_COLOR, image: { url: 'attachment://banner.jpg' } }];
   if (d.intro) out.push({ color: EMBED_COLOR, description: d.intro.slice(0, 4000) });
@@ -517,19 +585,25 @@ export function refreshPosts() {
 
 // The first guides, posted once (if those rooms are on the server): the member guide in #stats-bot and the
 // complete guide in the admin bot commands room. After that they're managed in Discord control → Bot posts.
-const FIRST_POSTS = [['1557707461870362635', 'stats'], ['1557425534944673802', 'all']];
+const FIRST_POSTS = [['1557707461870362635', 'stats'], ['1557425534944673802', 'all'], ['1554989526244393023', 'setup']];
 async function firstPosts() {
   const { setting } = await import('./db.js');
-  if (await setting('_discord_first_posts')) return;
-  let posted = 0;
+  let done = [];
+  try { done = JSON.parse((await setting('_discord_first_posts_list')) || '[]') || []; } catch { done = []; }
+  // Posted before this list was kept: the first two.
+  if ((await setting('_discord_first_posts')) && !done.length) done = FIRST_POSTS.slice(0, 2).map(([c, k]) => `${c}:${k}`);
+  const before = done.length;
   for (const [channel, kind] of FIRST_POSTS) {
+    const key = `${channel}:${kind}`;
+    if (done.includes(key)) continue; // posted once already: if an admin deleted it, it stays deleted
     if (!(await one('SELECT 1 FROM discord_rooms WHERE channel_id=$1', [channel]))) continue;
-    if (await one('SELECT 1 FROM discord_bot_posts WHERE channel_id=$1 AND kind=$2', [channel, kind])) { posted++; continue; }
-    const row = await one('INSERT INTO discord_bot_posts (channel_id, kind, style, pin) VALUES ($1,$2,\'card\',true) RETURNING id', [channel, kind]);
-    await publishPost(row.id, { force: true });
-    posted++;
+    if (!(await one('SELECT 1 FROM discord_bot_posts WHERE channel_id=$1 AND kind=$2', [channel, kind]))) {
+      const row = await one('INSERT INTO discord_bot_posts (channel_id, kind, style, pin) VALUES ($1,$2,\'card\',true) RETURNING id', [channel, kind]);
+      await publishPost(row.id, { force: true });
+    }
+    done.push(key);
   }
-  if (posted === FIRST_POSTS.length) await q("INSERT INTO settings (key, value) VALUES ('_discord_first_posts', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+  if (done.length !== before) await q("INSERT INTO settings (key, value) VALUES ('_discord_first_posts_list', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify(done)]);
 }
 
 // The faction voice rooms (🐺 WARDOGS category) and the AFK room show their names in the app from the start; the rest
