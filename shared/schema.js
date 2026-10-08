@@ -62,6 +62,7 @@ export const users = pgTable('users', {
   badge_showcase: jsonb().notNull().default([]), // up to 5 badge ids they show at the top of their profile
   frame_badge_id: integer(), // an earned badge they show in their frame's corner instead of their clan rank badge
   steam_add_button: boolean().notNull().default(true),
+  steam_invite: text().notNull().default(''), // their own Steam quick invite link (s.team/p/…), for Add on Steam
   discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),
   last_seen: now(),

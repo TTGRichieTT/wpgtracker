@@ -145,6 +145,19 @@ export function safeUrl(v) {
 }
 
 // Public shape of a user, safe to send to other members.
+// Steam quick invite links (Steam → Friends → Add a Friend → Quick Invite): https://s.team/p/<code>[/<token>], or the
+// older https://steamcommunity.com/user/<code>/<token>. <code> is the Steam account number in hex, written with
+// Steam's letters (0-f → b c d f g h j k m n p q r t v w) and a dash in the middle.
+const INVITE_LETTERS = 'bcdfghjkmnpqrtvw';
+export function steamInviteAccount(link) {
+  const m = /^https:\/\/(?:s\.team\/p|steamcommunity\.com\/user)\/([bcdfghjkmnpqrtvw-]{2,20})(?:\/[A-Za-z0-9]{1,40})?\/?$/i.exec(String(link || '').trim());
+  if (!m) return null;
+  const hex = m[1].toLowerCase().replace(/-/g, '').split('').map((c) => INVITE_LETTERS.indexOf(c).toString(16)).join('');
+  return hex ? BigInt(`0x${hex}`) : null;
+}
+// A Steam ID's friend code (what you type in Steam → Add a Friend).
+export const friendCode = (steamId) => (/^\d{17}$/.test(String(steamId || '')) ? String(BigInt(steamId) - 76561197960265728n) : '');
+
 export function publicUser(u, rank) {
   if (!u) return null;
   return {
@@ -172,6 +185,7 @@ export function publicUser(u, rank) {
     steam_private: u.steam_private,
     friend_requests: u.friend_requests !== false,
     steam_add_button: u.steam_add_button !== false,
+    steam_invite: u.steam_add_button !== false ? u.steam_invite || '' : '',
   };
 }
 
