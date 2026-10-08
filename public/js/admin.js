@@ -738,12 +738,19 @@ async function roomsPanel(box) {
     ${d.groups.map((g) => {
     const others = g.rooms.filter((r) => !r.text);
     return `<div class="panel"><div class="panel-title" style="margin-bottom:6px">${esc(g.name)}</div>${g.rooms.filter((r) => r.text).map(row).join('')}
-      ${others.length ? `<div class="dc-room off"><span class="grow small">🔊 ${others.map((r) => esc(r.name)).join(' · ')}</span><span class="muted small">voice</span></div>` : ''}
+      ${others.filter((r) => r.voice).length ? `<div class="dc-room"><span class="grow small">🔊 <b>Voice rooms</b> <span class="muted">· tick to show the real name in the app's Discord comms panel (rooms that need a role stay locked on Discord)</span>
+        <span class="row" style="gap:6px 14px;margin-top:6px;flex-wrap:wrap">${others.filter((r) => r.voice).map((r) => `<label class="check small"><input type="checkbox" data-show="${esc(r.id)}"${r.show_in_app ? ' checked' : ''}> ${esc(r.name)}</label>`).join('')}</span></span></div>` : ''}
+      ${others.filter((r) => !r.voice).length ? `<div class="dc-room off"><span class="grow small">${others.filter((r) => !r.voice).map((r) => esc(r.name)).join(' · ')}</span><span class="muted small">other</span></div>` : ''}
       ${g.rooms.length ? '' : '<p class="muted small" style="margin:0">No rooms.</p>'}</div>`;
   }).join('')}`;
   box.querySelector('#dsRoomsSync').onclick = async () => {
     try { const r = await api('admin/discord-rooms/sync', { method: 'POST', body: {} }); if (r.ok === false) throw new Error(r.reason); toast('Rooms up to date'); roomsPanel(box); } catch (x) { fail(x); }
   };
+  box.querySelectorAll('[data-show]').forEach((el) => {
+    el.onchange = async () => {
+      try { await api(`admin/discord-rooms/${el.dataset.show}`, { method: 'PUT', body: { show_in_app: el.checked } }); toast(el.checked ? 'Shown in the app' : 'Hidden in the app'); } catch (x) { el.checked = !el.checked; fail(x); }
+    };
+  });
   box.querySelectorAll('[data-room]').forEach((el) => {
     const save = async (body, undo) => {
       try {

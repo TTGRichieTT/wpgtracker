@@ -25,6 +25,7 @@ const MEMBER_POSTING = BIT.SEND | BIT.SEND_IN_THREADS | BIT.PUBLIC_THREADS | BIT
 const BOT_NEEDS = BIT.VIEW | BIT.SEND | BIT.EMBED | BIT.ATTACH | BIT.HISTORY | BIT.MANAGE_MESSAGES;
 const P = (n) => String(n);
 const TEXT_TYPES = new Set([0, 5]); // text and announcement channels
+const VOICE_TYPES = new Set([2, 13]); // voice and stage channels
 export const CLEAR_CHOICES = [0, 5, 15, 30, 60, 360, 720, 1440, 4320, 10080, 20160]; // minutes (0 = off); 14 days is Discord's limit
 const DAY = 86400e3;
 
@@ -112,7 +113,7 @@ export async function roomsOverview() {
   const groups = [{ id: '', name: 'No category', rooms: [] }, ...cats.map((c) => ({ id: c.channel_id, name: c.name, position: c.position, rooms: [] }))];
   for (const r of rows.filter((x) => x.type !== 4)) {
     (groups.find((g) => g.id === r.parent_id) || groups[0]).rooms.push({
-      id: r.channel_id, name: r.name, type: r.type, text: TEXT_TYPES.has(r.type), view_only: r.view_only, clear_minutes: r.clear_minutes,
+      id: r.channel_id, name: r.name, type: r.type, text: TEXT_TYPES.has(r.type), voice: VOICE_TYPES.has(r.type), show_in_app: r.show_in_app, view_only: r.view_only, clear_minutes: r.clear_minutes,
       no_clear: locked.has(r.channel_id), last_cleared_at: r.last_cleared_at, last_cleared_count: r.last_cleared_count, problem: r.problem,
       posts: posts.filter((p) => p.channel_id === r.channel_id).length,
     });
@@ -128,9 +129,15 @@ export async function roomsOverview() {
 }
 
 // ---------- Room settings ----------
-export async function setRoom(channelId, { view_only, clear_minutes }) {
+export async function setRoom(channelId, { view_only, clear_minutes, show_in_app }) {
   const room = await one('SELECT * FROM discord_rooms WHERE channel_id=$1', [channelId]);
   if (!room) throw new Error('That room is no longer on the server.');
+  if (show_in_app !== undefined) {
+    if (!VOICE_TYPES.has(room.type)) throw new Error('Only voice rooms show in the app.');
+    await q('UPDATE discord_rooms SET show_in_app=$2 WHERE channel_id=$1', [channelId, !!show_in_app]);
+    bus.emit('config:changed', 'discord-rooms');
+    return { ok: true, problem: '' };
+  }
   if (!TEXT_TYPES.has(room.type)) throw new Error('Only text rooms can be view only or auto-cleared.');
   let problem = '';
   if (clear_minutes !== undefined) {
@@ -495,11 +502,28 @@ async function firstPosts() {
   if (posted === FIRST_POSTS.length) await q("INSERT INTO settings (key, value) VALUES ('_discord_first_posts', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
 }
 
+// The faction voice rooms (🐺 WARDOGS category) and the AFK room show their names in the app from the start; the rest
+// is up to the admins.
+const FIRST_SHOWN_CATEGORY = '1553006810431102996';
+const FIRST_SHOWN_ROOMS = ['1521623295252758600'];
+async function firstShown() {
+  const { setting } = await import('./db.js');
+  if (await setting('_discord_first_shown')) return;
+  if (!(await one('SELECT 1 FROM discord_rooms WHERE channel_id=$1', [FIRST_SHOWN_CATEGORY]))) return;
+  await q('UPDATE discord_rooms SET show_in_app=true WHERE (parent_id=$1 OR channel_id = ANY($3)) AND type = ANY($2)', [FIRST_SHOWN_CATEGORY, [...VOICE_TYPES], FIRST_SHOWN_ROOMS]);
+  await q("INSERT INTO settings (key, value) VALUES ('_discord_first_shown', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+}
+// Voice rooms whose names the app may show although @everyone can't see them (Discord's widget hides those).
+export async function shownVoiceRooms() {
+  return q('SELECT channel_id, name, position, parent_id FROM discord_rooms WHERE show_in_app = true AND type = ANY($1) ORDER BY position, name', [[...VOICE_TYPES]]);
+}
+
 export function startDiscordRooms() {
   if (!botReady()) return;
   setTimeout(async () => {
     await syncRooms().catch((e) => console.warn('[rooms] sync', e.message));
     await firstPosts().catch((e) => console.warn('[rooms] first posts', e.message));
+    await firstShown().catch((e) => console.warn('[rooms] first shown', e.message));
     refreshPosts();
   }, 20e3);
   setInterval(() => sweepRooms().catch((e) => console.warn('[rooms] clear', e.message)), 60e3);

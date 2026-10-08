@@ -570,6 +570,7 @@ admin.put('/discord-rooms/:id', role('admin'), async (req, res) => {
   const r = await setRoom(String(req.params.id), {
     view_only: b.view_only === undefined ? undefined : !!b.view_only,
     clear_minutes: b.clear_minutes === undefined ? undefined : int(b.clear_minutes),
+    show_in_app: b.show_in_app === undefined ? undefined : !!b.show_in_app,
   }).catch((e) => { throw new HttpError(400, e.message); });
   await audit(req.user.id, 'discord.room', String(req.params.id), b);
   res.json(r);
