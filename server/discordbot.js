@@ -1249,6 +1249,14 @@ async function readApplication() {
   return a;
 }
 const realAppId = () => appFromDiscord?.id || APP_ID();
+// The bot's slash commands' IDs by name, so posts can show them as clickable </name:id> mentions. Cached 10 minutes.
+let cmdIds = { at: 0, map: new Map() };
+export async function commandIds() {
+  if (Date.now() - cmdIds.at < 10 * 60e3) return cmdIds.map;
+  const list = await discordFetch(`/applications/${realAppId()}/commands`).catch(() => []);
+  cmdIds = { at: Date.now(), map: new Map((list || []).filter((c) => c.id && c.name).map((c) => [c.name, c.id])) };
+  return cmdIds.map;
+}
 
 // Points Discord at this app ("Interactions Endpoint URL"), so nobody has to paste it in by hand.
 // Discord checks the address straight away by sending it a test message, which this app answers.
@@ -1276,6 +1284,7 @@ export async function registerCommands() {
   const guild = await guildId().catch(() => null);
   if (guild) await discordFetch(`/applications/${realAppId()}/guilds/${guild}/commands`, 'PUT', []).catch(() => {});
   await remember('_discord_commands_ok', new Date().toISOString());
+  cmdIds.at = 0;
   bus.emit('discord:commands'); // bot posts with the command lists rebuild themselves (discordrooms.js)
   return { ok: true, count: done?.length || 0, where: 'every server the bot is in' };
 }
@@ -1578,10 +1587,19 @@ async function badgesPost(u, list, reason) {
   const text = list.length === 1
     ? `🏆 **${u.persona_name}**${mentionFor(u)} unlocked **${top.name}** (${RARITY_NAME[top.rarity] || ''} badge, +${num(top.points)} Achievement Points).`
     : `🏆 **${u.persona_name}**${mentionFor(u)} unlocked **${list.length} badges**: ${list.map((b) => `**${b.name}**`).join(', ')} (+${num(pts)} Achievement Points).`;
-  return announcePicture('achievement', text, async (cards) => cards.renderAchievementCard({
+  const out = await announcePicture('achievement', text, async (cards) => cards.renderAchievementCard({
     name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), badges: list.map((b) => badgeOut(b)), reason,
   }), () => ({ embeds: [{ color: GOLD, title: '🏆 WPG ACHIEVEMENT UNLOCKED', url: `${SITE()}/#/u/${u.id}`,
     description: `${text.replace(/^🏆 /, '')}\n${list.slice(0, 5).map((b) => `• **${b.name}**: ${b.description}`).join('\n')}`, footer: { text: '🐺 Wasted Prodigy Gamers' } }] }), profileLink(u));
+  return list.length > 1 ? withDetails(out, list.map((b) => `🏆 **${b.name}** · ${RARITY_NAME[b.rarity] || ''} · +${num(b.points)} pts\n${b.description}`), reason) : out;
+}
+// Several badges or medals at once: the full list as real text under the picture (in the same box), so it reads at
+// Discord's normal size however many there are; the picture shows the first 3 side by side.
+function withDetails(out, lines, reason = '') {
+  if (!out.files?.length) return out;
+  let desc = lines.join('\n\n');
+  if (reason) desc = `${desc}\n\n*${reason}*`;
+  return { ...out, embeds: [{ color: GOLD, description: desc.slice(0, 4000), image: { url: `attachment://${out.files[0].name}` } }] };
 }
 async function medalPost(u, names) {
   const rows = await q('SELECT DISTINCT ON (name) name, description, colors, auto_rule FROM awards WHERE name = ANY($1) ORDER BY name, id', [names]);
@@ -1590,7 +1608,8 @@ async function medalPost(u, names) {
   const text = `🎖️ **${u.persona_name}**${mentionFor(u)} earned ${names.map((n) => `**${n}**`).join(', ')}.${tracker ? ` ${TRACKER_CREDIT}` : ''}`;
   const out = await announcePicture('medal', text, async (cards) => cards.renderMedalAwardCard({ name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), medals }),
     () => ({ embeds: [{ color: GOLD, title: names.length === 1 ? '🎖️ Medal awarded' : '🎖️ Medals awarded', description: text.replace(/^🎖️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
-  return tracker ? withTrackerButton(out) : out;
+  const full = names.length > 1 ? withDetails(out, medals.map((m) => `🎖️ **${m.name}**${m.description ? `\n${m.description}` : ''}`)) : out;
+  return tracker ? withTrackerButton(full) : full;
 }
 // u may be null (a player on the WPG server who isn't in the app); name is then the bot's name for them.
 async function wpgRankPost(u, name, rank, xp, level) {
