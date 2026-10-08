@@ -299,16 +299,18 @@ export async function pointsFor(userIds) {
 }
 
 export async function collectionFor(user) {
-  const list = (await allBadges()).filter((b) => b.enabled);
   const held = new Map((await q('SELECT badge_id, earned_at, reason, given_by FROM user_badges WHERE user_id=$1', [user.id])).map((r) => [r.badge_id, r]));
+  // Switched-off badges they still hold are listed too (marked off): they still count for points, and staff need to
+  // see them to take them away.
+  const all = await allBadges();
+  const list = all.filter((b) => b.enabled || held.has(b.id));
   const s = await statsFor(user);
   const badgesList = list.map((b) => {
     const h = held.get(b.id);
     const r = ruleParts(b.rule);
     const progress = r && !h ? { value: Math.min(Number(s[r.key]) || 0, r.target), target: r.target, unit: STATS[r.key]?.unit || '' } : null;
-    return badgeOut(b, { unlocked: !!h, earned_at: h?.earned_at || null, progress, how: r ? STATS[r.key]?.label : 'Given by WPG staff' });
+    return badgeOut(b, { unlocked: !!h, earned_at: h?.earned_at || null, progress, how: r ? STATS[r.key]?.label : 'Given by WPG staff', off: !b.enabled });
   });
-  // Badges they hold that were switched off or deleted from the list still count (shown as held).
   const totals = (await pointsFor([user.id])).get(user.id) || { points: 0, badges: 0, medals: 0 };
   const showcase = (Array.isArray(user.badge_showcase) ? user.badge_showcase : []).map(Number).filter((id) => held.has(id)).slice(0, 5);
   const earnedCount = badgesList.filter((b) => b.unlocked).length;
@@ -321,7 +323,7 @@ export async function collectionFor(user) {
     totals: {
       points: totals.points,
       badges: earnedCount,
-      badges_total: badgesList.length,
+      badges_total: all.filter((b) => b.enabled).length,
       medals: totals.medals,
       completion: badgesList.length + medalTotal ? Math.round(((earnedCount + medalsAuto) / (badgesList.length + medalTotal)) * 1000) / 10 : 0,
     },

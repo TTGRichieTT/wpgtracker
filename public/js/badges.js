@@ -335,7 +335,7 @@ export async function memberBadgesSection(box, userId) {
   const held = d.badges.filter((b) => b.unlocked);
   const manual = (all?.badges || d.badges).filter((b) => !held.some((h) => h.id === b.id));
   box.innerHTML = `<h3>Badges <span class="muted small">${held.length} · ${fmtNum(d.totals.points)} points</span></h3>
-    <div class="list">${held.map((b) => `<div class="item">${badgeHTML(b, 34)}<div class="grow"><b>${esc(b.name)}</b> ${rarityPill(b.rarity)}<div class="muted small">${fmtDate(b.earned_at)}</div></div><button class="btn ghost small" data-rmb="${b.id}">Take away</button></div>`).join('') || '<p class="muted">None yet.</p>'}</div>
+    <div class="list">${held.map((b) => `<div class="item">${badgeHTML(b, 34)}<div class="grow"><b>${esc(b.name)}</b> ${rarityPill(b.rarity)}${b.off ? ' <span class="pill">Switched off</span>' : ''}<div class="muted small">${fmtDate(b.earned_at)} · ${fmtNum(b.points)} points</div></div><button class="btn ghost small" data-rmb="${b.id}">Take away</button></div>`).join('') || '<p class="muted">None yet.</p>'}</div>
     <form class="row" id="giveB"><select name="badge_id" style="max-width:240px">${manual.map((b) => `<option value="${b.id}">${esc(b.name)}${b.manual ? '' : ' (automatic)'}</option>`).join('')}</select>
       <input type="text" name="reason" placeholder="Reason" class="grow"><button class="btn">${icon('medal')} Give badge</button></form>
     ${state.me.role === 'admin' ? `<h3 style="margin-top:16px">Original WPG join date</h3>
