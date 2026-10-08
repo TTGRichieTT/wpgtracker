@@ -171,6 +171,11 @@ export const discordRooms = pgTable('discord_rooms', {
   problem: text().notNull().default(''),
   created_at: now(),
 });
+// The weekly welcome (discordwelcome.js): who has been welcomed, so nobody is welcomed twice.
+export const discordWelcomed = pgTable('discord_welcomed', {
+  discord_id: text().primaryKey(),
+  welcomed_at: now(),
+});
 // Messages the bot posts and keeps up to date (Discord control → Bot posts): ready-made guides and the admins' own posts.
 export const discordBotPosts = pgTable('discord_bot_posts', {
   id: serial().primaryKey(),
