@@ -153,6 +153,39 @@ export const discordCases = pgTable('discord_cases', {
   created_at: now(),
 }, (t) => [index('discord_cases_user_idx').on(t.guild_id, t.user_id)]);
 
+// Discord rooms (discordrooms.js): every channel on the server, kept in step with Discord, with the admin's settings:
+// view only (members can read, not post or use commands) and auto-clear (members' messages and command replies).
+export const discordRooms = pgTable('discord_rooms', {
+  channel_id: text().primaryKey(),
+  guild_id: text().notNull(),
+  name: text().notNull().default(''),
+  type: integer().notNull().default(0),
+  parent_id: text().notNull().default(''),
+  position: integer().notNull().default(0),
+  view_only: boolean().notNull().default(false),
+  view_saved: jsonb(), // the channel's permissions before it was made view only (put back when switched off)
+  clear_minutes: integer().notNull().default(0),
+  last_cleared_at: timestamp({ withTimezone: true }),
+  last_cleared_count: integer().notNull().default(0),
+  problem: text().notNull().default(''),
+  created_at: now(),
+});
+// Messages the bot posts and keeps up to date (Discord control → Bot posts): ready-made guides and the admins' own posts.
+export const discordBotPosts = pgTable('discord_bot_posts', {
+  id: serial().primaryKey(),
+  channel_id: text().notNull(),
+  kind: text().notNull().default('custom'), // custom | stats | staff | leaderboards
+  title: text().notNull().default(''),
+  body: text().notNull().default(''),
+  style: text().notNull().default('card'), // card (picture in the WPG artwork) | text
+  pin: boolean().notNull().default(true),
+  message_id: text().notNull().default(''),
+  hash: text().notNull().default(''),
+  problem: text().notNull().default(''),
+  created_by: integer(),
+  updated_at: now(),
+});
+
 // The Discord entry check (rules button): who passed, who is held for staff (new accounts) and failed tries.
 export const discordEntries = pgTable('discord_entries', {
   discord_id: text().primaryKey(),

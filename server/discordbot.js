@@ -1276,6 +1276,7 @@ export async function registerCommands() {
   const guild = await guildId().catch(() => null);
   if (guild) await discordFetch(`/applications/${realAppId()}/guilds/${guild}/commands`, 'PUT', []).catch(() => {});
   await remember('_discord_commands_ok', new Date().toISOString());
+  bus.emit('discord:commands'); // bot posts with the command lists rebuild themselves (discordrooms.js)
   return { ok: true, count: done?.length || 0, where: 'every server the bot is in' };
 }
 
@@ -1471,7 +1472,7 @@ export async function sendToChannel(channel, { files, ...rest }) {
   return res.json().catch(() => null);
 }
 // Edits one of the bot's messages; with files, the old picture is swapped for the new one (and any embed removed).
-async function editMessage(channel, id, { files, ...rest }) {
+export async function editMessage(channel, id, { files, ...rest }) {
   if (!files?.length) return discordFetch(`/channels/${channel}/messages/${id}`, 'PATCH', { embeds: [], attachments: [], ...rest });
   const form = new FormData();
   form.append('payload_json', JSON.stringify({ embeds: [], content: '', ...rest, attachments: files.map((x, i) => ({ id: i, filename: x.name })) }));

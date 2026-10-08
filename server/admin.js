@@ -555,6 +555,55 @@ admin.put('/discord-server/commands', role('admin'), async (req, res) => {
   res.json({ ok: true, discord: r });
 });
 
+// Discord control → Rooms and Bot posts (discordrooms.js).
+admin.get('/discord-rooms', role('admin'), async (_req, res) => {
+  const { roomsOverview } = await import('./discordrooms.js');
+  res.json(await roomsOverview());
+});
+admin.post('/discord-rooms/sync', role('admin'), async (_req, res) => {
+  const { syncRooms } = await import('./discordrooms.js');
+  res.json(await syncRooms().catch((e) => ({ ok: false, reason: e.message })));
+});
+admin.put('/discord-rooms/:id', role('admin'), async (req, res) => {
+  const { setRoom } = await import('./discordrooms.js');
+  const b = req.body || {};
+  const r = await setRoom(String(req.params.id), {
+    view_only: b.view_only === undefined ? undefined : !!b.view_only,
+    clear_minutes: b.clear_minutes === undefined ? undefined : int(b.clear_minutes),
+  }).catch((e) => { throw new HttpError(400, e.message); });
+  await audit(req.user.id, 'discord.room', String(req.params.id), b);
+  res.json(r);
+});
+admin.post('/discord-posts/preview', role('admin'), async (req, res) => {
+  const { previewPost } = await import('./discordrooms.js');
+  const p = await previewPost(req.body || {}).catch((e) => { throw new HttpError(400, e.message); });
+  const file = p.files?.[0];
+  if (file) { res.type('image/jpeg').send(Buffer.from(file.data)); return; }
+  res.json({ text: p.content });
+});
+admin.post('/discord-posts', role('admin'), async (req, res) => {
+  const { savePost } = await import('./discordrooms.js');
+  const r = await savePost(0, req.body || {}, req.user.id).catch((e) => { throw new HttpError(400, e.message); });
+  await audit(req.user.id, 'discord.post', String(r.id), { channel: req.body?.channel_id, kind: req.body?.kind });
+  res.json(r);
+});
+admin.put('/discord-posts/:id', role('admin'), async (req, res) => {
+  const { savePost } = await import('./discordrooms.js');
+  const r = await savePost(int(req.params.id), req.body || {}, req.user.id).catch((e) => { throw new HttpError(400, e.message); });
+  await audit(req.user.id, 'discord.post', String(req.params.id), { channel: req.body?.channel_id, kind: req.body?.kind });
+  res.json(r);
+});
+admin.post('/discord-posts/:id/repost', role('admin'), async (req, res) => {
+  const { publishPost } = await import('./discordrooms.js');
+  res.json(await publishPost(int(req.params.id), { force: true }).catch((e) => { throw new HttpError(400, e.message); }));
+});
+admin.delete('/discord-posts/:id', role('admin'), async (req, res) => {
+  const { deletePost } = await import('./discordrooms.js');
+  await deletePost(int(req.params.id));
+  await audit(req.user.id, 'discord.post.delete', req.params.id);
+  res.json({ ok: true });
+});
+
 // Tidy up an existing server: scan (nothing changes), then apply the chosen removals with a backup first.
 admin.post('/discord-server/tidy/scan', role('admin'), async (req, res) => {
   try {

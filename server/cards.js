@@ -1468,3 +1468,59 @@ const CATEGORY_NAMES = {
   streaming: 'Streaming', nitro: 'Nitro boosts', loyalty: 'WPG loyalty', chat: 'Discord chat', voice: 'Discord voice',
   recruitment: 'Recruitment', events: 'Events & tournaments', special: 'Special recognition', wardogs: 'Wardogs', other: 'Badge',
 };
+
+// ---------- Room guides and bot posts (discordrooms.js) ----------
+// d: { heading, intro, sections: [{ title, accent, rows: [{ name, text }] }], footer: [line] }
+// A row with a name shows it in cyan on the left (e.g. "/stats") and its text beside it; without, the text runs full width.
+export async function renderGuideCard(d) {
+  await prepare();
+  // The card fonts have no arrows: "Discord control → Commands" is drawn as "Discord control > Commands".
+  const clean = (t) => String(t || '').replace(/[→⇒➜➡]/g, '>');
+  d = { ...d, heading: clean(d.heading), intro: clean(d.intro), footer: (d.footer || []).map(clean),
+    sections: (d.sections || []).map((x) => ({ ...x, title: clean(x.title), accent: clean(x.accent), rows: (x.rows || []).map((r) => ({ name: clean(r.name), text: clean(r.text) })) })) };
+  const m = createCanvas(10, 10).getContext('2d');
+  const NAME_W = 300;
+  const TEXT_W = 1480 - 80;
+  const LINE = 32;
+  m.font = `600 24px ${VALUE_FONT}`;
+  const intro = d.intro ? wrapLines(m, d.intro, TEXT_W, 6) : [];
+  const sections = (d.sections || []).map((s) => {
+    const rows = (s.rows || []).map((r) => {
+      m.font = `600 24px ${VALUE_FONT}`;
+      const lines = wrapLines(m, r.text || '', r.name ? TEXT_W - NAME_W : TEXT_W, 6);
+      return { ...r, lines, h: Math.max(1, lines.length) * LINE + 14 };
+    });
+    return { ...s, rows, h: 74 + rows.reduce((a, r) => a + r.h, 0) + 10 };
+  });
+  const footer = d.footer || [];
+  const introH = intro.length ? intro.length * LINE + 30 : 0;
+  const bodyH = 20 + introH + sections.reduce((a, s) => a + s.h + 16, 0) + (footer.length ? footer.length * 34 + 16 : 0) + 10;
+  return frame(upper(d.heading || 'WPG BARRACKS'), bodyH, async (g, top) => {
+    let y = top + 14;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    if (intro.length) {
+      g.font = `600 24px ${VALUE_FONT}`;
+      g.fillStyle = '#dfe6ec';
+      intro.forEach((line, i) => g.fillText(line, 68, y + 18 + i * LINE));
+      y += introH;
+    }
+    for (const s of sections) {
+      panel(g, 28, y, 1480, s.h);
+      title(g, 60, y + 38, upper(s.title || ''), s.accent ? upper(s.accent) : '');
+      let ry = y + 74;
+      for (const r of s.rows) {
+        if (r.name) {
+          bigValue(g, r.name, 68, ry + LINE / 2, NAME_W - 20, { size: 28, color: CYAN, font: LABEL_FONT, weight: 700 });
+          g.textAlign = 'left';
+        }
+        g.font = `600 24px ${VALUE_FONT}`;
+        g.fillStyle = WHITE;
+        r.lines.forEach((line, i) => g.fillText(line, r.name ? 68 + NAME_W : 68, ry + LINE / 2 + i * LINE));
+        ry += r.h;
+      }
+      y += s.h + 16;
+    }
+    footer.forEach((line, k) => label(g, upper(line), W / 2, y + 20 + k * 34, { align: 'center', size: 22, color: MUTED }));
+  });
+}
