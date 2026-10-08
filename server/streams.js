@@ -184,7 +184,7 @@ const CHECK = {
         const s = byLogin.get(r.handle);
         if (s) {
           live.set(r.id, {
-            title: s.title, game: s.game_name, viewers: s.viewer_count, live_since: s.started_at,
+            title: s.title, game: s.game_name, viewers: s.viewer_count, live_since: s.started_at, ref: String(s.id || s.started_at || ''),
             thumbnail: String(s.thumbnail_url || '').replace('{width}', '640').replace('{height}', '360'),
           });
         }
@@ -232,7 +232,7 @@ const CHECK = {
         const th = v.snippet.thumbnails || {};
         live.set(r.id, {
           title: v.snippet.title, game: '', viewers: v.liveStreamingDetails?.concurrentViewers ?? null,
-          live_since: v.liveStreamingDetails?.actualStartTime || null, thumbnail: (th.high || th.medium || th.default || {}).url || '', video_id: v.id,
+          live_since: v.liveStreamingDetails?.actualStartTime || null, thumbnail: (th.high || th.medium || th.default || {}).url || '', video_id: v.id, ref: v.id,
         });
       }
     }
@@ -258,6 +258,7 @@ const CHECK = {
           live.set(r.id, {
             title: c.stream_title || '', game: c.category?.name || '', viewers: s.viewer_count ?? null,
             live_since: s.start_time && !String(s.start_time).startsWith('0001') ? s.start_time : null,
+            ref: String(s.start_time || ''),
             thumbnail: typeof s.thumbnail === 'string' ? s.thumbnail : s.thumbnail?.url || '',
           });
         }
@@ -269,6 +270,37 @@ const CHECK = {
 };
 
 const misses = new Map(); // account id -> checks in a row it wasn't found live
+
+// ---------- Verified stream history (stream_sessions) ----------
+// Only streams the platform's API says are live are recorded. The same stream (same platform id), or a reconnect
+// within RECONNECT_MS of the last sighting, carries on the same row, so restarts and bot restarts never add a
+// second stream or count time twice. The start is the platform's own start time where it gives one.
+const RECONNECT_MS = 10 * 60 * 1000;
+async function seenLive(r, s) {
+  const ref = String(s.ref || '').slice(0, 120);
+  const open = await one(
+    `SELECT id FROM stream_sessions WHERE account_id=$1 AND ((stream_ref <> '' AND stream_ref=$2) OR last_seen_at > now() - $3 * interval '1 millisecond')
+      ORDER BY last_seen_at DESC LIMIT 1`,
+    [r.id, ref, RECONNECT_MS],
+  );
+  if (open) {
+    await q('UPDATE stream_sessions SET last_seen_at=now(), ended_at=NULL WHERE id=$1', [open.id]);
+    return;
+  }
+  const since = s.live_since && !Number.isNaN(Date.parse(s.live_since)) ? new Date(s.live_since) : new Date();
+  // A start time from the platform, but never earlier than 24h before we first saw it (bad data guard).
+  const start = new Date(Math.min(Date.now(), Math.max(since.getTime(), Date.now() - 24 * 3600e3)));
+  await q('INSERT INTO stream_sessions (user_id, account_id, platform, stream_ref, started_at, last_seen_at) VALUES ($1,$2,$3,$4,$5,now())',
+    [r.user_id, r.id, r.platform, ref, start]);
+}
+async function seenEnded(r) {
+  await q('UPDATE stream_sessions SET ended_at=last_seen_at WHERE account_id=$1 AND ended_at IS NULL', [r.id]);
+  bus.emit('stats:changed', r.user_id); // streaming achievements
+}
+// After a restart: streams last seen a while ago are finished at their last sighting.
+async function closeStaleSessions() {
+  await q(`UPDATE stream_sessions SET ended_at=last_seen_at WHERE ended_at IS NULL AND last_seen_at < now() - $1 * interval '1 millisecond'`, [RECONNECT_MS]);
+}
 export const lastProblems = {}; // platform -> { at, message }
 
 async function goneLive(r) {
@@ -313,6 +345,7 @@ export async function checkStreams() {
              video_id=CASE WHEN $7 = '' THEN video_id ELSE $7 END, last_checked=now() WHERE id=$1`,
           [r.id, str(s.title, 300), str(s.game, 120), s.viewers === null || s.viewers === undefined ? null : int(s.viewers), https(s.thumbnail), s.live_since || null, s.video_id || ''],
         );
+        await seenLive(r, s).catch((e) => console.warn('[streams] history', e.message));
         if (!r.is_live) { any = true; await goneLive(r); }
         else if (Number(r.viewers) !== Number(s.viewers) || r.title !== s.title) any = true;
       } else if (r.is_live && !r.manual) {
@@ -321,6 +354,7 @@ export async function checkStreams() {
         if (n >= MISSES_TO_END) {
           misses.delete(r.id);
           await q("UPDATE stream_accounts SET is_live=false, viewers=NULL, video_id='', last_checked=now() WHERE id=$1", [r.id]);
+          await seenEnded(r).catch(() => {});
           any = true;
         }
       } else {
@@ -335,7 +369,7 @@ let running = false;
 async function tick() {
   if (running) return;
   running = true;
-  try { await checkStreams(); } catch (e) { console.warn('[streams] check failed:', e.message); } finally { running = false; }
+  try { await closeStaleSessions(); await checkStreams(); } catch (e) { console.warn('[streams] check failed:', e.message); } finally { running = false; }
 }
 export function startStreamWatch() {
   // Facebook was dropped (it can't be checked and its chat can't be used from other apps).

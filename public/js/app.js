@@ -812,8 +812,14 @@ async function viewProfile(main, [id]) {
 
   const customFields = fields.filter((f) => u.custom_fields?.[f.key]).map((f) => `<span class="pill">${esc(f.label)}: ${esc(u.custom_fields[f.key])}</span>`).join(' ');
 
+  // Steam friends: Steam doesn't let other sites send friend requests, so these open Steam itself. "Add on Steam"
+  // opens the Steam app on this computer with the request; "Steam profile" opens their profile (Add Friend is there,
+  // and on phones it opens in the Steam app).
+  const steamBtns = !mine && u.steam_add_button !== false && /^\d{17}$/.test(u.steam_id || '')
+    ? `<a class="btn" href="steam://friends/add/${u.steam_id}" title="Opens Steam on this computer and sends the friend request">${icon('friends')} Add on Steam</a><a class="btn ghost" href="https://steamcommunity.com/profiles/${u.steam_id}" target="_blank" rel="noopener" title="Their Steam profile: press Add Friend there">Steam profile</a>`
+    : '';
   const friendBtn = mine ? '' : {
-    none: `<button class="btn" data-friend="add">${icon('friends')} Add friend</button>`,
+    none: u.friend_requests === false ? '<span class="btn ghost" style="cursor:default;opacity:.7" title="They switched off friend requests">Not taking friend requests</span>' : `<button class="btn" data-friend="add">${icon('friends')} Add friend</button>`,
     outgoing: `<button class="btn ghost" data-friend="remove">Request sent · Cancel</button>`,
     incoming: `<button class="btn primary" data-friend="add">${icon('friends')} Accept friend</button>`,
     friends: `<button class="btn ghost" data-friend="remove">Friends ✓ · Remove</button>`,
@@ -882,13 +888,14 @@ async function viewProfile(main, [id]) {
             ${u.callsign ? `<div class="accent">“${esc(u.callsign)}”</div>` : ''}
             <div class="row" style="margin-top:6px">${rolePill(u)} ${playingTag(u)} <span class="muted small">${state.online.has(u.id) ? '<span style="color:var(--green)">● Online</span>' : `Last seen ${timeAgo(u.last_seen)}`} · Joined ${fmtDate(u.joined_at)}</span></div>
             ${customFields ? `<div class="row" style="margin-top:8px">${customFields}</div>` : ''}
+            <div id="showcaseBox"></div>
             ${p.combat?.unit ? `<div class="row" style="margin-top:8px;gap:8px"><a href="#/command" class="pill" style="color:${esc(p.combat.unit.color)};border-color:${esc(p.combat.unit.color)}">${icon('shield', 'width="12" height="12" style="vertical-align:-1px"')} ${esc(p.combat.unit.name)}</a><b style="font:700 15px var(--head);text-transform:uppercase">${esc(p.combat.role)}</b><span class="muted small">${esc(p.combat.unit.label)}</span></div>` : ''}
           </div>
           <div style="text-align:center">${badgeFor(u, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${esc(isPmc(u) ? 'PMC' : u.rank ? u.rank.name : 'Unranked')}</div></div>
         </div>
         ${u.bio ? `<p style="white-space:pre-wrap;margin:14px 0 0">${esc(u.bio)}</p>` : ''}
         <div class="row" style="margin-top:14px">
-          ${mine ? `<a class="btn" href="#/profile/edit">${icon('edit')} Edit profile</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button>` : `<a class="btn primary" href="#/messages/${u.id}">${icon('mail')} Message</a>${friendBtn}`}
+          ${mine ? `<a class="btn" href="#/profile/edit">${icon('edit')} Edit profile</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button>` : `<a class="btn primary" href="#/messages/${u.id}">${icon('mail')} Message</a>${friendBtn}${steamBtns}`}
           ${u.profile_url ? `<a class="btn ghost" href="${esc(u.profile_url)}" target="_blank" rel="noopener">${icon('steam')} Steam</a>` : ''}
           ${isStaff() ? `<a class="btn ghost" href="#/admin/users?edit=${u.id}">${icon('shield')} Admin edit</a>` : ''}
         </div>
@@ -959,13 +966,14 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('medal')} Medals & ribbons</div>
           ${p.awards.length ? `<div class="ribbon-rack">${p.awards.map((a) => `
-            <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}">
-              ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
+            <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.rarity ? ` · ${a.rarity[0].toUpperCase()}${a.rarity.slice(1)}` : ''}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}"${a.rarity ? ` style="box-shadow:inset 0 -2px 0 ${RARITY_COLORS[a.rarity] || 'transparent'}"` : ''}>
+              ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${a.rarity ? `<span style="color:${RARITY_COLORS[a.rarity] || 'inherit'}">${esc(a.rarity[0].toUpperCase() + a.rarity.slice(1))}</span> · ` : ''}${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
           ${p.awards.some((a) => /^(class|career):/i.test(a.auto_rule || '')) ? `<p class="muted small" style="margin:8px 0 0">Class and career level medals use stats provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>` : ''}
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>
       <div id="liveBox"></div>
+      <div id="badgesBox"></div>
       <div id="framesBox"></div>
     </div>`;
 
@@ -983,6 +991,11 @@ async function viewProfile(main, [id]) {
   import('./live.js').then((m) => {
     const box = document.getElementById('liveBox');
     if (box) m.profileLivePanel(box, u);
+  }).catch(() => {});
+  // Badge collection (and the badges they showcase under their name).
+  import('./badges.js').then((m) => {
+    const box = document.getElementById('badgesBox');
+    if (box) m.profileBadgesPanel(box, u, document.getElementById('showcaseBox'));
   }).catch(() => {});
   // Profile frames: what they've unlocked, progress on the rest, and (on your own) which one to show.
   import('./frames.js').then((m) => {
@@ -1023,6 +1036,7 @@ function steamMedalsHtml(medals) {
   }).join('');
 }
 
+const RARITY_COLORS = { common: '#b8c4d0', uncommon: '#3ddc84', rare: '#29b6f6', epic: '#b05cff', legendary: '#f5a524', mythic: '#ff4d6d', exclusive: '#ffe066' };
 export function ribbon(colors) {
   const list = String(colors || '#888888').split(',').map((c) => (/^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : '#888888'));
   const step = 100 / list.length;
@@ -1058,6 +1072,9 @@ async function viewEditProfile(main) {
         <label class="field"><span>Custom picture link (optional, https)</span><input type="url" name="custom_avatar" value="${esc(u.avatar && !u.avatar.includes('steamstatic') ? u.avatar : '')}" placeholder="Leave empty to use your Steam picture"></label>
         <label class="field"><span>Banner colour</span><input type="color" name="banner_color" value="${esc(u.banner_color || '#0d2238')}"></label>
       </div>
+      <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Friend requests</span>
+        <label class="check small"><input type="checkbox" name="friend_requests" ${u.friend_requests !== false ? 'checked' : ''}> Members can send me friend requests in the app</label>
+        <label class="check small"><input type="checkbox" name="steam_add_button" ${u.steam_add_button !== false ? 'checked' : ''}> Show the Add on Steam and Steam profile buttons on my profile</label></div>
       <div class="row"><button class="btn primary">Save profile</button><a class="btn ghost" href="#/u/${u.id}">Cancel</a></div>
     </form>
     <form class="panel stack" id="dlink" style="margin-top:16px">
@@ -1095,7 +1112,7 @@ async function viewEditProfile(main) {
     for (const fd of fields) custom[fd.key] = f[`cf_${fd.key}`]?.value || '';
     try {
       const skills = [...f.querySelectorAll('[name=skills]:checked')].map((x) => x.value);
-      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills } });
+      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills, friend_requests: f.friend_requests.checked, steam_add_button: f.steam_add_button.checked } });
       toast('Saved', 'Profile updated.');
       await refreshMe();
       location.hash = `#/u/${u.id}`;

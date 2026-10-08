@@ -19,11 +19,13 @@ import { discordBot, startDiscordBot } from './discordbot.js';
 import { startDiscordServer } from './discordserver.js';
 import { startGateway } from './discordgateway.js';
 import { startDiscordMod } from './discordmod.js';
+import { startDiscordActivity } from './discordactivity.js';
 import { killFeed, cheat, startCheatWatch } from './cheatwatch.js';
 import { combat } from './combat.js';
 import { wpgxp, startWpgXp } from './wpgxp.js';
 import { giveaways, startGiveaways } from './giveaways.js';
 import { framesRouter, startFrames, frameImageRoute } from './frames.js';
+import { badgesRouter, startBadges, badgeImageRoute } from './badges.js';
 import { steamBotRouter, startSteamBotLoops } from './steambot.js';
 import { cleanup, startCleanup } from './cleanup.js';
 import { streams, startStreamWatch } from './streams.js';
@@ -93,6 +95,8 @@ app.use((_req, res, next) => {
 app.use(discordBot);
 app.use(killFeed); // game server kill feed: also reads the raw body (any format)
 app.use('/api/admin/frame-images', express.json({ limit: '6mb' })); // uploaded frame pictures (frames.js)
+app.use('/api/admin/badge-images', express.json({ limit: '9mb' })); // badge artwork (badges.js)
+app.use('/api/admin/badges/bulk-art', express.json({ limit: '30mb' })); // several badge pictures at once
 app.use(express.json({ limit: '200kb' }));
 app.use(sessionMiddleware);
 
@@ -237,6 +241,7 @@ app.use('/api', combat);
 app.use('/api', wpgxp);
 app.use('/api', giveaways);
 app.use('/api', framesRouter);
+app.use('/api', badgesRouter);
 app.use('/api', steamBotRouter);
 app.use('/api', cleanup);
 app.use('/api', streams);
@@ -259,6 +264,7 @@ app.get('/healthz', async (req, res) => {
 // (saves bandwidth on free hosting). Everything else is re-checked every time so updates show straight away.
 const LONG_CACHE = /^\/(maps|img\/unlocks|img\/brand|vendor)\//;
 app.get('/frame-img/:id', frameImageRoute); // uploaded frame pictures (frames.js)
+app.get('/badge-img/:id', badgeImageRoute); // badge artwork (badges.js)
 app.use(express.static(PUBLIC_DIR, {
   index: 'index.html',
   setHeaders: (res, filePath) => {
@@ -294,6 +300,8 @@ startSteamBotLoops();
 startDiscordBot();
 startDiscordServer();
 startDiscordMod();
+startDiscordActivity();
+startBadges();
 startGateway();
 startCheatWatch();
 startCleanup();

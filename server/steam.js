@@ -1,5 +1,6 @@
 import { q, one, flag, setting } from './db.js';
 import { checkFrames } from './frames.js';
+import { checkBadges } from './badges.js';
 import { bus } from './bus.js';
 import { syncWardogs } from './wardogs.js';
 import { syncAchievements } from './achievements.js';
@@ -116,6 +117,7 @@ export async function syncUser(userId, opts = {}) {
   await recalcXp(userId);
   result.autoMedals = await giveAutoMedals(userId).catch(() => []);
   result.frames = (await checkFrames(userId).catch(() => [])).map((f) => f.name);
+  result.badges = (await checkBadges(userId).catch(() => [])).map((b) => b.name);
   return result;
 }
 

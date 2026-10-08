@@ -86,6 +86,13 @@ const DEFAULT_SETTINGS = {
   discord_post_wpg_ranks: 'true',
   discord_post_giveaways: 'true',
   discord_post_frames: 'true', // profile frame unlocks (WPG members) and new seasons (Admin → Frames & seasons)
+  // Badges and achievements (Admin → Badges): Discord posts, their channel (empty = the posts channel) and the
+  // categories kept quiet (comma list: streaming, nitro, loyalty, chat, voice, recruitment, events, special).
+  discord_post_badges: 'true',
+  discord_badge_channel: '',
+  discord_badge_quiet: '',
+  loyalty_auto_from: '', // set on first start: members who join the app after it get their app date as WPG join date
+  points_exclusive: '500', // Achievement Points for an Exclusive badge or medal
   discord_giveaway_channel: '', // empty = the channel for the other automatic posts
   // Cheat watch: staff-only alerts (Discord channel ID empty = app alerts only).
   discord_staff_channel: '',
