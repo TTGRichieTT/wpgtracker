@@ -794,8 +794,9 @@ function formatStat(def, v) {
   return fmtNum(v);
 }
 
-async function viewProfile(main, [id]) {
+async function viewProfile(main, [id, page]) {
   if (id === 'me') id = state.me.id;
+  const rewards = page === 'rewards';
   const [p, defs, fields, unlockList] = await Promise.all([api(`users/${Number(id)}`), api('stat-defs'), api('profile-fields'), api('unlocks').catch(() => [])]);
   const u = p.user;
   const mine = u.id === state.me.id;
@@ -870,7 +871,7 @@ async function viewProfile(main, [id]) {
   const games = p.games.map((g) => {
     const labels = Object.fromEntries(String(g.stat_labels || '').split('\n').map((l) => l.split('=')).filter((x) => x.length >= 2).map(([k, ...v]) => [k.trim(), v.join('=').trim()]));
     const shown = Object.entries(labels).filter(([k]) => g.stats?.[k] !== undefined);
-    return `<div style="padding:10px 0;border-bottom:1px solid #13263d">
+    return `<div style="padding:10px 0;border-top:1px solid #13263d">
       <div class="row between"><b style="font:700 17px var(--head);text-transform:uppercase">${esc(g.name)}</b><span class="muted small">updated ${timeAgo(g.updated_at)}</span></div>
       <div class="tiles" style="margin-top:8px">
         ${tile('clock', 'Total hours', fmtMins(g.playtime_forever))}
@@ -880,10 +881,7 @@ async function viewProfile(main, [id]) {
       </div></div>`;
   }).join('');
 
-  main.innerHTML = `
-    <div class="stack">
-      <img class="banner-img" src="/img/brand/header-career.webp" alt="Wardogs player career profile">
-      <div class="panel glow">
+  const headHtml = (extra = '') => `<div class="panel glow">
         <div class="banner" style="background:linear-gradient(90deg, ${esc(u.banner_color)}, transparent)"></div>
         <div class="profile-head">
           ${u.frame ? `<span class="av-wrap framed lg" title="${esc(u.frame.name)} frame"><img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">${frameSVG(u.frame)}</span>` : `<img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">`}
@@ -904,28 +902,41 @@ async function viewProfile(main, [id]) {
           ${u.profile_url ? `<a class="btn ghost" href="${esc(u.profile_url)}" target="_blank" rel="noopener">${icon('steam')} Steam</a>` : ''}
           ${isStaff() ? `<a class="btn ghost" href="#/admin/users?edit=${u.id}">${icon('shield')} Admin edit</a>` : ''}
         </div>
+      ${extra}
+      </div>`;
+  // Player information inside the name box (Career page): only what the box doesn't already show.
+  const playerInfo = `<div class="profile-info">
+      <div class="tiles">
+        ${tile('steam', 'Steam ID', /^\d{17}$/.test(u.steam_id) ? u.steam_id : 'Test account', 'fit')}
+        ${u.membership === 'pmc'
+    ? tile('swords', `${state.settings.clan_tag || 'WPG'} member`, 'PMC', 'pmc')
+    : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
+        ${u.custom_fields?.discord ? tile('discord', 'Discord', u.custom_fields.discord) : ''}
       </div>
-
-      <div class="panel player-info">
-        <img class="emblem" src="/img/brand/wolf-emblem.webp" alt="WPG Wardogs private server">
-        <div>
-          <div class="panel-title">${icon('user')} Player <span class="sub">information</span></div>
-          <div class="tiles">
-            ${tile('user', 'Player name', u.name)}
-            ${tile('steam', 'Steam ID', /^\d{17}$/.test(u.steam_id) ? u.steam_id : 'Test account', 'fit')}
-            ${u.custom_fields?.discord ? tile('discord', 'Discord', u.custom_fields.discord) : ''}
-            ${u.membership === 'pmc'
-            ? tile('swords', `${state.settings.clan_tag || 'WPG'} member`, 'PMC', 'pmc')
-            : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
-            ${p.combat?.unit ? tile('shield', 'Unit', p.combat.unit.name) + tile('chevrons', 'Role', p.combat.role, 'fit') : ''}
-          </div>
-          ${u.skills?.length ? `<div class="profile-skills"><div class="lbl">${icon('target')} Skills</div><div class="row" style="gap:6px">${u.skills.map((s) => `<span class="pill">${esc(s)}</span>`).join('')}</div></div>` : ''}
-        </div>
-      </div>
+      ${u.skills?.length ? `<div class="profile-skills"><div class="lbl">${icon('target')} Skills</div><div class="row" style="gap:6px">${u.skills.map((sk) => `<span class="pill">${esc(sk)}</span>`).join('')}</div></div>` : ''}
+      <h4 class="row" style="margin:14px 0 0">${icon('steam', 'width="18" height="18"')} Steam playtime</h4>
+      ${games || `<p class="muted" style="margin:8px 0 0">${u.steam_private ? 'Steam game details are private. Set “Game details” to Public in Steam privacy settings.' : 'No tracked games synced yet.'}</p>`}
+    </div>`;
+  const tabs = `<div class="tabs" style="margin:0">
+      <a href="#/u/${u.id}" class="${rewards ? '' : 'active'}">${icon('user', 'width="14" height="14" style="vertical-align:-2px"')} Career</a>
+      <a href="#/u/${u.id}/rewards" class="${rewards ? 'active' : ''}">${icon('medal', 'width="14" height="14" style="vertical-align:-2px"')} Medals, badges &amp; frames</a></div>`;
+  main.innerHTML = rewards ? `
+    <div class="stack">
+      <img class="banner-img" src="/img/brand/header-career.webp" alt="Wardogs player career profile">
+      ${tabs}
+      ${headHtml()}
+      ${seasonMedalsHtml(p)}
+      <div id="badgesBox"></div>
+      <div id="framesBox"></div>
+      ${p.medals?.length ? `<div class="panel"><div class="panel-title">${icon('steam')} Steam <span class="sub">achievement medals</span></div>${steamMedalsHtml(p.medals)}</div>` : ''}
+    </div>` : `
+    <div class="stack">
+      <img class="banner-img" src="/img/brand/header-career.webp" alt="Wardogs player career profile">
+      ${tabs}
+      ${headHtml(playerInfo)}
+      <div id="liveBox"></div>
       <div id="combatBox"></div>
-
-      <div class="grid two">
-        <div class="panel">
+      <div class="panel">
           <div class="panel-title">${icon('target')} Wardogs <span class="sub">(global stats)</span></div>
           ${off && wr?.polled_at ? `<p class="small" style="margin:-4px 0 10px;color:${wr.state && wr.state !== 'active' ? '#f5a524' : 'var(--muted)'}">Last polled ${esc(fmtDate(wr.polled_at))} ${esc(new Date(wr.polled_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))}${wr.state ? ` · ${esc(wr.state)}` : ''}</p>` : ''}
           ${mine && staleLink() ? `<p class="small" style="margin:0 0 10px;color:#f5a524">${icon('refresh', 'width="14" height="14" style="vertical-align:-2px"')} wardogs.tools has stopped updating your stats: relink your account, then press Check now.</p>` : ''}
@@ -933,7 +944,7 @@ async function viewProfile(main, [id]) {
           ${off || wr?.position || wr?.level ? trackerCredit() : ''}
           ${mine && state.realSteam ? `<div class="row tracker-card" style="margin-top:10px;gap:8px">${relinkBtn(staleLink() ? 'btn small primary' : 'btn small')}<button class="btn small" type="button" data-tracker-check>${icon('refresh')} Check now</button><span class="muted small" data-tracker-status></span></div>` : ''}
         </div>
-        <div class="panel">
+      <div class="panel">
           <div class="panel-title">${icon('chevrons')} ${esc(state.settings.clan_tag || 'WPG')} Server <span class="sub">(private server)</span></div>
           <div class="tiles">
             ${tile(wpgBadge(p.wpg_server?.level, 34, p.wpg_server?.name), `${state.settings.clan_tag || 'WPG'} rank`, wpgRankName(p.wpg_server?.name), '', p.wpg_server?.next
@@ -961,25 +972,7 @@ async function viewProfile(main, [id]) {
           </div>
           ${p.wardogs.server_synced ? `<div class="credit">Kills from the WPG server · updated ${timeAgo(p.wardogs.server_synced)}</div>` : ''}
         </div>
-      </div>
-
-      <div class="grid two">
-        <div class="panel">
-          <div class="panel-title">${icon('steam')} Steam <span class="sub">playtime</span></div>
-          ${games || `<p class="muted">${u.steam_private ? 'Steam game details are private. Set “Game details” to Public in Steam privacy settings.' : 'No tracked games synced yet.'}</p>`}
-        </div>
-        <div class="panel">
-          <div class="panel-title">${icon('medal')} Medals & ribbons</div>
-          ${p.awards.length ? `<div class="ribbon-rack">${p.awards.map((a) => `
-            <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.rarity ? ` · ${a.rarity[0].toUpperCase()}${a.rarity.slice(1)}` : ''}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}"${a.rarity ? ` style="box-shadow:inset 0 -2px 0 ${RARITY_COLORS[a.rarity] || 'transparent'}"` : ''}>
-              ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${a.rarity ? `<span style="color:${RARITY_COLORS[a.rarity] || 'inherit'}">${esc(a.rarity[0].toUpperCase() + a.rarity.slice(1))}</span> · ` : ''}${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
-          ${p.awards.some((a) => /^(class|career):/i.test(a.auto_rule || '')) ? `<p class="muted small" style="margin:8px 0 0">Class and career level medals use stats provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>` : ''}
-          ${steamMedalsHtml(p.medals || [])}
-        </div>
-      </div>
-      <div id="liveBox"></div>
-      <div id="badgesBox"></div>
-      <div id="framesBox"></div>
+      <div id="recentBox"></div>
     </div>`;
 
   document.getElementById('syncBtn')?.addEventListener('click', syncMine);
@@ -996,14 +989,22 @@ async function viewProfile(main, [id]) {
   });
   onLive('me', () => { if (mine) route(); });
   // Live match money from Steam (switched on by the member).
-  import('./live.js').then((m) => {
-    const box = document.getElementById('liveBox');
-    if (box) m.profileLivePanel(box, u);
-  }).catch(() => {});
-  // Badge collection (and the badges they showcase under their name).
-  import('./badges.js').then((m) => {
+  if (!rewards) {
+    import('./live.js').then((m) => {
+      const box = document.getElementById('liveBox');
+      if (box) m.profileLivePanel(box, u);
+    }).catch(() => {});
+    // Newest rewards: the last 5 medals, badges and frames they earned.
+    recentRewardsPanel(document.getElementById('recentBox'), u);
+  }
+  // Badge collection (Rewards page) and the badges they showcase under their name (both pages).
+  import('./badges.js').then(async (m) => {
     const box = document.getElementById('badgesBox');
-    if (box) m.profileBadgesPanel(box, u, document.getElementById('showcaseBox'));
+    if (box) return m.profileBadgesPanel(box, u, document.getElementById('showcaseBox'));
+    const d = await api(`users/${u.id}/badges`);
+    const byId = new Map(d.badges.map((b) => [b.id, b]));
+    const show = document.getElementById('showcaseBox');
+    if (show) show.innerHTML = m.showcaseHtml(d.showcase.map((i) => byId.get(i)).filter(Boolean));
   }).catch(() => {});
   // Profile frames: what they've unlocked, progress on the rest, and (on your own) which one to show.
   import('./frames.js').then((m) => {
@@ -1017,6 +1018,55 @@ async function viewProfile(main, [id]) {
       if (box) box.innerHTML = m.profileCombatHtml(p.combat);
     }).catch(() => {});
   }
+}
+
+// The ribbon rack: one row per medal, with its rarity and date.
+function medalRackHtml(list) {
+  return `<div class="ribbon-rack">${list.map((a) => `
+    <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.rarity ? ` · ${a.rarity[0].toUpperCase()}${a.rarity.slice(1)}` : ''}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}"${a.rarity ? ` style="box-shadow:inset 0 -2px 0 ${RARITY_COLORS[a.rarity] || 'transparent'}"` : ''}>
+      ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${a.rarity ? `<span style="color:${RARITY_COLORS[a.rarity] || 'inherit'}">${esc(a.rarity[0].toUpperCase() + a.rarity.slice(1))}</span> · ` : ''}${fmtDate(a.given_at)}</span></div>`).join('')}</div>`;
+}
+// Medals, kept per season: level medals (class and Wardog levels reset when the game wipes) belong to the season
+// they were earned in and can be won again each season; the rest are kept for good.
+function seasonMedalsHtml(p) {
+  const seasons = p.seasons || [];
+  const current = seasons.find((s) => s.status === 'active');
+  const known = new Set(seasons.map((s) => s.id));
+  const permanent = p.awards.filter((a) => !a.seasonal || !known.has(a.season_id));
+  const inSeason = (s) => p.awards.filter((a) => a.seasonal && a.season_id === s.id);
+  const seasonName = (s) => `Season ${s.number}${s.name && s.name !== `Season ${s.number}` ? ` · ${esc(s.name)}` : ''}`;
+  const past = seasons.filter((s) => s !== current);
+  const wardogsNote = p.awards.some((a) => /^(class|career):/i.test(a.auto_rule || '')) ? `<p class="muted small" style="margin:8px 0 0">Class and career level medals use stats provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>` : '';
+  return `<div class="panel">
+    <div class="panel-title">${icon('medal')} Medals & ribbons</div>
+    ${current ? `<h4 class="row" style="margin:4px 0 10px">${seasonName(current)} <span class="pill">Now</span></h4>
+      ${inSeason(current).length ? medalRackHtml(inSeason(current)) : '<p class="muted" style="margin:0">No season medals yet this season.</p>'}
+      <p class="muted small" style="margin:6px 0 0">Level medals (class and Wardog levels) reset with the game each season: they're kept here under the season they were earned in, and can be won again next season.</p>` : ''}
+    <h4 class="row" style="margin:${current ? '18px' : '4px'} 0 10px">${current ? 'Kept for good' : 'Medals'}</h4>
+    ${permanent.length ? medalRackHtml(permanent) : '<p class="muted" style="margin:0">No medals yet.</p>'}
+    ${past.map((s) => {
+      const list = inSeason(s);
+      return `<details style="margin-top:14px"${list.length ? '' : ''}><summary class="row" style="cursor:pointer;font:700 15px var(--head);text-transform:uppercase">${seasonName(s)} <span class="muted small">${list.length} medal${list.length === 1 ? '' : 's'}${s.end_at ? ` · ended ${fmtDate(s.end_at)}` : ''}</span></summary>
+        <div style="margin-top:10px">${list.length ? medalRackHtml(list) : '<p class="muted" style="margin:0">No season medals that season.</p>'}</div></details>`;
+    }).join('')}
+    ${wardogsNote}
+  </div>`;
+}
+// Newest rewards: the last 5 medals, badges and frames earned (Career page).
+async function recentRewardsPanel(box, u) {
+  if (!box) return;
+  let list;
+  try { list = await api(`users/${u.id}/recent-rewards`); } catch { return; }
+  const [{ badgeHTML }, { framedPreview }] = await Promise.all([import('./badgeart.js'), import('./frames.js')]);
+  const kind = { medal: 'Medal', badge: 'Badge', frame: 'Frame' };
+  const art = (r) => (r.kind === 'badge' ? badgeHTML(r, 56) : r.kind === 'frame' ? framedPreview(r.frame, u.avatar, 56) : `<div style="height:56px;display:flex;align-items:center">${ribbon(r.colors)}</div>`);
+  box.innerHTML = `<div class="panel">
+    <div class="row between"><div class="panel-title" style="margin:0">${icon('medal')} Newest <span class="sub">rewards</span></div><a class="btn small ghost" href="#/u/${u.id}/rewards">See all</a></div>
+    ${list.length ? `<div class="recent-rewards">${list.map((r) => `<div class="tile" title="${esc(`${r.name}${r.description ? ` — ${r.description}` : ''}`)}" style="flex-direction:column;align-items:center;text-align:center;gap:6px">
+        ${art(r)}<b style="font:700 14px var(--head);text-transform:uppercase">${esc(r.name)}</b>
+        <span class="muted small">${kind[r.kind]}${r.rarity ? ` · <span style="color:${RARITY_COLORS[r.rarity] || 'inherit'}">${esc(r.rarity[0].toUpperCase() + r.rarity.slice(1))}</span>` : ''}${r.season ? ` · Season ${r.season}` : ''}</span>
+        <span class="muted small">${fmtDate(r.at)}</span></div>`).join('')}</div>` : '<p class="muted" style="margin:10px 0 0">Nothing earned yet.</p>'}
+  </div>`;
 }
 
 // Steam achievements shown as medals: earned in colour, the rest greyed out. Rare ones (<10% of players) get gold.

@@ -116,7 +116,7 @@ export async function checkFrames(userId, { announce = true } = {}) {
     bus.emit('user:changed', user.id);
     for (const f of won) {
       if (!announce || !f.swept) continue;
-      bus.emit('notify', user.id, { title: '🖼️ New profile frame!', body: `You unlocked ${f.name}. Pick it on your profile to show it around your picture.`, link: `#/u/${user.id}` });
+      bus.emit('notify', user.id, { title: '🖼️ New profile frame!', body: `You unlocked ${f.name}. Pick it on your profile to show it around your picture.`, link: `#/u/${user.id}/rewards` });
       if (isWpgMember(user)) bus.emit('announce', { type: 'frame', userId: user.id, frameId: f.id });
     }
   }
@@ -528,7 +528,7 @@ framesRouter.post('/admin/frames/:id/give', role('admin'), async (req, res) => {
   if (f.category === 'clan') throw new HttpError(400, 'Clan frames follow membership, unit and rank, so they can\'t be given by hand.');
   const row = await one('INSERT INTO user_frames (user_id, frame_id, season_id, given_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING id', [u.id, f.id, f.season_id || 0, req.user.id]);
   if (!row) throw new HttpError(400, `${u.persona_name} already has it.`);
-  bus.emit('notify', u.id, { title: '🖼️ New profile frame!', body: `You were given ${f.name}. Pick it on your profile to show it.`, link: `#/u/${u.id}` });
+  bus.emit('notify', u.id, { title: '🖼️ New profile frame!', body: `You were given ${f.name}. Pick it on your profile to show it.`, link: `#/u/${u.id}/rewards` });
   if (isWpgMember(u)) bus.emit('announce', { type: 'frame', userId: u.id, frameId: f.id });
   bus.emit('user:changed', u.id);
   await audit(req.user.id, 'frame.give', `${f.name} → ${u.persona_name}`);

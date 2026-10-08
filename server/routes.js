@@ -11,6 +11,7 @@ import {
   issueRememberToken,
 } from './util.js';
 import { shownFrames } from './frames.js';
+import { isSeasonalRule } from './medals.js';
 
 export const api = express.Router();
 
@@ -247,7 +248,7 @@ api.get('/users/:id', member, async (req, res) => {
       [u.id],
     ),
     q(
-      `SELECT ua.id, ua.reason, ua.given_at, a.name, a.description, a.colors, a.auto_rule, a.sort_order, a.rarity, a.points
+      `SELECT ua.id, ua.reason, ua.given_at, ua.season_id, a.name, a.description, a.colors, a.auto_rule, a.sort_order, a.rarity, a.points
          FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY a.sort_order, ua.given_at`,
       [u.id],
     ),
@@ -288,7 +289,9 @@ api.get('/users/:id', member, async (req, res) => {
   res.json({
     user: await userOut(u),
     games,
-    awards: topTierOnly(awards),
+    // Season medals: the highest tier of each series in each season (levels reset every season).
+    awards: [...new Set(awards.map((a) => a.season_id))].flatMap((sid) => topTierOnly(awards.filter((a) => a.season_id === sid))).map((a) => ({ ...a, seasonal: isSeasonalRule(a.auto_rule) })),
+    seasons: await q("SELECT id, number, name, status, start_at, end_at FROM seasons WHERE status <> 'scheduled' ORDER BY number DESC"),
     medals,
     wardogs: currentWardogs?.official ? {
       ...currentWardogs,
