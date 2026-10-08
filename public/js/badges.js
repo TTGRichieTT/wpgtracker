@@ -14,7 +14,7 @@ function progressHtml(p) {
   const pct = Math.max(0, Math.min(100, (p.value / Math.max(0.01, p.target)) * 100));
   return `<div class="xpbar" style="height:6px;margin:6px 0 2px"><div style="width:${pct.toFixed(1)}%"></div></div><div class="muted small">${unitText(p.value, p.unit)} / ${unitText(p.target, p.unit)}</div>`;
 }
-function badgeModal(b, mine = false) {
+function badgeModal(b, mine = false, d = null, redraw = null) {
   const md = modal(`<div class="row between"><h3 style="margin:0">${esc(b.name)}</h3><button class="btn ghost small" data-close>✕</button></div>
     <div class="row" style="gap:18px;align-items:center;margin-top:10px">${badgeHTML(b, 150, { locked: !b.unlocked })}
       <div class="stack" style="gap:6px">${rarityPill(b.rarity)} <span class="muted small">${esc(b.points)} Achievement Points</span>
@@ -25,7 +25,18 @@ function badgeModal(b, mine = false) {
       </div></div>`);
   md.el.querySelector('[data-close]').onclick = md.close;
   if (mine && b.unlocked) {
-    md.el.insertAdjacentHTML('beforeend', `<div class="row" style="margin-top:12px"><button class="btn primary" id="bdShare">${icon('discord')} Share to Discord</button><span class="small muted" id="bdShareMsg"></span></div>`);
+    const inCorner = d?.frame_badge === b.id;
+    md.el.insertAdjacentHTML('beforeend', `<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn primary" id="bdShare">${icon('discord')} Share to Discord</button>
+      <button class="btn" id="bdCorner">${inCorner ? 'Show my clan rank in my frame again' : 'Show in my frame corner (instead of clan rank)'}</button><span class="small muted" id="bdShareMsg"></span></div>`);
+    md.el.querySelector('#bdCorner').onclick = async () => {
+      try {
+        await api('me/frame-badge', { method: 'PUT', body: { badge_id: inCorner ? null : b.id } });
+        if (d) d.frame_badge = inCorner ? null : b.id;
+        toast(inCorner ? 'Clan rank back in your frame' : `${b.name} is now in your frame's corner`, 'On frames that show the clan rank badge.');
+        md.close();
+        redraw?.();
+      } catch (x) { fail(x); }
+    };
     md.el.querySelector('#bdShare').onclick = async (e) => {
       e.target.disabled = true;
       try {
@@ -77,6 +88,7 @@ export async function profileBadgesPanel(box, user, showBox) {
       ${d.loyalty.joined ? `<p class="small" style="margin:0 0 6px">🐺 In WPG since <b>${fmtDate(d.loyalty.joined)}</b> (${d.loyalty.months >= 12 ? `${Math.floor(d.loyalty.months / 12)} yr ${d.loyalty.months % 12} mo` : `${d.loyalty.months} months`})${d.loyalty.verified ? ' · verified by staff' : ''}</p>`
         : '<p class="muted small" style="margin:0 0 6px">🐺 Loyalty badges start once staff have checked their original WPG join date.</p>'}
       ${st.streams || st.hours ? `<p class="small" style="margin:0 0 10px">📺 <b>${fmtNum(st.streams)}</b> streams · <b>${hours(st.hours)}</b> streamed · best day <b>${hours(st.bestDay)}</b> · longest <b>${hours(st.longest)}</b> · streak <b>${st.streak}</b> day${st.streak === 1 ? '' : 's'} (best ${st.bestStreak})</p>` : ''}
+      ${mine && d.frame_badge && byId.get(d.frame_badge) ? `<p class="small" style="margin:0 0 8px">${badgeHTML(byId.get(d.frame_badge), 22)} <b>${esc(byId.get(d.frame_badge).name)}</b> shows in your frame's corner instead of your clan rank. <a href="#" id="bdCornerOff">Show my clan rank again</a></p>` : ''}
       ${picking ? '<p class="small" style="margin:0 0 8px">Tap up to 5 badges to show under your name.</p>' : ''}
       <div class="badge-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px">${shown.map((b) => `
         <button type="button" class="badge-cell" data-b="${b.id}" style="background:${picking?.has(b.id) ? 'rgba(41,182,246,.18)' : 'rgba(255,255,255,.03)'};border:1px solid ${picking?.has(b.id) ? 'var(--accent)' : 'var(--line)'};border-radius:10px;padding:8px 6px;color:inherit;text-align:center;cursor:pointer" title="${esc(`${b.name} — ${b.description}`)}">
@@ -89,6 +101,10 @@ export async function profileBadgesPanel(box, user, showBox) {
     box.querySelector('#bdSort').onchange = (e) => { sort = e.target.value; draw(); };
     box.querySelector('#bdShow').onchange = (e) => { show = e.target.value; more = false; draw(); };
     box.querySelector('#bdMore')?.addEventListener('click', () => { more = true; draw(); });
+    box.querySelector('#bdCornerOff')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try { await api('me/frame-badge', { method: 'PUT', body: { badge_id: null } }); d.frame_badge = null; toast('Clan rank back in your frame'); draw(); } catch (x) { fail(x); }
+    });
     box.querySelector('#bdPick')?.addEventListener('click', () => { picking = new Set(d.showcase); draw(); });
     box.querySelector('#bdCancel')?.addEventListener('click', () => { picking = null; draw(); });
     box.querySelector('#bdSave')?.addEventListener('click', async () => {
@@ -104,7 +120,7 @@ export async function profileBadgesPanel(box, user, showBox) {
     box.querySelectorAll('[data-b]').forEach((el) => {
       el.onclick = () => {
         const b = byId.get(Number(el.dataset.b));
-        if (!picking) return badgeModal(b, mine);
+        if (!picking) return badgeModal(b, mine, d, draw);
         if (picking.has(b.id)) picking.delete(b.id);
         else if (picking.size < 5) picking.add(b.id);
         else toast('Up to 5', 'Take one off first.');

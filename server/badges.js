@@ -317,6 +317,7 @@ export async function collectionFor(user) {
   return {
     badges: badgesList,
     showcase,
+    frame_badge: user.frame_badge_id && held.has(user.frame_badge_id) ? user.frame_badge_id : null,
     totals: {
       points: totals.points,
       badges: earnedCount,
@@ -351,6 +352,14 @@ badgesRouter.post('/me/badges/:id/share', member, async (req, res) => {
   if (shared.size > 5000) shared.clear();
   bus.emit('announce', { type: 'badge-share', userId: req.user.id, badgeId: id });
   res.json({ ok: true });
+});
+// Show an earned badge in your frame's corner instead of your clan rank badge (null = back to the clan rank).
+badgesRouter.put('/me/frame-badge', member, async (req, res) => {
+  const id = req.body?.badge_id ? int(req.body.badge_id) : null;
+  if (id && !(await one('SELECT 1 FROM user_badges WHERE user_id=$1 AND badge_id=$2', [req.user.id, id]))) throw new HttpError(400, "You haven't earned that badge yet.");
+  await q('UPDATE users SET frame_badge_id=$2 WHERE id=$1', [req.user.id, id]);
+  bus.emit('user:changed', req.user.id);
+  res.json({ ok: true, frame_badge_id: id });
 });
 badgesRouter.put('/me/badge-showcase', member, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map((x) => int(x)).filter(Boolean);
