@@ -752,8 +752,8 @@ function unlockLinesHtml(list, role, level) {
   const { last, next, total } = lastNextUnlock(list, role, level);
   if (!total) return '';
   return `<div class="ul">
-    <div title="${esc(last ? `${last.name} (level ${last.level})` : '')}"><span>Last</span> ${last ? esc(last.name) : '—'}</div>
-    <div title="${esc(next ? `${next.name} at level ${next.level}` : '')}"><span>Next</span> ${next ? `${esc(next.name)} <em>L${next.level}</em>` : 'All done ✓'}</div>
+    <div title="${esc(last ? `${last.name} (level ${last.level})` : '')}"><span>Last</span> <i>${last ? esc(last.name) : '—'}</i></div>
+    <div title="${esc(next ? `${next.name} at level ${next.level}` : '')}"><span>Next</span> <i>${next ? `${esc(next.name)} <em>L${next.level}</em>` : 'All done ✓'}</i></div>
   </div>`;
 }
 function careerUnlockHtml(list, level) {
