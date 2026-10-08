@@ -981,6 +981,30 @@ bus.on('tracker:relink', async (a) => {
   }
 });
 
+// Steam invite link running out (steaminvite.js): remind the member by Discord direct message, with buttons to get
+// a new link on Steam and to paste it in Edit profile. Closed DMs are fine: they still get it in the app.
+bus.on('steaminvite:remind', async (a) => {
+  try {
+    const u = await one('SELECT discord_id FROM users WHERE id=$1', [a.userId]);
+    if (!u?.discord_id || !TOKEN()) return;
+    const embed = {
+      color: a.expired ? 0xff4d6d : 0xf5a524,
+      title: `${a.expired ? '⛔' : '⏳'} ${a.title}`,
+      description: `${a.body}\n\n**1.** In Steam, open **Friends → Add a Friend** and copy your **Quick Invite** link (or make a new one).\n`
+        + `**2.** Paste it in WPG Barracks under **Edit profile → Friend requests** and save. The reminders stop once it's updated.`,
+      footer: { text: 'WPG Barracks' },
+    };
+    const buttons = [{ type: 1, components: [
+      { type: 2, style: 5, label: 'Get a new link on Steam', url: 'https://steamcommunity.com/my/friends/add' },
+      { type: 2, style: 5, label: 'Paste it in Edit profile', url: `${SITE()}/#/profile/edit` },
+    ] }];
+    const dm = await discordFetch('/users/@me/channels', 'POST', { recipient_id: u.discord_id });
+    await discordFetch(`/channels/${dm.id}/messages`, 'POST', { embeds: [embed], components: buttons });
+  } catch (e) {
+    if (!/50007|Cannot send messages/i.test(e.message)) problem('Steam invite reminder', e.message);
+  }
+});
+
 // Live match money from Steam (steambot.js) for WPG members who switched it on: who's in a match now with the match's
 // running profit / loss, and the last 24 hours' totals. Used by /money and the live board.
 const signedMoney = (n) => `${n < 0 ? '-' : '+'}$${num(Math.abs(n))}`;
