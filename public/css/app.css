@@ -885,3 +885,5 @@ input[type=datetime-local] { color-scheme: dark; }
 .dp-embed:first-child { margin-top: 0; }
 .dp-title { font-weight: 700; color: #fff; margin-bottom: 4px; }
 .dp-cmd { background: rgba(88,101,242,.3); color: #c9cdfb; border-radius: 3px; padding: 0 3px; }
+.dp-boxedit { border-left: 3px solid var(--accent); padding: 8px 0 8px 10px; background: rgba(41,182,246,.04); border-radius: 4px; }
+.dp-boxedit textarea { margin-top: 6px; width: 100%; }
