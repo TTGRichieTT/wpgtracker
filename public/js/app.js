@@ -812,11 +812,15 @@ async function viewProfile(main, [id]) {
 
   const customFields = fields.filter((f) => u.custom_fields?.[f.key]).map((f) => `<span class="pill">${esc(f.label)}: ${esc(u.custom_fields[f.key])}</span>`).join(' ');
 
-  // Steam friends: Steam doesn't let other sites send friend requests, so these open Steam itself. "Add on Steam"
-  // opens the Steam app on this computer with the request; "Steam profile" opens their profile (Add Friend is there,
-  // and on phones it opens in the Steam app).
-  const steamBtns = !mine && u.steam_add_button !== false && /^\d{17}$/.test(u.steam_id || '')
-    ? `<a class="btn" href="steam://friends/add/${u.steam_id}" title="Opens Steam on this computer and sends the friend request">${icon('friends')} Add on Steam</a><a class="btn ghost" href="https://steamcommunity.com/profiles/${u.steam_id}" target="_blank" rel="noopener" title="Their Steam profile: press Add Friend there">Steam profile</a>`
+  // Steam friends: Steam doesn't let other sites send friend requests, so these hand over to Steam. "Add on Steam"
+  // only shows for members who added their own Steam quick invite link (Edit profile): it opens their personal
+  // add-friend page. Everyone with a Steam account also shows "Steam profile" and their friend code
+  // (Steam → Add a Friend → enter the code).
+  const hasSteam = !mine && u.steam_add_button !== false && /^\d{17}$/.test(u.steam_id || '');
+  const code = hasSteam ? String(BigInt(u.steam_id) - 76561197960265728n) : '';
+  const steamBtns = hasSteam
+    ? `${u.steam_invite ? `<a class="btn" href="${esc(u.steam_invite)}" target="_blank" rel="noopener" title="Their own Steam invite link: press Add friend there">${icon('friends')} Add on Steam</a>` : ''}<a class="btn ghost" href="https://steamcommunity.com/profiles/${u.steam_id}" target="_blank" rel="noopener" title="Their Steam profile: press Add Friend there">Steam profile</a>
+      <button type="button" class="btn ghost" data-copy="${code}" title="In Steam: Friends → Add a Friend → type this code">Friend code ${code}</button>`
     : '';
   const friendBtn = mine ? '' : {
     none: u.friend_requests === false ? '<span class="btn ghost" style="cursor:default;opacity:.7" title="They switched off friend requests">Not taking friend requests</span>' : `<button class="btn" data-friend="add">${icon('friends')} Add friend</button>`,
@@ -978,6 +982,9 @@ async function viewProfile(main, [id]) {
     </div>`;
 
   document.getElementById('syncBtn')?.addEventListener('click', syncMine);
+  main.querySelectorAll('[data-copy]').forEach((b) => {
+    b.onclick = () => navigator.clipboard?.writeText(b.dataset.copy).then(() => toast('Friend code copied', 'In Steam: Friends → Add a Friend → paste it.'), () => {});
+  });
   main.querySelectorAll('[data-friend]').forEach((b) => {
     b.onclick = async () => {
       try {
@@ -1074,7 +1081,9 @@ async function viewEditProfile(main) {
       </div>
       <div class="field"><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Friend requests</span>
         <label class="check small"><input type="checkbox" name="friend_requests" ${u.friend_requests !== false ? 'checked' : ''}> Members can send me friend requests in the app</label>
-        <label class="check small"><input type="checkbox" name="steam_add_button" ${u.steam_add_button !== false ? 'checked' : ''}> Show the Add on Steam and Steam profile buttons on my profile</label></div>
+        <label class="check small"><input type="checkbox" name="steam_add_button" ${u.steam_add_button !== false ? 'checked' : ''}> Show the Add on Steam and Steam profile buttons on my profile</label>
+        <label class="field" style="margin-top:8px"><span>My Steam quick invite link (for the Add on Steam button)</span><input type="url" name="steam_invite" maxlength="200" value="${esc(u.steam_invite || '')}" placeholder="https://s.team/p/xxxx-xxxx/XXXXXXXX">
+          <small class="muted">In Steam: <b>Friends → Add a Friend</b>, then copy your <b>Quick Invite link</b>. An <b>Add on Steam</b> button then shows on your profile and takes people straight to your own add-friend page (it only shows once you've added your link). Steam's links run out after a while: paste a new one when it does.${/^\d{17}$/.test(u.steam_id || '') ? ` Your friend code is <b>${String(BigInt(u.steam_id) - 76561197960265728n)}</b>.` : ''}</small></label></div>
       <div class="row"><button class="btn primary">Save profile</button><a class="btn ghost" href="#/u/${u.id}">Cancel</a></div>
     </form>
     <form class="panel stack" id="dlink" style="margin-top:16px">
@@ -1112,7 +1121,7 @@ async function viewEditProfile(main) {
     for (const fd of fields) custom[fd.key] = f[`cf_${fd.key}`]?.value || '';
     try {
       const skills = [...f.querySelectorAll('[name=skills]:checked')].map((x) => x.value);
-      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills, friend_requests: f.friend_requests.checked, steam_add_button: f.steam_add_button.checked } });
+      await api('me/profile', { method: 'PUT', body: { callsign: f.callsign.value, country: f.country.value, bio: f.bio.value, custom_avatar: f.custom_avatar.value, banner_color: f.banner_color.value, custom_fields: custom, skills, friend_requests: f.friend_requests.checked, steam_add_button: f.steam_add_button.checked, steam_invite: f.steam_invite.value } });
       toast('Saved', 'Profile updated.');
       await refreshMe();
       location.hash = `#/u/${u.id}`;

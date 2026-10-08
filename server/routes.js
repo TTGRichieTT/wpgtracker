@@ -7,7 +7,7 @@ import { syncWardogs } from './wardogs.js';
 import { rankProgress } from './wpgxp.js';
 import { parseMentions, mentionedUserIds, mentionRecipients, plainText } from './mentions.js';
 import {
-  HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, bool, color, safeUrl,
+  HttpError, signedIn, member, roleAtLeast, canSeeChannel, publicUser, str, int, bool, color, safeUrl, steamInviteAccount,
   issueRememberToken,
 } from './util.js';
 import { shownFrames } from './frames.js';
@@ -122,12 +122,21 @@ api.put('/me/profile', member, async (req, res) => {
   }
   // Friend request choices: kept as they are unless sent.
   const choice = (k) => (k in b ? bool(b[k]) : req.user[k] !== false);
+  // Their Steam quick invite link: must be a Steam invite link.
+  let invite = req.user.steam_invite || '';
+  if ('steam_invite' in b) {
+    invite = String(b.steam_invite || '').trim();
+    if (invite) {
+      const acct = steamInviteAccount(invite);
+      if (acct === null) throw new HttpError(400, 'That isn\'t a Steam invite link. In Steam: Friends → Add a Friend → copy the Quick Invite link (it starts https://s.team/p/).');
+    }
+  }
   const u = await one(
     `UPDATE users SET callsign=$2, bio=$3, country=$4, custom_avatar=$5, banner_color=$6, custom_fields=$7, skills=$8,
-            friend_requests=$9, steam_add_button=$10
+            friend_requests=$9, steam_add_button=$10, steam_invite=$11
      WHERE id=$1 RETURNING *`,
     [req.user.id, str(b.callsign, 40), str(b.bio, 1000), str(b.country, 4), safeUrl(b.custom_avatar), color(b.banner_color, '#0d2238'), JSON.stringify(custom), JSON.stringify(skills),
-      choice('friend_requests'), choice('steam_add_button')],
+      choice('friend_requests'), choice('steam_add_button'), invite.slice(0, 200)],
   );
   bus.emit('user:changed', u.id);
   res.json({ user: await userOut(u) });
