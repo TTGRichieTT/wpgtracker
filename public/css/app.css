@@ -879,3 +879,9 @@ input[type=datetime-local] { color-scheme: dark; }
 .dc-room .grow { min-width: 180px; }
 .dc-room > label { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
 .dc-room select { width: auto; min-width: 120px; padding: 4px 8px; margin: 0; }
+/* Bot post preview: as it looks on Discord */
+.dp-msg { margin-top: 10px; padding: 12px; background: #313338; border-radius: 8px; color: #dbdee1; font-size: 14px; line-height: 1.45; }
+.dp-embed { background: #2b2d31; border-left: 4px solid var(--ec); border-radius: 4px; padding: 10px 12px; margin-top: 6px; max-width: 520px; }
+.dp-embed:first-child { margin-top: 0; }
+.dp-title { font-weight: 700; color: #fff; margin-bottom: 4px; }
+.dp-cmd { background: rgba(88,101,242,.3); color: #c9cdfb; border-radius: 3px; padding: 0 3px; }

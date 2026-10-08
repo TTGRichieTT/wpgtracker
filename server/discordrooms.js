@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import { q, one } from './db.js';
 import { bus } from './bus.js';
-import { discordFetch, sendToChannel, editMessage, botReady, commandList, commandAccess } from './discordbot.js';
+import { discordFetch, sendToChannel, editMessage, botReady, commandList, commandAccess, commandIds } from './discordbot.js';
 import { guildId, loadMap, staffRoles } from './discordserver.js';
 import { MOD_COMMANDS } from './discordmod.js';
 
@@ -409,19 +409,49 @@ const KINDS = {
   },
 };
 
+// A post is the WPG banner (header art with its title) and the text as Discord embeds underneath: real text, so it reads
+// at Discord's normal size on any screen (a tall picture gets shrunk to fit Discord's preview). Commands are clickable.
+const EMBED_COLOR = 0x33d1ff;
+const STAFF_COLOR = 0xf5a524;
+function embedsFor(d, ids) {
+  const cmd = (name) => {
+    const n = String(name).replace(/^\//, '');
+    return name.startsWith('/') && ids.get(n) ? `</${n}:${ids.get(n)}>` : `**${name}**`;
+  };
+  const lines = (s) => s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${r.text}` : r.text)).join('\n');
+  // The banner on its own first (Discord puts an embed's picture under its text), then the intro.
+  const out = [{ color: EMBED_COLOR, image: { url: 'attachment://banner.jpg' } }];
+  if (d.intro) out.push({ color: EMBED_COLOR, description: d.intro.slice(0, 4000) });
+  for (const s of d.sections) {
+    const e = { color: s.accent === 'staff' ? STAFF_COLOR : EMBED_COLOR, title: `${String(s.title).toUpperCase()}${s.accent ? ` · ${s.accent}` : ''}`.slice(0, 250), description: (lines(s) || '\u200b').slice(0, 4000) };
+    // Discord takes 10 embeds a message: anything after the 10th joins the last one.
+    if (out.length < 10) out.push(e);
+    else out[9].description = `${out[9].description}\n\n**${e.title}**\n${e.description}`.slice(0, 4000);
+  }
+  if (d.footer?.length) out[out.length - 1].footer = { text: d.footer.join(' · ').slice(0, 2000) };
+  // Discord's limit is 6000 characters across a message's embeds: shorten the longest ones if it's over.
+  const size = () => out.reduce((a, e) => a + (e.title || '').length + (e.description || '').length + (e.footer?.text || '').length, 0);
+  while (size() > 5900) {
+    const e = out.reduce((a, b) => ((b.description || '').length > (a.description || '').length ? b : a));
+    e.description = `${e.description.slice(0, Math.floor(e.description.length * 0.9))}…`;
+  }
+  return out;
+}
 async function postPayload(p) {
   const room = await one('SELECT * FROM discord_rooms WHERE channel_id=$1', [p.channel_id]);
   const kind = KINDS[p.kind] || KINDS.custom;
   const d = await kind.build(room, p);
+  const ids = await commandIds().catch(() => new Map());
   const buttons = [{ type: 1, components: [{ type: 2, style: 5, label: 'Open WPG Barracks', url: SITE() }] }];
-  const hash = crypto.createHash('sha1').update(JSON.stringify([p.style, d])).digest('hex');
+  const hash = crypto.createHash('sha1').update(JSON.stringify([p.style, d, [...ids]])).digest('hex');
   if (p.style === 'text') {
-    const lines = [`## ${d.heading}`, d.intro, ...d.sections.flatMap((s) => [`**${s.title}**`, ...s.rows.map((r) => (r.name ? `\`${r.name}\` – ${r.text}` : r.text))]), ...(d.footer || []).map((f) => `-# ${f}`)].filter(Boolean);
+    const cmd = (name) => (name.startsWith('/') && ids.get(name.slice(1)) ? `</${name.slice(1)}:${ids.get(name.slice(1))}>` : `**${name}**`);
+    const lines = [`## ${d.heading}`, d.intro, ...d.sections.flatMap((s) => [`### ${s.title}`, ...s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${r.text}` : r.text))]), ...(d.footer || []).map((f) => `-# ${f}`)].filter(Boolean);
     return { hash, payload: { content: lines.join('\n').slice(0, 2000), components: buttons } };
   }
-  const { renderGuideCard } = await import('./cards.js');
-  const data = await renderGuideCard(d);
-  return { hash, payload: { content: '', files: [{ name: `${p.kind || 'post'}.jpg`, data, type: 'image/jpeg' }], components: buttons } };
+  const { renderBanner } = await import('./cards.js');
+  const data = await renderBanner(d.heading);
+  return { hash, payload: { content: '', embeds: embedsFor(d, ids), files: [{ name: 'banner.jpg', data, type: 'image/jpeg' }], components: buttons } };
 }
 // Posts it (or edits the message it already has) and pins it. force: post again even if nothing changed.
 export async function publishPost(id, { force = false } = {}) {

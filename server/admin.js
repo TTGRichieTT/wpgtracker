@@ -579,8 +579,7 @@ admin.post('/discord-posts/preview', role('admin'), async (req, res) => {
   const { previewPost } = await import('./discordrooms.js');
   const p = await previewPost(req.body || {}).catch((e) => { throw new HttpError(400, e.message); });
   const file = p.files?.[0];
-  if (file) { res.type('image/jpeg').send(Buffer.from(file.data)); return; }
-  res.json({ text: p.content });
+  res.json({ text: p.content || '', embeds: p.embeds || [], banner: file ? `data:image/jpeg;base64,${Buffer.from(file.data).toString('base64')}` : '' });
 });
 admin.post('/discord-posts', role('admin'), async (req, res) => {
   const { savePost } = await import('./discordrooms.js');

@@ -81,11 +81,7 @@ function titlePlate(g, text) {
 
 // Header art, title plate, dark content area, footer art. draw(g, top) fills the content area.
 // credit: the card shows wardogs.tools stats, so it carries "Data provided by wardogs.tools".
-async function frame(heading, contentH, draw, { credit = false } = {}) {
-  const art = await prepare();
-  const footY = HEAD_H + contentH;
-  const canvas = createCanvas(W, footY + FOOT);
-  const g = canvas.getContext('2d');
+function drawHeader(g, art, heading) {
   g.drawImage(art, 0, 0, W, HEAD_H, 0, 0, W, HEAD_H);
   // Fade out the tops of the design's panels at the bottom of the header, then write back the
   // slogan's last word ("LASTS"), which sits in that strip.
@@ -103,6 +99,20 @@ async function frame(heading, contentH, draw, { credit = false } = {}) {
   let lx = 1406;
   for (const ch of 'LASTS') { g.fillText(ch, lx, 235); lx += g.measureText(ch).width + 1.6; }
   titlePlate(g, heading);
+}
+// The WPG header art on its own, with a title on the plate: the banner over the bot's guides and posts.
+export async function renderBanner(heading) {
+  const art = await prepare();
+  const canvas = createCanvas(W, HEAD_H);
+  drawHeader(canvas.getContext('2d'), art, upper(String(heading || 'WPG BARRACKS').replace(/[→⇒➜➡]/g, '>')));
+  return canvas.encode('jpeg', 90);
+}
+async function frame(heading, contentH, draw, { credit = false } = {}) {
+  const art = await prepare();
+  const footY = HEAD_H + contentH;
+  const canvas = createCanvas(W, footY + FOOT);
+  const g = canvas.getContext('2d');
+  drawHeader(g, art, heading);
   g.fillStyle = BAND_BG;
   g.fillRect(0, HEAD_H, W, contentH);
   // Footer art; its first rows still show the bottom of the design's panels, so hide those.
@@ -918,6 +928,27 @@ export function renderPromotionCard(d) {
 export function renderMedalAwardCard(d) {
   const list = (d.medals || []).slice(0, 3);
   const more = (d.medals || []).length - list.length;
+  // Several at once: side by side in one row, so the picture stays wide (Discord shrinks tall pictures to fit).
+  if (list.length > 1) {
+    const colH = 400;
+    return frame('MEDALS AWARDED', 76 + colH + (more > 0 ? 40 : 0) + 20, async (g, top) => {
+      const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+      const colW = (1480 - (list.length - 1) * 16) / list.length;
+      list.forEach((m, i) => {
+        const x = 28 + i * (colW + 16);
+        const cx = x + colW / 2;
+        panel(g, x, y + 6, colW, colH - 14);
+        hangingMedal(g, cx, y + 26, m.colors, 0.9);
+        bigValue(g, upper(m.name), cx, y + 256, colW - 40, { size: 50, color: CYAN, font: LABEL_FONT, weight: 700, align: 'center' });
+        g.font = `600 26px ${VALUE_FONT}`;
+        g.fillStyle = MUTED;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        wrapLines(g, m.description, colW - 40, 2).forEach((line, k) => g.fillText(line, cx, y + 310 + k * 34));
+      });
+      if (more > 0) label(g, `+${more} MORE — LISTED BELOW`, W / 2, y + colH + 18, { align: 'center', size: 26, color: CYAN });
+    }, { credit: (d.medals || []).some(trackerMedal) });
+  }
   const each = 250;
   const bodyH = list.length * each + (more > 0 ? 40 : 0);
   return frame(list.length > 1 ? 'MEDALS AWARDED' : 'MEDAL AWARDED', 76 + bodyH + 20, async (g, top) => {
@@ -1294,6 +1325,30 @@ async function drawBadge(g, b, x, y, size, { locked = false } = {}) {
 export function renderAchievementCard(d) {
   const list = (d.badges || []).slice(0, 3);
   const more = (d.badges || []).length - list.length;
+  // Several at once: side by side in one row, so the picture stays wide (Discord shrinks tall pictures to fit).
+  if (list.length > 1) {
+    const colH = 480;
+    return frame('ACHIEVEMENTS UNLOCKED', 76 + colH + (more > 0 ? 40 : 0) + 20, async (g, top) => {
+      const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+      const colW = (1480 - (list.length - 1) * 16) / list.length;
+      for (let i = 0; i < list.length; i++) {
+        const b = list[i];
+        const [rl, rc] = RARITY_INFO[b.rarity] || RARITY_INFO.common;
+        const x = 28 + i * (colW + 16);
+        const cx = x + colW / 2;
+        panel(g, x, y + 6, colW, colH - 14);
+        await drawBadge(g, b, cx - 110, y + 22, 220);
+        bigValue(g, upper(b.name), cx, y + 282, colW - 40, { size: 50, color: CYAN, font: LABEL_FONT, weight: 700, align: 'center' });
+        label(g, `${rl} · +${fmt(b.points)} PTS`, cx, y + 336, { align: 'center', size: 32, color: rc });
+        g.font = `600 26px ${VALUE_FONT}`;
+        g.fillStyle = MUTED;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        wrapLines(g, b.description, colW - 40, 2).forEach((line, k) => g.fillText(line, cx, y + 390 + k * 34));
+      }
+      if (more > 0) label(g, `+${more} MORE — LISTED BELOW`, W / 2, y + colH + 18, { align: 'center', size: 26, color: CYAN });
+    });
+  }
   const each = 290;
   const bodyH = list.length * each + (more > 0 ? 40 : 0);
   return frame(list.length > 1 ? 'ACHIEVEMENTS UNLOCKED' : 'ACHIEVEMENT UNLOCKED', 76 + bodyH + 20, async (g, top) => {
@@ -1468,59 +1523,3 @@ const CATEGORY_NAMES = {
   streaming: 'Streaming', nitro: 'Nitro boosts', loyalty: 'WPG loyalty', chat: 'Discord chat', voice: 'Discord voice',
   recruitment: 'Recruitment', events: 'Events & tournaments', special: 'Special recognition', wardogs: 'Wardogs', other: 'Badge',
 };
-
-// ---------- Room guides and bot posts (discordrooms.js) ----------
-// d: { heading, intro, sections: [{ title, accent, rows: [{ name, text }] }], footer: [line] }
-// A row with a name shows it in cyan on the left (e.g. "/stats") and its text beside it; without, the text runs full width.
-export async function renderGuideCard(d) {
-  await prepare();
-  // The card fonts have no arrows: "Discord control → Commands" is drawn as "Discord control > Commands".
-  const clean = (t) => String(t || '').replace(/[→⇒➜➡]/g, '>');
-  d = { ...d, heading: clean(d.heading), intro: clean(d.intro), footer: (d.footer || []).map(clean),
-    sections: (d.sections || []).map((x) => ({ ...x, title: clean(x.title), accent: clean(x.accent), rows: (x.rows || []).map((r) => ({ name: clean(r.name), text: clean(r.text) })) })) };
-  const m = createCanvas(10, 10).getContext('2d');
-  const NAME_W = 300;
-  const TEXT_W = 1480 - 80;
-  const LINE = 32;
-  m.font = `600 24px ${VALUE_FONT}`;
-  const intro = d.intro ? wrapLines(m, d.intro, TEXT_W, 6) : [];
-  const sections = (d.sections || []).map((s) => {
-    const rows = (s.rows || []).map((r) => {
-      m.font = `600 24px ${VALUE_FONT}`;
-      const lines = wrapLines(m, r.text || '', r.name ? TEXT_W - NAME_W : TEXT_W, 6);
-      return { ...r, lines, h: Math.max(1, lines.length) * LINE + 14 };
-    });
-    return { ...s, rows, h: 74 + rows.reduce((a, r) => a + r.h, 0) + 10 };
-  });
-  const footer = d.footer || [];
-  const introH = intro.length ? intro.length * LINE + 30 : 0;
-  const bodyH = 20 + introH + sections.reduce((a, s) => a + s.h + 16, 0) + (footer.length ? footer.length * 34 + 16 : 0) + 10;
-  return frame(upper(d.heading || 'WPG BARRACKS'), bodyH, async (g, top) => {
-    let y = top + 14;
-    g.textAlign = 'left';
-    g.textBaseline = 'middle';
-    if (intro.length) {
-      g.font = `600 24px ${VALUE_FONT}`;
-      g.fillStyle = '#dfe6ec';
-      intro.forEach((line, i) => g.fillText(line, 68, y + 18 + i * LINE));
-      y += introH;
-    }
-    for (const s of sections) {
-      panel(g, 28, y, 1480, s.h);
-      title(g, 60, y + 38, upper(s.title || ''), s.accent ? upper(s.accent) : '');
-      let ry = y + 74;
-      for (const r of s.rows) {
-        if (r.name) {
-          bigValue(g, r.name, 68, ry + LINE / 2, NAME_W - 20, { size: 28, color: CYAN, font: LABEL_FONT, weight: 700 });
-          g.textAlign = 'left';
-        }
-        g.font = `600 24px ${VALUE_FONT}`;
-        g.fillStyle = WHITE;
-        r.lines.forEach((line, i) => g.fillText(line, r.name ? 68 + NAME_W : 68, ry + LINE / 2 + i * LINE));
-        ry += r.h;
-      }
-      y += s.h + 16;
-    }
-    footer.forEach((line, k) => label(g, upper(line), W / 2, y + 20 + k * 34, { align: 'center', size: 22, color: MUTED }));
-  });
-}

@@ -765,6 +765,20 @@ async function roomsPanel(box) {
   });
 }
 
+// How a bot post will look on Discord: the banner, then each text box (blue edge) or the plain message.
+function discordMd(t) {
+  return esc(t).replace(/&lt;\/([\w-]+):\d+&gt;/g, '<span class="dp-cmd">/$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/^### (.+)$/gm, '<b>$1</b>').replace(/^## (.+)$/gm, '<b style="font-size:1.15em">$1</b>').replace(/^-# (.+)$/gm, '<span class="muted small">$1</span>').replace(/\n/g, '<br>');
+}
+function discordPreview(r) {
+  if (!r.embeds?.length) return `<div class="dp-msg">${discordMd(r.text || '')}</div>`;
+  return `<div class="dp-msg">${r.embeds.map((e, i) => `<div class="dp-embed" style="--ec:#${Number(e.color || 0x33d1ff).toString(16).padStart(6, '0')}">
+      ${e.title ? `<div class="dp-title">${esc(e.title)}</div>` : ''}
+      ${e.description ? `<div>${discordMd(e.description)}</div>` : ''}
+      ${i === 0 && r.banner ? `<img src="${r.banner}" alt="" style="width:100%;border-radius:4px;margin-top:${e.description ? '8px' : '0'}">` : ''}
+      ${e.footer ? `<div class="muted small" style="margin-top:6px">${esc(e.footer.text)}</div>` : ''}</div>`).join('')}</div>`;
+}
+
 // ---------- Discord control → Bot posts & guides ----------
 async function botPostsPanel(box) {
   let d;
@@ -776,10 +790,10 @@ async function botPostsPanel(box) {
   }).join('');
   box.innerHTML = `<div class="panel">
       <p class="muted small" style="margin-top:0">The bot posts these in the room you pick, pins them and keeps them up to date by editing the same message.
-        Ready-made guides rebuild themselves when commands are added or who can use them changes. Your own posts can be a picture in the WPG artwork or plain text.</p>
+        Ready-made guides rebuild themselves when commands are added or who can use them changes. Posts have the WPG banner on top with the text in boxes underneath (real Discord text, easy to read on phones), or plain text.</p>
       <button class="btn primary" id="bpNew">${icon('plus')} New bot post</button></div>
     <div class="panel"><div class="panel-title">Posts</div>
-      ${d.posts.length ? d.posts.map((p) => `<div class="dc-room"><span class="grow"><b>${esc(p.title || kinds[p.kind]?.label || 'Post')}</b> <span class="muted small">in # ${esc(p.room)} · ${esc(kinds[p.kind]?.label || p.kind)} · ${p.style === 'text' ? 'text' : 'picture'}${p.message_id ? '' : ' · not posted yet'}</span>
+      ${d.posts.length ? d.posts.map((p) => `<div class="dc-room"><span class="grow"><b>${esc(p.title || kinds[p.kind]?.label || 'Post')}</b> <span class="muted small">in # ${esc(p.room)} · ${esc(kinds[p.kind]?.label || p.kind)} · ${p.style === 'text' ? 'plain text' : 'banner + text boxes'}${p.message_id ? '' : ' · not posted yet'}</span>
           ${p.problem ? `<br><span class="small" style="color:var(--red)">${esc(p.problem)}</span>` : ''}</span>
         <button class="btn small" data-edit="${p.id}">${icon('edit')} Edit</button><button class="btn small ghost" data-repost="${p.id}">Update now</button><button class="btn small danger" data-del="${p.id}">Delete</button></div>`).join('')
     : '<p class="muted small" style="margin:0">No bot posts yet.</p>'}</div>`;
@@ -793,7 +807,7 @@ async function botPostsPanel(box) {
       <label class="field" data-custom><span>Title (on the picture)</span><input type="text" name="title" maxlength="60" value="${esc(v.title)}"></label>
       <label class="field" data-custom><span>Text: "## Heading" starts a section, "name - text" shows the name in blue</span><textarea name="body" rows="9">${esc(v.body)}</textarea></label>
       <div class="row" style="gap:16px">
-        <label class="check small"><input type="radio" name="style" value="card"${v.style !== 'text' ? ' checked' : ''}> Picture (WPG artwork)</label>
+        <label class="check small"><input type="radio" name="style" value="card"${v.style !== 'text' ? ' checked' : ''}> WPG banner + text boxes</label>
         <label class="check small"><input type="radio" name="style" value="text"${v.style === 'text' ? ' checked' : ''}> Plain text</label>
         <label class="check small"><input type="checkbox" name="pin"${v.pin !== false ? ' checked' : ''}> Pin it</label>
       </div>
@@ -813,14 +827,8 @@ async function botPostsPanel(box) {
       const out = m.el.querySelector('#bpPreview');
       out.innerHTML = '<div class="spinner"></div>';
       try {
-        const res = await fetch('/api/admin/discord-posts/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body()), credentials: 'same-origin' });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Preview failed');
-        if ((res.headers.get('content-type') || '').startsWith('image/')) {
-          const blob = await res.blob();
-          const src = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.readAsDataURL(blob); });
-          out.innerHTML = `<img src="${src}" alt="Preview" style="width:100%;border-radius:8px">`;
-        }
-        else out.innerHTML = `<pre class="small" style="white-space:pre-wrap;margin:0;padding:10px;background:#07121f;border-radius:8px">${esc((await res.json()).text)}</pre>`;
+        const r = await api('admin/discord-posts/preview', { method: 'POST', body: body() });
+        out.innerHTML = discordPreview(r);
       } catch (x) { out.innerHTML = ''; fail(x); }
     };
     f.onsubmit = async (e) => {
