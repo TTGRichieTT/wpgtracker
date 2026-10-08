@@ -336,6 +336,22 @@ badgesRouter.get('/users/:id/badges', member, async (req, res) => {
   if (!u) throw new HttpError(404, 'Member not found.');
   res.json(await collectionFor(u));
 });
+// Share one of your badges to Discord (the badge posts channel). Once a minute, and each badge once an hour.
+const shared = new Map(); // `${userId}` → time, `${userId}:${badgeId}` → time
+badgesRouter.post('/me/badges/:id/share', member, async (req, res) => {
+  const id = int(req.params.id);
+  if (!(await one('SELECT 1 FROM user_badges WHERE user_id=$1 AND badge_id=$2', [req.user.id, id]))) throw new HttpError(400, "You haven't earned that badge yet.");
+  const channel = String((await setting('discord_badge_channel')) || (await setting('discord_post_channel')) || '').trim();
+  if (!process.env.DISCORD_BOT_TOKEN || !/^\d{15,22}$/.test(channel)) throw new HttpError(400, "Badge posts to Discord aren't set up yet (ask an admin: Admin → Badges).");
+  const now = Date.now();
+  if (now - (shared.get(String(req.user.id)) || 0) < 60e3) throw new HttpError(429, 'Wait a minute before sharing another badge.');
+  if (now - (shared.get(`${req.user.id}:${id}`) || 0) < 3600e3) throw new HttpError(429, 'You shared that badge in the last hour.');
+  shared.set(String(req.user.id), now);
+  shared.set(`${req.user.id}:${id}`, now);
+  if (shared.size > 5000) shared.clear();
+  bus.emit('announce', { type: 'badge-share', userId: req.user.id, badgeId: id });
+  res.json({ ok: true });
+});
 badgesRouter.put('/me/badge-showcase', member, async (req, res) => {
   const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map((x) => int(x)).filter(Boolean);
   const held = new Set((await q('SELECT badge_id FROM user_badges WHERE user_id=$1', [req.user.id])).map((r) => r.badge_id));

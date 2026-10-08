@@ -1388,3 +1388,76 @@ export function renderStatTilesCard(d) {
     (d.lines || []).forEach((line, k) => label(g, upper(line), W / 2, y + 26 + k * 36, { align: 'center', size: 22, color: MUTED }));
   });
 }
+
+// /badges: a member's earned badges as a grid of their artwork (rarity colour, date), newest first.
+// d: { name, avatar, frame, totals{points,badges,badges_total}, badges: [badge + earned_at] }
+const BG_COLS = 6;
+const BG_W = 236;
+const BG_H = 296;
+export function renderBadgesCard(d) {
+  const list = (d.badges || []).slice(0, 30);
+  const more = (d.badges || []).length - list.length;
+  const rows = Math.max(1, Math.ceil(list.length / BG_COLS));
+  const bodyH = 76 + 70 + rows * BG_H + (more > 0 ? 40 : 0) + 20;
+  return frame('BADGE COLLECTION', bodyH, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    const t = d.totals || {};
+    label(g, `${fmt(t.badges)} / ${fmt(t.badges_total)} BADGES  ·  ${fmt(t.points)} ACHIEVEMENT POINTS`, W / 2, y + 26, { align: 'center', size: 26, color: CYAN });
+    if (!list.length) {
+      label(g, 'NO BADGES YET — THEY UNLOCK BY THEMSELVES AS YOU PLAY, STREAM AND CHAT', W / 2, y + 120, { align: 'center', size: 24, color: MUTED });
+      return;
+    }
+    const gx = (W - BG_COLS * BG_W) / 2;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      const x = gx + (i % BG_COLS) * BG_W;
+      const cy = y + 64 + Math.floor(i / BG_COLS) * BG_H;
+      g.fillStyle = BOX_FILL;
+      roundRect(g, x + 8, cy, BG_W - 16, BG_H - 16, 12);
+      g.fill();
+      await drawBadge(g, b, x + (BG_W - 170) / 2, cy + 14, 170);
+      bigValue(g, upper(b.name), x + BG_W / 2, cy + 206, BG_W - 30, { size: 22, align: 'center', font: LABEL_FONT, weight: 700 });
+      const [rl, rc] = RARITY_INFO[b.rarity] || RARITY_INFO.common;
+      label(g, rl, x + BG_W / 2, cy + 236, { align: 'center', size: 18, color: rc });
+      if (b.earned_at) label(g, upper(new Date(b.earned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })), x + BG_W / 2, cy + 262, { align: 'center', size: 16, color: MUTED });
+    }
+    if (more > 0) label(g, `+${more} MORE — SEE THEIR BADGE COLLECTION IN WPG BARRACKS`, W / 2, y + 64 + rows * BG_H + 14, { align: 'center', size: 22, color: CYAN });
+  });
+}
+
+// One badge, big: /badges with a badge name, and a member sharing a badge to Discord.
+// d: { heading, name, avatar, frame, badge{..., earned_at, progress{value,target,unit}, how}, holders }
+export function renderBadgeCard(d) {
+  const b = d.badge;
+  return frame(d.heading || 'BADGE', 76 + 420 + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    const [rl, rc] = RARITY_INFO[b.rarity] || RARITY_INFO.common;
+    panel(g, 28, y + 6, 1480, 400);
+    await drawBadge(g, b, 64, y + 28, 356, { locked: !b.earned_at });
+    label(g, upper(CATEGORY_NAMES[b.category] || 'Badge'), 470, y + 62, { size: 24 });
+    bigValue(g, upper(b.name), 470, y + 126, 1010, { size: 74, color: CYAN, font: LABEL_FONT, weight: 700 });
+    label(g, `${rl} BADGE${b.limited ? ' · LIMITED EDITION' : ''}`, 470, y + 188, { size: 30, color: rc });
+    g.font = `700 30px ${LABEL_FONT}`;
+    const rw = g.measureText(`${rl} BADGE${b.limited ? ' · LIMITED EDITION' : ''}`).width;
+    label(g, `${fmt(b.points)} ACHIEVEMENT POINTS`, 470 + rw + 30, y + 188, { size: 30, color: GREEN });
+    g.font = `600 26px ${VALUE_FONT}`;
+    g.fillStyle = MUTED;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    wrapLines(g, b.description, 1010, 2).forEach((line, k) => g.fillText(line, 470, y + 242 + k * 34));
+    if (b.earned_at) {
+      label(g, `EARNED ${upper(new Date(b.earned_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }))}`, 470, y + 330, { size: 28, color: GREEN });
+    } else if (b.progress) {
+      const p = b.progress;
+      bar(g, 470, y + 318, 760, 22, p.value / Math.max(0.01, p.target));
+      label(g, `${fmt(p.value)} / ${fmt(p.target)}${p.unit && p.unit !== '$' ? ` ${upper(p.unit)}` : ''}`, 1250, y + 330, { size: 26 });
+    } else {
+      label(g, 'NOT EARNED YET · GIVEN BY WPG STAFF', 470, y + 330, { size: 26, color: MUTED });
+    }
+    if (d.holders !== undefined) label(g, `${fmt(d.holders)} MEMBER${d.holders === 1 ? '' : 'S'} HAVE IT`, 470, y + 374, { size: 22, color: MUTED });
+  });
+}
+const CATEGORY_NAMES = {
+  streaming: 'Streaming', nitro: 'Nitro boosts', loyalty: 'WPG loyalty', chat: 'Discord chat', voice: 'Discord voice',
+  recruitment: 'Recruitment', events: 'Events & tournaments', special: 'Special recognition', wardogs: 'Wardogs', other: 'Badge',
+};

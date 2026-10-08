@@ -14,7 +14,7 @@ function progressHtml(p) {
   const pct = Math.max(0, Math.min(100, (p.value / Math.max(0.01, p.target)) * 100));
   return `<div class="xpbar" style="height:6px;margin:6px 0 2px"><div style="width:${pct.toFixed(1)}%"></div></div><div class="muted small">${unitText(p.value, p.unit)} / ${unitText(p.target, p.unit)}</div>`;
 }
-function badgeModal(b) {
+function badgeModal(b, mine = false) {
   const md = modal(`<div class="row between"><h3 style="margin:0">${esc(b.name)}</h3><button class="btn ghost small" data-close>✕</button></div>
     <div class="row" style="gap:18px;align-items:center;margin-top:10px">${badgeHTML(b, 150, { locked: !b.unlocked })}
       <div class="stack" style="gap:6px">${rarityPill(b.rarity)} <span class="muted small">${esc(b.points)} Achievement Points</span>
@@ -24,6 +24,16 @@ function badgeModal(b) {
         ${b.unlocked ? `<b style="color:var(--green)">Earned ${fmtDate(b.earned_at)}</b>` : `<span class="muted small">${esc(b.how || '')}</span>${progressHtml(b.progress)}`}
       </div></div>`);
   md.el.querySelector('[data-close]').onclick = md.close;
+  if (mine && b.unlocked) {
+    md.el.insertAdjacentHTML('beforeend', `<div class="row" style="margin-top:12px"><button class="btn primary" id="bdShare">${icon('discord')} Share to Discord</button><span class="small muted" id="bdShareMsg"></span></div>`);
+    md.el.querySelector('#bdShare').onclick = async (e) => {
+      e.target.disabled = true;
+      try {
+        await api(`me/badges/${b.id}/share`, { method: 'POST', body: {} });
+        md.el.querySelector('#bdShareMsg').textContent = 'Posted to the WPG Discord.';
+      } catch (x) { md.el.querySelector('#bdShareMsg').textContent = x.message; e.target.disabled = false; }
+    };
+  }
 }
 
 // ---------- Profile ----------
@@ -94,7 +104,7 @@ export async function profileBadgesPanel(box, user, showBox) {
     box.querySelectorAll('[data-b]').forEach((el) => {
       el.onclick = () => {
         const b = byId.get(Number(el.dataset.b));
-        if (!picking) return badgeModal(b);
+        if (!picking) return badgeModal(b, mine);
         if (picking.has(b.id)) picking.delete(b.id);
         else if (picking.size < 5) picking.add(b.id);
         else toast('Up to 5', 'Take one off first.');
