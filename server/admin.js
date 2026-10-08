@@ -604,6 +604,36 @@ admin.delete('/discord-posts/:id', role('admin'), async (req, res) => {
   res.json({ ok: true });
 });
 
+// Discord control → Bot posts & guides → Weekly welcome (discordwelcome.js).
+admin.get('/discord-welcome', role('admin'), async (_req, res) => {
+  const w = await import('./discordwelcome.js');
+  const s = await w.welcomeSettings();
+  const people = await w.newJoiners().catch(() => []);
+  res.json({ settings: s, days: w.DAYS, when: w.nextSlotText(s), waiting: people.length, waiting_in_app: people.filter((p) => p.inApp).length });
+});
+admin.put('/discord-welcome', role('admin'), async (req, res) => {
+  const w = await import('./discordwelcome.js');
+  const s = await w.saveWelcomeSettings(req.body || {});
+  await audit(req.user.id, 'discord.welcome', '', s);
+  res.json({ settings: s, when: w.nextSlotText(s) });
+});
+admin.post('/discord-welcome/preview', role('admin'), async (_req, res) => {
+  const w = await import('./discordwelcome.js');
+  const s = await w.welcomeSettings();
+  let people = await w.newJoiners().catch(() => []);
+  const sample = !people.length;
+  if (sample) people = [{ id: '0', name: 'New member', inApp: false }];
+  const p = await w.welcomePayload(people, s);
+  const file = p.files?.[0];
+  res.json({ text: p.content, embeds: p.embeds, banner: file ? `data:image/jpeg;base64,${Buffer.from(file.data).toString('base64')}` : '', sample });
+});
+admin.post('/discord-welcome/post', role('admin'), async (req, res) => {
+  const w = await import('./discordwelcome.js');
+  const r = await w.postWelcome({ force: true }).catch((e) => ({ ok: false, reason: e.message }));
+  await audit(req.user.id, 'discord.welcome.post', '', r);
+  res.json(r);
+});
+
 // Tidy up an existing server: scan (nothing changes), then apply the chosen removals with a backup first.
 admin.post('/discord-server/tidy/scan', role('admin'), async (req, res) => {
   try {

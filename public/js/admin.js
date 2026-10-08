@@ -767,16 +767,69 @@ async function roomsPanel(box) {
 
 // How a bot post will look on Discord: the banner, then each text box (blue edge) or the plain message.
 function discordMd(t) {
-  return esc(t).replace(/&lt;\/([\w-]+):\d+&gt;/g, '<span class="dp-cmd">/$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+  return esc(t).replace(/&lt;@(\d+)&gt;/g, '<span class="dp-cmd">@member</span>').replace(/&lt;#(\d+)&gt;/g, '<span class="dp-cmd">#room</span>').replace(/&lt;\/([\w-]+):\d+&gt;/g, '<span class="dp-cmd">/$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/^### (.+)$/gm, '<b>$1</b>').replace(/^## (.+)$/gm, '<b style="font-size:1.15em">$1</b>').replace(/^-# (.+)$/gm, '<span class="muted small">$1</span>').replace(/\n/g, '<br>');
 }
 function discordPreview(r) {
   if (!r.embeds?.length) return `<div class="dp-msg">${discordMd(r.text || '')}</div>`;
-  return `<div class="dp-msg">${r.embeds.map((e, i) => `<div class="dp-embed" style="--ec:#${Number(e.color || 0x33d1ff).toString(16).padStart(6, '0')}">
+  return `<div class="dp-msg">${r.text ? `<div style="margin-bottom:6px">${discordMd(r.text).replace(/&lt;@\d+&gt;/g, '<span class="dp-cmd">@member</span>')}</div>` : ''}${r.embeds.map((e, i) => `<div class="dp-embed" style="--ec:#${Number(e.color || 0x33d1ff).toString(16).padStart(6, '0')}">
       ${e.title ? `<div class="dp-title">${esc(e.title)}</div>` : ''}
       ${e.description ? `<div>${discordMd(e.description)}</div>` : ''}
       ${i === 0 && r.banner ? `<img src="${r.banner}" alt="" style="width:100%;border-radius:4px;margin-top:${e.description ? '8px' : '0'}">` : ''}
       ${e.footer ? `<div class="muted small" style="margin-top:6px">${esc(e.footer.text)}</div>` : ''}</div>`).join('')}</div>`;
+}
+
+// ---------- Weekly welcome (server/discordwelcome.js) ----------
+async function weeklyWelcomePanel(el, roomOptions) {
+  let d;
+  try { d = await api('admin/discord-welcome'); } catch (x) { el.innerHTML = `<p class="muted small">${esc(x.message)}</p>`; return; }
+  const s = d.settings;
+  el.innerHTML = `<div class="panel-title">👋 Weekly welcome</div>
+    <p class="muted small" style="margin-top:0">Once a week the bot @mentions everyone who joined the Discord in the last 7 days (still on the server, not bots;
+      with the entry check on, only those who got in), thanks them, and reminds them to follow us on Facebook and sign up to the app. Members already in the
+      app are ticked; the rest get a friendly nudge. Nobody is welcomed twice, and nothing is posted when nobody new joined.
+      The Facebook button uses the link in Admin → Settings.</p>
+    <form id="wwForm" class="stack">
+      <div class="form-grid">
+        <label class="check" style="grid-column:1/-1"><input type="checkbox" name="on"${s.weekly_welcome_on === 'true' ? ' checked' : ''}> Weekly welcome on</label>
+        <label class="field"><span>Room</span><select name="channel"><option value="">Pick a room…</option>${roomOptions(s.weekly_welcome_channel)}</select></label>
+        <label class="field"><span>Day (UK time)</span><select name="day"><option value="">Pick a day…</option>${d.days.map((n, i) => `<option value="${i}"${String(i) === s.weekly_welcome_day ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="field"><span>Time (UK time)</span><input type="time" name="time" value="${esc(s.weekly_welcome_time)}"></label>
+        <label class="check small"><input type="checkbox" name="ping"${s.weekly_welcome_ping === 'true' ? ' checked' : ''}> Ping everyone named</label>
+        <label class="check small"><input type="checkbox" name="nudge"${s.weekly_welcome_nudge === 'true' ? ' checked' : ''}> Show who is / isn't in the app yet</label>
+      </div>
+      <label class="field"><span>Top line ({mentions} = the new members, {count} = how many)</span><input type="text" name="title" maxlength="300" value="${esc(s.weekly_welcome_title)}"></label>
+      <label class="field"><span>Message</span><textarea name="text" rows="5">${esc(s.weekly_welcome_text)}</textarea></label>
+      <p class="small" style="margin:0">${d.when ? `Posts on <b>${esc(d.when)}</b>.` : '<b style="color:var(--amber, #f5a524)">Pick a day and time to start it.</b>'}
+        <span class="muted">${d.waiting} new member${d.waiting === 1 ? '' : 's'} waiting to be welcomed${d.waiting ? ` (${d.waiting_in_app} already in the app)` : ''}.</span></p>
+      <div id="wwPreview"></div>
+      <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="wwPrev">Preview</button><button type="button" class="btn ghost" id="wwNow">Post now</button></div>
+    </form>`;
+  const f = el.querySelector('#wwForm');
+  const body = () => ({ on: f.on.checked, channel: f.channel.value, day: f.day.value, time: f.time.value, ping: f.ping.checked, nudge: f.nudge.checked, title: f.title.value, text: f.text.value });
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    try { const r = await api('admin/discord-welcome', { method: 'PUT', body: body() }); toast('Saved', r.when ? `Posts on ${r.when}.` : 'Pick a day and time to start it.'); weeklyWelcomePanel(el, roomOptions); } catch (x) { fail(x); }
+  };
+  el.querySelector('#wwPrev').onclick = async () => {
+    const out = el.querySelector('#wwPreview');
+    out.innerHTML = '<div class="spinner"></div>';
+    try {
+      await api('admin/discord-welcome', { method: 'PUT', body: body() });
+      const r = await api('admin/discord-welcome/preview', { method: 'POST', body: {} });
+      out.innerHTML = `${r.sample ? '<p class="muted small" style="margin:6px 0 0">Nobody new to welcome right now: this shows a sample member.</p>' : ''}${discordPreview(r)}`;
+    } catch (x) { out.innerHTML = ''; fail(x); }
+  };
+  el.querySelector('#wwNow').onclick = async () => {
+    if (!(await confirmBox(`Post the welcome now? It pings the ${d.waiting} new member${d.waiting === 1 ? '' : 's'} and they won't be welcomed again on the day.`))) return;
+    try {
+      await api('admin/discord-welcome', { method: 'PUT', body: body() });
+      const r = await api('admin/discord-welcome/post', { method: 'POST', body: {} });
+      if (!r.ok) throw new Error(r.reason);
+      toast(r.posted ? 'Posted' : 'Nothing to post', r.posted ? `${r.count} new member${r.count === 1 ? '' : 's'} welcomed.` : r.reason);
+      weeklyWelcomePanel(el, roomOptions);
+    } catch (x) { fail(x); }
+  };
 }
 
 // ---------- Discord control → Bot posts & guides ----------
@@ -788,7 +841,8 @@ async function botPostsPanel(box) {
     const list = g.rooms.filter((r) => r.text);
     return list.length ? `<optgroup label="${esc(g.name)}">${list.map((r) => `<option value="${esc(r.id)}"${r.id === sel ? ' selected' : ''}># ${esc(r.name)}</option>`).join('')}</optgroup>` : '';
   }).join('');
-  box.innerHTML = `<div class="panel">
+  box.innerHTML = `<div class="panel" id="wwBox"><div class="spinner"></div></div>
+    <div class="panel">
       <p class="muted small" style="margin-top:0">The bot posts these in the room you pick, pins them and keeps them up to date by editing the same message.
         Ready-made guides rebuild themselves when commands are added or who can use them changes. Posts have the WPG banner on top with the text in boxes underneath (real Discord text, easy to read on phones), or plain text.</p>
       <button class="btn primary" id="bpNew">${icon('plus')} New bot post</button></div>
@@ -841,6 +895,7 @@ async function botPostsPanel(box) {
       } catch (x) { fail(x); }
     };
   };
+  weeklyWelcomePanel(box.querySelector('#wwBox'), roomOptions);
   box.querySelector('#bpNew').onclick = () => open(null);
   box.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = () => open(d.posts.find((x) => x.id === Number(b.dataset.edit))); });
   box.querySelectorAll('[data-repost]').forEach((b) => {
