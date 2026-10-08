@@ -73,6 +73,7 @@ export const STATS = {
   clan_xp: { label: 'Clan XP', scope: 'all', source: APP },
   giveaway_wins: { label: 'Giveaways won', scope: 'all', source: APP },
   medals: { label: 'Medals held', scope: 'all', source: APP },
+  achievement_points: { label: 'Achievement Points (badges and achievement medals)', scope: 'all', source: APP },
   // Clan (WPG members, while it applies): frames only.
   clan_member: { label: 'WPG member', scope: 'clan', source: APP, yesno: true },
   unit: { label: 'Posted to a Combat Command unit (its colour)', scope: 'clan', source: APP, yesno: true },
@@ -136,7 +137,7 @@ export async function statsFor(user, season) {
            LEFT JOIN combat_profiles prof ON prof.user_id = cp.user_id WHERE cp.user_id=$1`, [user.id]),
   ]);
   const did = String(user.discord_id || '');
-  const [streaming, da, boostsSeen, boostsNow, recruits, events, joinedWpg] = await Promise.all([
+  const [streaming, da, boostsSeen, boostsNow, recruits, events, joinedWpg, points] = await Promise.all([
     streamStatsFor(user.id),
     did ? one('SELECT messages, voice_minutes, boost_since FROM discord_activity WHERE discord_id=$1', [did]) : null,
     did ? one('SELECT COUNT(*)::int n FROM discord_boosts WHERE discord_id=$1', [did]) : null,
@@ -146,6 +147,8 @@ export async function statsFor(user, season) {
     one(`SELECT COUNT(*)::int attended, COUNT(*) FILTER (WHERE p.won AND e.kind='tournament')::int won
            FROM wpg_event_people p JOIN wpg_events e ON e.id = p.event_id WHERE p.user_id=$1`, [user.id]),
     wpgJoinedAt(user),
+    one(`SELECT (COALESCE((SELECT SUM(b.points) FROM user_badges ub JOIN badges b ON b.id = ub.badge_id WHERE ub.user_id = $1), 0)
+               + COALESCE((SELECT SUM(a.points) FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id = $1), 0))::int AS n`, [user.id]),
   ]);
   const boosting = !!da?.boost_since;
   const o = ws?.ranks?.source === 'wardogs.tools' ? ws.official : null;
@@ -187,6 +190,7 @@ export async function statsFor(user, season) {
     clan_xp: n(user.xp),
     giveaway_wins: gw?.n || 0,
     medals: medals?.n || 0,
+    achievement_points: points?.n || 0,
     stream_count: streaming.streams,
     stream_hours: streaming.hours,
     stream_best_day: streaming.bestDay,

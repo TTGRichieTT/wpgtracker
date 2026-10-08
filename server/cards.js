@@ -148,7 +148,14 @@ async function framedPicture(g, img, x, y, size, frame) {
     const pic = buf ? await loadImage(buf).catch(() => null) : null;
     if (pic) g.drawImage(pic, x, y, size, size);
   }
-  const art = await loadImage(Buffer.from(frameSVG(frame, Math.round(size * 2), { overlayOnly: !!frame?.image }))).catch(() => null);
+  // A badge they chose for the corner: its uploaded picture is put straight into the drawing (links don't load here).
+  let look = frame;
+  if (frame?.corner?.image && frame.corner.image.startsWith('/badge-img/')) {
+    const buf = await badgeImageBuffer(frame.corner.image).catch(() => null);
+    const mime = !buf ? '' : buf.subarray(0, 4).toString('latin1') === 'RIFF' ? 'image/webp' : buf.subarray(0, 3).toString('latin1') === 'GIF' ? 'image/gif' : 'image/png';
+    look = { ...frame, corner: { ...frame.corner, image: buf ? `data:${mime};base64,${buf.toString('base64')}` : '' } };
+  }
+  const art = await loadImage(Buffer.from(frameSVG(look, Math.round(size * 2), { overlayOnly: !!frame?.image }))).catch(() => null);
   if (art) g.drawImage(art, x, y, size, size);
 }
 

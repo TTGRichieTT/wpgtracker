@@ -60,6 +60,7 @@ export const users = pgTable('users', {
   wpg_joined_at: timestamp({ withTimezone: true }),
   wpg_joined_note: text().notNull().default(''),
   badge_showcase: jsonb().notNull().default([]), // up to 5 badge ids they show at the top of their profile
+  frame_badge_id: integer(), // an earned badge they show in their frame's corner instead of their clan rank badge
   steam_add_button: boolean().notNull().default(true),
   discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),

@@ -3,10 +3,12 @@
 //  title: words on a plate across the top (the Officer frame shows the member's clan rank title there);
 //  season: the season number it's from (shown as S1, S2… unless season_tag is false);
 //  image: an uploaded frame picture (style 'image', 512 x 512 with a transparent middle);
-//  badge 'rank': the member's clan rank badge in the corner (rank: their rank's name, abbr, colour, insignia). The picture sits in the middle 74% of the square (13–87 of 0–100);
+//  badge 'rank': the member's clan rank badge in the corner (rank: their rank's name, abbr, colour, insignia), or
+//  an earned badge they chose to show there instead (corner: { name, rarity, image, short, category }). The picture sits in the middle 74% of the square (13–87 of 0–100);
 // the frame is drawn around it, with a small badge in the corner that says what kind of frame it is.
 
 import { rankBadge } from './insignia.js';
+import { badgeSVG, RARITY } from './badgeart.js';
 
 // Words on a plate across the top of the frame (e.g. the member's clan rank title on the Officer frame).
 function titlePlate(text, color) {
@@ -54,8 +56,16 @@ const GLYPHS = {
 function metalGrad(id, m) {
   return `<linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${m[0]}"/><stop offset=".5" stop-color="${m[1]}"/><stop offset="1" stop-color="${m[2]}"/></linearGradient>`;
 }
-function badge(name, color, rank) {
+function badge(name, color, rank, corner) {
   // The member's clan rank badge, a little bigger than the glyphs (falls back to the shield without a rank).
+  // corner: an earned badge they chose to show there instead (its artwork, or the default badge emblem).
+  if (name === 'rank' && corner) {
+    const glow = (RARITY[corner.rarity] || RARITY.common).color;
+    const art = corner.image
+      ? `<image href="${esc(corner.image)}" x="69" y="69" width="31" height="31" preserveAspectRatio="xMidYMid meet"/>`
+      : badgeSVG(corner).replace('<svg viewBox', '<svg x="69" y="69" width="31" height="31" viewBox');
+    return `<g><circle cx="84.5" cy="84.5" r="14" fill="${glow}" opacity=".35"/>${art}</g>`;
+  }
   if (name === 'rank') {
     if (!rank) return badge('shield', color);
     return rankBadge(rank, 28).replace(/^<svg class="insignia" /, '<svg x="72" y="70" ');
@@ -141,7 +151,7 @@ export function frameSVG(frame, size = 100, { overlayOnly = false } = {}) {
   } else {
     body = `<path d="${RING}" fill="${color}" fill-rule="evenodd"/>`;
   }
-  return `<svg class="frame-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><defs>${defs}</defs>${overlayOnly ? '' : body}${titlePlate(f.title, f.rank?.color || badgeColor)}${badge(f.badge, badgeColor, f.rank)}${f.season_tag === false ? '' : seasonTag(f.season, badgeColor)}</svg>`;
+  return `<svg class="frame-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><defs>${defs}</defs>${overlayOnly ? '' : body}${titlePlate(f.title, f.rank?.color || badgeColor)}${badge(f.badge, badgeColor, f.rank, f.corner)}${f.season_tag === false ? '' : seasonTag(f.season, badgeColor)}</svg>`;
 }
 
 // The look presets admins can pick (key → label).

@@ -71,9 +71,23 @@ export async function frameLookFor(user, f) {
     const unit = await one('SELECT cu.name, cu.color FROM combat_postings cp JOIN combat_units cu ON cu.id = cp.unit_id WHERE cp.user_id=$1', [user.id]);
     if (unit) Object.assign(extra, { color: unit.color, name: `${unit.name} unit` });
   }
-  if (f.badge === 'rank') extra.rank = await rankOf(user);
+  if (f.badge === 'rank') {
+    extra.rank = await rankOf(user);
+    extra.corner = (await cornerBadges([user.id])).get(user.id) || null;
+  }
   const row = (await allFrames()).find((x) => x.id === f.id) || f;
   return lookOf(row, extra);
+}
+
+// The earned badge a member chose to show in their frame's corner instead of their clan rank badge (badges.js).
+// Only while they still hold it; frames with the clan rank corner show it.
+async function cornerBadges(userIds) {
+  if (!userIds.length) return new Map();
+  const rows = await q(`SELECT u.id AS user_id, b.* FROM users u JOIN user_badges ub ON ub.user_id = u.id AND ub.badge_id = u.frame_badge_id
+                          JOIN badges b ON b.id = u.frame_badge_id WHERE u.id = ANY($1)`, [userIds]);
+  if (!rows.length) return new Map();
+  const { badgeOut } = await import('./badges.js');
+  return new Map(rows.map((r) => [r.user_id, badgeOut(r)]));
 }
 
 // ---------- What a member has done ----------
@@ -157,12 +171,13 @@ export async function shownFrames(users) {
     : new Map();
   const rankIds = [...new Set(users.filter((u) => u?.rank_id && byId.get(u.frame_id)?.badge === 'rank').map((u) => u.rank_id))];
   const ranks = rankIds.length ? new Map((await q(`SELECT ${RANK_COLS} FROM ranks WHERE id = ANY($1)`, [rankIds])).map((r) => [r.id, r])) : new Map();
+  const corners = await cornerBadges(users.filter((u) => byId.get(u.frame_id)?.badge === 'rank').map((u) => u.id));
   const out = new Map();
   for (const u of users) {
     const f = byId.get(u.frame_id);
     if (!f || !f.enabled) continue;
     if (f.category === 'clan' && !isWpgMember(u)) continue;
-    const extra = f.badge === 'rank' ? { rank: isWpgMember(u) ? ranks.get(u.rank_id) || null : null } : {};
+    const extra = f.badge === 'rank' ? { rank: isWpgMember(u) ? ranks.get(u.rank_id) || null : null, corner: corners.get(u.id) || null } : {};
     if (f.metric === 'unit') {
       const unit = units.get(u.id);
       if (!unit) continue;
@@ -326,6 +341,26 @@ async function seedFrames() {
     await q("INSERT INTO settings (key, value) VALUES ('_frames_rank_badge', 'true') ON CONFLICT DO NOTHING");
     clearFrames();
   }
+  // Once: frames unlocked by Achievement Points (badges and achievement medals, badges.js).
+  if (!(await one("SELECT value FROM settings WHERE key='_frames_points'"))) {
+    const POINTS = [
+      ['points2500', 'Achiever', 2500, 'metal-bronze', '', 'medal', '', false],
+      ['points5000', 'Collector', 5000, 'metal-silver', '', 'medal', '', false],
+      ['points10000', 'Decorated', 10000, 'metal-gold', '', 'medal', '', false],
+      ['points25000', 'Elite Achiever', 25000, 'laurel-silver', '', '', '25K', false],
+      ['points50000', 'Legendary Achiever', 50000, 'laurel-gold', '', '', '50K', true],
+      ['points100000', 'WPG Hall of Honour', 100000, 'glow', '#ffe066', 'crown', '', false],
+    ];
+    for (const [i, [key, name, target, style, col, badge, label, crown]] of POINTS.entries()) {
+      await q(
+        `INSERT INTO frames (key, name, description, category, style, color, badge, label, crown, metric, target, sort_order)
+         SELECT $1,$2,$3,'permanent',$4,$5,$6,$7,$8,'achievement_points',$9,$10 WHERE NOT EXISTS (SELECT 1 FROM frames WHERE key=$1)`,
+        [key, name, `Earn ${target.toLocaleString('en-GB')} Achievement Points (from badges and achievement medals)`, style, col || '#29b6f6', badge, label, crown, target, 300 + i],
+      );
+    }
+    await q("INSERT INTO settings (key, value) VALUES ('_frames_points', 'true') ON CONFLICT DO NOTHING");
+    clearFrames();
+  }
   // Once: every clan frame shows the member's clan rank badge (Unit Colours had a flag, Officer chevrons).
   if (!(await one("SELECT value FROM settings WHERE key='_frames_clan_rank'"))) {
     await q("UPDATE frames SET badge='rank' WHERE category='clan'");
@@ -350,6 +385,7 @@ export async function framesFor(user) {
   const m = await metricsFor(user, season);
   const owned = await q('SELECT frame_id, unlocked_at FROM user_frames WHERE user_id=$1', [user.id]);
   const myRank = await rankOf(user);
+  const myCorner = (await cornerBadges([user.id])).get(user.id) || null;
   const list = (await allFrames()).filter((f) => f.enabled);
   // past: frames from earlier seasons they earned (kept for good, can't be earned any more).
   const out = { permanent: [], clan: [], season: [], past: [] };
@@ -364,7 +400,7 @@ export async function framesFor(user) {
       group = 'past';
     }
     const def = METRICS[f.metric] || {};
-    const extra = f.badge === 'rank' ? { rank: myRank } : {};
+    const extra = f.badge === 'rank' ? { rank: myRank, corner: myCorner } : {};
     const look = f.metric === 'unit' && m.unitInfo ? lookOf(f, { ...extra, color: m.unitInfo.color, name: `${m.unitInfo.name} unit` }) : lookOf(f, extra);
     if (f.metric === 'unit' && !m.unitInfo) look.color = '#5d7a94';
     out[group]?.push({
