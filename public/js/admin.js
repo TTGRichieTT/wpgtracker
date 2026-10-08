@@ -859,7 +859,10 @@ async function botPostsPanel(box) {
       <label class="field"><span>What to post</span><select name="kind">${d.kinds.map((k) => `<option value="${k.key}"${k.key === v.kind ? ' selected' : ''}>${esc(k.label)}</option>`).join('')}</select></label>
       <p class="muted small" id="bpHelp" style="margin:0"></p>
       <label class="field" data-custom><span>Title (on the picture)</span><input type="text" name="title" maxlength="60" value="${esc(v.title)}"></label>
-      <label class="field" data-custom><span>Text: "## Heading" starts a section, "name - text" shows the name in blue</span><textarea name="body" rows="9">${esc(v.body)}</textarea></label>
+      <div class="field" data-custom><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Boxes</span>
+        <p class="muted small" style="margin:0 0 6px">Each box shows as its own box on Discord. Blank lines stay as gaps. A line like "Login - Use Steam" shows "Login" in blue.</p>
+        <div id="bpBoxes" class="stack" style="gap:10px"></div>
+        <button type="button" class="btn small" id="bpAddBox" style="margin-top:8px">+ Add box</button></div>
       <div class="row" style="gap:16px">
         <label class="check small"><input type="radio" name="style" value="card"${v.style !== 'text' ? ' checked' : ''}> WPG banner + text boxes</label>
         <label class="check small"><input type="radio" name="style" value="text"${v.style === 'text' ? ' checked' : ''}> Plain text</label>
@@ -869,6 +872,29 @@ async function botPostsPanel(box) {
       <div class="row"><button type="button" class="btn" id="bpPrev">Preview</button><button class="btn primary">${p ? 'Save & update on Discord' : 'Post on Discord'}</button></div>
     </form>`);
     const f = m.el.querySelector('#bpForm');
+    // The boxes are kept as one text: the first box first, "## Heading" (or "---" with no heading) before each next one.
+    const boxesEl = m.el.querySelector('#bpBoxes');
+    const toBoxes = (text) => {
+      const out = [{ title: '', text: [] }];
+      for (const line of String(text || '').split(/\r?\n/)) {
+        if (/^#{1,3}\s+\S/.test(line.trim())) out.push({ title: line.trim().replace(/^#+\s*/, ''), text: [] });
+        else if (/^-{3,}$/.test(line.trim())) out.push({ title: '', text: [] });
+        else out[out.length - 1].text.push(line);
+      }
+      return out.map((b) => ({ title: b.title, text: b.text.join('\n').replace(/^\n+|\n+$/g, '') }));
+    };
+    const boxHtml = (b, i) => `<div class="dp-boxedit" data-box>
+        <div class="row" style="gap:8px"><input type="text" data-btitle maxlength="80" class="grow" placeholder="${i ? 'Heading (optional)' : 'Opening box: no heading'}" value="${esc(b.title)}"${i ? '' : ' disabled'}>
+          ${i ? '<button type="button" class="btn small ghost" data-bdel title="Remove this box">✕</button>' : ''}</div>
+        <textarea data-btext rows="5" placeholder="Text">${esc(b.text)}</textarea></div>`;
+    const drawBoxes = (list) => {
+      boxesEl.innerHTML = list.map(boxHtml).join('');
+      boxesEl.querySelectorAll('[data-bdel]').forEach((btn) => { btn.onclick = () => { btn.closest('[data-box]').remove(); }; });
+    };
+    const readBoxes = () => [...boxesEl.querySelectorAll('[data-box]')].map((el) => ({ title: el.querySelector('[data-btitle]').value.trim(), text: el.querySelector('[data-btext]').value }));
+    const boxesText = () => readBoxes().map((b, i) => (i === 0 ? b.text : `${b.title ? `## ${b.title}` : '---'}\n${b.text}`)).join('\n').trim();
+    drawBoxes(toBoxes(v.body).length ? toBoxes(v.body) : [{ title: '', text: '' }]);
+    m.el.querySelector('#bpAddBox').onclick = () => { const list = readBoxes(); list.push({ title: '', text: '' }); drawBoxes(list); };
     const sync = () => {
       const custom = f.kind.value === 'custom';
       f.querySelectorAll('[data-custom]').forEach((el) => { el.style.display = custom ? '' : 'none'; });
@@ -876,7 +902,7 @@ async function botPostsPanel(box) {
     };
     f.kind.onchange = sync;
     sync();
-    const body = () => ({ channel_id: f.channel_id.value, kind: f.kind.value, title: f.title.value, body: f.body.value, style: f.style.value, pin: f.pin.checked });
+    const body = () => ({ channel_id: f.channel_id.value, kind: f.kind.value, title: f.title.value, body: boxesText(), style: f.style.value, pin: f.pin.checked });
     m.el.querySelector('#bpPrev').onclick = async () => {
       const out = m.el.querySelector('#bpPreview');
       out.innerHTML = '<div class="spinner"></div>';

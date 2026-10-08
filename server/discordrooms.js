@@ -457,20 +457,27 @@ const KINDS = {
   },
   custom: {
     label: 'Your own post',
-    help: 'Your own title and text. "## Heading" starts a section; "name - text" lines show the name in blue.',
+    help: 'Your own title and text, in as many boxes as you like (each shows as its own box on Discord). Blank lines stay as gaps. "name - text" lines show the name in blue.',
+    // The text: what comes first is the opening box; "## Heading" starts a box with a heading, "---" one without.
+    // Blank lines are kept (as one gap).
     build: async (_room, p) => {
-      const sections = [];
-      const intro = [];
+      const boxes = [{ title: '', rows: [] }];
       for (const raw of String(p.body || '').split(/\r?\n/)) {
         const line = raw.trim();
-        if (!line) continue;
-        if (line.startsWith('#')) { sections.push({ title: line.replace(/^#+\s*/, ''), rows: [] }); continue; }
+        if (/^#{1,3}\s+\S/.test(line)) { boxes.push({ title: line.replace(/^#+\s*/, ''), rows: [] }); continue; }
+        if (/^-{3,}$/.test(line)) { boxes.push({ title: '', rows: [] }); continue; }
+        const rows = boxes[boxes.length - 1].rows;
+        if (!line) { if (rows.length && rows[rows.length - 1].text !== '') rows.push({ text: '' }); continue; }
         const m = line.replace(/^[-•*]\s*/, '').match(/^(\S[^–—-]{0,24}?)\s+[–—-]\s+(.+)$/);
-        const row = m ? { name: m[1], text: m[2] } : { text: line.replace(/^[-•*]\s*/, '') };
-        if (sections.length) sections[sections.length - 1].rows.push(row);
-        else intro.push(row.name ? `${row.name}: ${row.text}` : row.text);
+        rows.push(m ? { name: m[1], text: m[2] } : { text: line });
       }
-      return { heading: p.title || 'WPG BARRACKS', intro: intro.join(' '), sections: sections.filter((s) => s.rows.length || s.title) };
+      for (const b of boxes) while (b.rows.length && b.rows[b.rows.length - 1].text === '') b.rows.pop();
+      const [first, ...rest] = boxes;
+      return {
+        heading: p.title || 'WPG BARRACKS',
+        intro: first.rows.map((r) => (r.name ? `**${r.name}** — ${r.text}` : r.text)).join('\n'),
+        sections: rest.filter((b) => b.rows.length || b.title),
+      };
     },
   },
 };
@@ -491,10 +498,11 @@ function embedsFor(d, ids) {
   const out = [{ color: EMBED_COLOR, image: { url: 'attachment://banner.jpg' } }];
   if (d.intro) out.push({ color: EMBED_COLOR, description: d.intro.slice(0, 4000) });
   for (const s of d.sections) {
-    const e = { color: s.accent === 'staff' ? STAFF_COLOR : EMBED_COLOR, title: `${String(s.title).toUpperCase()}${s.accent ? ` · ${s.accent}` : ''}`.slice(0, 250), description: (lines(s) || '\u200b').slice(0, 4000) };
+    const title = `${String(s.title || '').toUpperCase()}${s.accent ? ` · ${s.accent}` : ''}`.slice(0, 250);
+    const e = { color: s.accent === 'staff' ? STAFF_COLOR : EMBED_COLOR, ...(title ? { title } : {}), description: (lines(s) || '\u200b').slice(0, 4000) };
     // Discord takes 10 embeds a message: anything after the 10th joins the last one.
     if (out.length < 10) out.push(e);
-    else out[9].description = `${out[9].description}\n\n**${e.title}**\n${e.description}`.slice(0, 4000);
+    else out[9].description = `${out[9].description}\n\n${e.title ? `**${e.title}**\n` : ''}${e.description}`.slice(0, 4000);
   }
   if (d.footer?.length) out[out.length - 1].footer = { text: d.footer.join(' · ').slice(0, 2000) };
   // Discord's limit is 6000 characters across a message's embeds: shorten the longest ones if it's over.
@@ -514,7 +522,7 @@ async function postPayload(p) {
   const hash = crypto.createHash('sha1').update(JSON.stringify([p.style, d, [...ids]])).digest('hex');
   if (p.style === 'text') {
     const cmd = (name) => (name.startsWith('/') && ids.get(name.slice(1)) ? `</${name.slice(1)}:${ids.get(name.slice(1))}>` : `**${name}**`);
-    const lines = [`## ${d.heading}`, d.intro, ...d.sections.flatMap((s) => [`### ${s.title}`, ...s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${r.text}` : r.text))]), ...(d.footer || []).map((f) => `-# ${f}`)].filter(Boolean);
+    const lines = [`## ${d.heading}`, d.intro || null, ...d.sections.flatMap((s) => [s.title ? `### ${s.title}` : '', ...s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${r.text}` : r.text))]), ...(d.footer || []).map((f) => `-# ${f}`)].filter((x) => x !== undefined && x !== null);
     return { hash, payload: { content: lines.join('\n').slice(0, 2000), components: buttons } };
   }
   const { renderBanner } = await import('./cards.js');
