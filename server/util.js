@@ -185,7 +185,9 @@ export function publicUser(u, rank) {
     steam_private: u.steam_private,
     friend_requests: u.friend_requests !== false,
     steam_add_button: u.steam_add_button !== false,
-    steam_invite: u.steam_add_button !== false ? u.steam_invite || '' : '',
+    // Steam's invite links last 30 days: an expired one isn't shown (steaminvite.js).
+    steam_invite: u.steam_add_button !== false && u.steam_invite && (!u.steam_invite_at || Date.now() - new Date(u.steam_invite_at).getTime() < 30 * 86400e3) ? u.steam_invite : '',
+    steam_invite_at: u.steam_invite ? u.steam_invite_at || null : null,
   };
 }
 

@@ -898,6 +898,7 @@ async function viewProfile(main, [id]) {
           <div style="text-align:center">${badgeFor(u, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${esc(isPmc(u) ? 'PMC' : u.rank ? u.rank.name : 'Unranked')}</div></div>
         </div>
         ${u.bio ? `<p style="white-space:pre-wrap;margin:14px 0 0">${esc(u.bio)}</p>` : ''}
+        ${mine && inviteDaysLeft(state.me) !== null && inviteDaysLeft(state.me) <= 3 ? `<p class="small" style="margin:12px 0 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px">⚠️ ${inviteDaysLeft(state.me) <= 0 ? 'Your Steam invite link has run out, so <b>Add on Steam</b> is hidden on your profile.' : `Your Steam invite link runs out in <b>${inviteDaysLeft(state.me)} day${inviteDaysLeft(state.me) === 1 ? '' : 's'}</b>.`} <a href="#/profile/edit">Paste a fresh one</a> (Steam → Friends → Add a Friend).</p>` : ''}
         <div class="row" style="margin-top:14px">
           ${mine ? `<a class="btn" href="#/profile/edit">${icon('edit')} Edit profile</a><button class="btn" id="syncBtn">${icon('refresh')} Sync stats</button>` : `<a class="btn primary" href="#/messages/${u.id}">${icon('mail')} Message</a>${friendBtn}${steamBtns}`}
           ${u.profile_url ? `<a class="btn ghost" href="${esc(u.profile_url)}" target="_blank" rel="noopener">${icon('steam')} Steam</a>` : ''}
@@ -1044,6 +1045,17 @@ function steamMedalsHtml(medals) {
 }
 
 const RARITY_COLORS = { common: '#b8c4d0', uncommon: '#3ddc84', rare: '#29b6f6', epic: '#b05cff', legendary: '#f5a524', mythic: '#ff4d6d', exclusive: '#ffe066' };
+// Steam quick invite links last 30 days (server/steaminvite.js): how long a member's has left.
+function inviteDaysLeft(u) {
+  if (!u?.steam_invite_at) return null;
+  return Math.ceil((new Date(u.steam_invite_at).getTime() + 30 * 86400e3 - Date.now()) / 86400e3);
+}
+function inviteNote(u) {
+  const left = inviteDaysLeft(u);
+  if (left === null) return '';
+  if (left <= 0) return ' <b style="color:var(--red)">Your link has run out: paste a new one.</b>';
+  return left <= 3 ? ` <b style="color:var(--amber, #f5a524)">Your link runs out in ${left} day${left === 1 ? '' : 's'}: paste a fresh one.</b>` : ` Yours runs out in ${left} days.`;
+}
 export function ribbon(colors) {
   const list = String(colors || '#888888').split(',').map((c) => (/^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : '#888888'));
   const step = 100 / list.length;
@@ -1083,7 +1095,7 @@ async function viewEditProfile(main) {
         <label class="check small"><input type="checkbox" name="friend_requests" ${u.friend_requests !== false ? 'checked' : ''}> Members can send me friend requests in the app</label>
         <label class="check small"><input type="checkbox" name="steam_add_button" ${u.steam_add_button !== false ? 'checked' : ''}> Show the Add on Steam and Steam profile buttons on my profile</label>
         <label class="field" style="margin-top:8px"><span>My Steam quick invite link (for the Add on Steam button)</span><input type="url" name="steam_invite" maxlength="200" value="${esc(u.steam_invite || '')}" placeholder="https://s.team/p/xxxx-xxxx/XXXXXXXX">
-          <small class="muted">In Steam: <b>Friends → Add a Friend</b>, then copy your <b>Quick Invite link</b>. An <b>Add on Steam</b> button then shows on your profile and takes people straight to your own add-friend page (it only shows once you've added your link). Steam's links run out after a while: paste a new one when it does.${/^\d{17}$/.test(u.steam_id || '') ? ` Your friend code is <b>${String(BigInt(u.steam_id) - 76561197960265728n)}</b>.` : ''}</small></label></div>
+          <small class="muted">In Steam: <b>Friends → Add a Friend</b>, then copy your <b>Quick Invite link</b>. An <b>Add on Steam</b> button then shows on your profile and takes people straight to your own add-friend page (it only shows once you've added your link). Steam's links last <b>30 days</b>: you'll get a reminder from day 27 to paste a fresh one.${inviteNote(u)}${/^\d{17}$/.test(u.steam_id || '') ? ` Your friend code is <b>${String(BigInt(u.steam_id) - 76561197960265728n)}</b>.` : ''}</small></label></div>
       <div class="row"><button class="btn primary">Save profile</button><a class="btn ghost" href="#/u/${u.id}">Cancel</a></div>
     </form>
     <form class="panel stack" id="dlink" style="margin-top:16px">

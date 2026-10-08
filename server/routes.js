@@ -133,7 +133,10 @@ api.put('/me/profile', member, async (req, res) => {
   }
   const u = await one(
     `UPDATE users SET callsign=$2, bio=$3, country=$4, custom_avatar=$5, banner_color=$6, custom_fields=$7, skills=$8,
-            friend_requests=$9, steam_add_button=$10, steam_invite=$11
+            friend_requests=$9, steam_add_button=$10, steam_invite=$11,
+            -- A new link starts its 30 days again and stops the reminders.
+            steam_invite_at=CASE WHEN $11 = '' THEN NULL WHEN $11 IS DISTINCT FROM steam_invite THEN now() ELSE steam_invite_at END,
+            steam_invite_reminded=CASE WHEN $11 IS DISTINCT FROM steam_invite THEN NULL ELSE steam_invite_reminded END
      WHERE id=$1 RETURNING *`,
     [req.user.id, str(b.callsign, 40), str(b.bio, 1000), str(b.country, 4), safeUrl(b.custom_avatar), color(b.banner_color, '#0d2238'), JSON.stringify(custom), JSON.stringify(skills),
       choice('friend_requests'), choice('steam_add_button'), invite.slice(0, 200)],
