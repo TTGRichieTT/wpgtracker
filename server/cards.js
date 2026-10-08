@@ -12,6 +12,8 @@ import { rankBadge, wpgBadge } from '../public/js/insignia.js';
 import { frameSVG } from '../public/js/frameart.js';
 import { frameImageBuffer } from './frames.js';
 import { isTrackerRule } from './trackstats.js';
+import { badgeImageBuffer } from './badges.js';
+import { badgeSVG } from '../public/js/badgeart.js';
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const HEAD_H = 246; // the design's header art (logo, WARDOGS, soldier, slogans)
@@ -1252,5 +1254,137 @@ export function renderStreamCard(d) {
     let iy = y + 172 + lines.length * 36 + 18;
     if (d.game) { label(g, 'PLAYING', rx, iy, { size: 18 }); bigValue(g, upper(d.game), rx + 92, iy + 1, rw - 92, { size: 22, font: LABEL_FONT, weight: 700, color: CYAN }); iy += 40; }
     label(g, 'WATCH AND CHAT IN THE WPG BARRACKS APP', rx, y + bodyH - 34, { size: 18, color: MUTED });
+  });
+}
+
+// ---------- Badges and achievements (badges.js) ----------
+const RARITY_INFO = {
+  common: ['COMMON', '#b8c4d0'], uncommon: ['UNCOMMON', '#3ddc84'], rare: ['RARE', '#29b6f6'], epic: ['EPIC', '#b05cff'],
+  legendary: ['LEGENDARY', '#f5a524'], mythic: ['MYTHIC', '#ff4d6d'], exclusive: ['EXCLUSIVE', '#ffe066'],
+};
+// One badge: the owner's artwork with a glow in its rarity colour, or the default emblem (badgeart.js).
+async function drawBadge(g, b, x, y, size, { locked = false } = {}) {
+  const color = (RARITY_INFO[b.rarity] || RARITY_INFO.common)[1];
+  let img = null;
+  if (b.image) {
+    const buf = await badgeImageBuffer(b.image).catch(() => null);
+    img = buf ? await loadImage(buf).catch(() => null) : null;
+  }
+  if (!img) {
+    const svg = badgeSVG(b, { locked }).replace('<svg viewBox', `<svg width="${Math.round(size * 2)}" height="${Math.round(size * 2)}" viewBox`);
+    img = await loadImage(Buffer.from(svg)).catch(() => null);
+  }
+  if (!img) return;
+  g.save();
+  if (!locked) { g.shadowColor = color; g.shadowBlur = size / 9; }
+  else g.globalAlpha = 0.4;
+  g.drawImage(img, x, y, size, size);
+  g.restore();
+}
+
+// "ACHIEVEMENT UNLOCKED": the member and up to 3 new badges (art, rarity, points, how it was earned).
+// d: { name, avatar, frame, badges: [{ name, description, rarity, points, image, short, category }], reason }
+export function renderAchievementCard(d) {
+  const list = (d.badges || []).slice(0, 3);
+  const more = (d.badges || []).length - list.length;
+  const each = 290;
+  const bodyH = list.length * each + (more > 0 ? 40 : 0);
+  return frame(list.length > 1 ? 'ACHIEVEMENTS UNLOCKED' : 'ACHIEVEMENT UNLOCKED', 76 + bodyH + 20, async (g, top) => {
+    const y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      const [rl, rc] = RARITY_INFO[b.rarity] || RARITY_INFO.common;
+      const py = y + 6 + i * each;
+      panel(g, 28, py, 1480, each - 14);
+      await drawBadge(g, b, 60, py + 18, 240);
+      label(g, 'UNLOCKED', 340, py + 44, { size: 26 });
+      bigValue(g, upper(b.name), 340, py + 104, 1130, { size: 70, color: CYAN, font: LABEL_FONT, weight: 700 });
+      label(g, `${rl} BADGE`, 340, py + 160, { size: 30, color: rc });
+      g.font = `700 30px ${LABEL_FONT}`;
+      const rw = g.measureText(`${rl} BADGE`).width;
+      label(g, `+${fmt(b.points)} ACHIEVEMENT POINTS`, 340 + rw + 30, py + 160, { size: 30, color: GREEN });
+      g.font = `600 24px ${VALUE_FONT}`;
+      g.fillStyle = MUTED;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      wrapLines(g, d.reason && list.length === 1 ? `${b.description} · ${d.reason}` : b.description, 1130, 2).forEach((line, k) => g.fillText(line, 340, py + 212 + k * 32));
+    }
+    if (more > 0) label(g, `+${more} MORE — SEE THEIR BADGE COLLECTION IN WPG BARRACKS`, W / 2, y + 6 + list.length * each + 12, { align: 'center', size: 22, color: CYAN });
+  });
+}
+
+// Number tiles in a row (used by the achievements, stream and loyalty cards).
+function tiles(g, y, list) {
+  const gap = 16;
+  const w = (1480 - gap * (list.length - 1)) / list.length;
+  list.forEach((t, i) => {
+    const x = 28 + i * (w + gap);
+    panel(g, x, y, w, 150);
+    label(g, upper(t.label), x + w / 2, y + 40, { align: 'center', size: 22 });
+    bigValue(g, String(t.value), x + w / 2, y + 98, w - 30, { size: 54, align: 'center', color: t.color || WHITE });
+  });
+}
+
+// /achievements: Achievement Points, badges, medals, completion, their showcase and latest badges.
+// d: { name, avatar, frame, totals{points,badges,badges_total,medals,completion}, showcase: [badge], recent: [badge] }
+export function renderAchievementsCard(d) {
+  const show = (d.showcase || []).slice(0, 5);
+  const recent = (d.recent || []).slice(0, 8);
+  const bodyH = 76 + 170 + (show.length ? 330 : 0) + (recent.length ? 280 : 90);
+  return frame('ACHIEVEMENTS', bodyH, async (g, top) => {
+    let y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    const t = d.totals;
+    tiles(g, y + 6, [
+      { label: 'Achievement Points', value: fmt(t.points), color: CYAN },
+      { label: 'Badges', value: `${t.badges} / ${t.badges_total}` },
+      { label: 'Medals', value: fmt(t.medals) },
+      { label: 'Complete', value: `${t.completion}%`, color: GREEN },
+    ]);
+    y += 176;
+    if (show.length) {
+      panel(g, 28, y, 1480, 316);
+      title(g, 60, y + 36, 'BADGE', 'SHOWCASE');
+      const size = 200;
+      const gap = (1480 - show.length * size) / (show.length + 1);
+      for (let i = 0; i < show.length; i++) {
+        const x = 28 + gap + i * (size + gap);
+        await drawBadge(g, show[i], x, y + 60, size);
+        bigValue(g, upper(show[i].name), x + size / 2, y + 282, size + gap - 10, { size: 22, align: 'center', font: LABEL_FONT, weight: 700, color: (RARITY_INFO[show[i].rarity] || RARITY_INFO.common)[1] });
+      }
+      y += 330;
+    }
+    if (recent.length) {
+      panel(g, 28, y, 1480, 266);
+      title(g, 60, y + 36, 'LATEST', 'BADGES');
+      const size = 140;
+      for (let i = 0; i < recent.length; i++) {
+        const x = 60 + i * 180;
+        await drawBadge(g, recent[i], x, y + 66, size);
+        bigValue(g, upper(recent[i].name), x + size / 2, y + 236, 172, { size: 16, align: 'center', font: LABEL_FONT, weight: 700 });
+      }
+    } else {
+      label(g, 'NO BADGES YET — THEY UNLOCK BY THEMSELVES AS YOU PLAY, STREAM AND CHAT', W / 2, y + 40, { align: 'center', size: 24, color: MUTED });
+    }
+  });
+}
+
+// /streamstats and /loyalty: a heading, number tiles and up to two lines underneath.
+// d: { heading, name, avatar, frame, tiles: [{label, value, color}], lines: [text], next: badge|null, nextText }
+export function renderStatTilesCard(d) {
+  const rows = [];
+  for (let i = 0; i < d.tiles.length; i += 4) rows.push(d.tiles.slice(i, i + 4));
+  const bodyH = 76 + rows.length * 166 + (d.next ? 230 : 0) + (d.lines?.length ? d.lines.length * 36 + 20 : 0);
+  return frame(d.heading, bodyH, async (g, top) => {
+    let y = await playerStrip(g, top, d.name, d.avatar, d.frame);
+    for (const r of rows) { tiles(g, y + 6, r); y += 166; }
+    if (d.next) {
+      panel(g, 28, y + 4, 1480, 210);
+      await drawBadge(g, d.next, 60, y + 20, 178, { locked: true });
+      label(g, 'NEXT BADGE', 270, y + 54, { size: 24 });
+      bigValue(g, upper(d.next.name), 270, y + 108, 1200, { size: 54, color: CYAN, font: LABEL_FONT, weight: 700 });
+      label(g, upper(d.nextText || ''), 270, y + 164, { size: 24, color: MUTED });
+      y += 224;
+    }
+    (d.lines || []).forEach((line, k) => label(g, upper(line), W / 2, y + 26 + k * 36, { align: 'center', size: 22, color: MUTED }));
   });
 }

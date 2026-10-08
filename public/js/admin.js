@@ -22,6 +22,8 @@ const TABS = [
   { key: 'artillery', label: 'Artillery', group: 'Game' },
   { key: 'wpgxp', label: 'WPG XP', group: 'Game' },
   { key: 'frames', label: 'Frames & seasons', group: 'Game' },
+  { key: 'badges', label: 'Badges', group: 'Game' },
+  { key: 'events', label: 'Events & tournaments', mod: true, group: 'People' },
   { key: 'settings', label: 'Settings', group: 'App' },
   { key: 'discord-server', label: 'Discord (own page)', group: 'App' },
   { key: 'channels', label: 'Chat channels', group: 'App' },
@@ -71,10 +73,13 @@ const RESOURCES = {
       { k: 'description', label: 'What it is for', type: 'textarea' },
       { k: 'colors', label: 'Ribbon stripes', type: 'colors' },
       { k: 'auto_rule', label: 'Given', type: 'medalrule' },
+      { k: 'rarity', label: 'Rarity (achievement medals)', type: 'select', options: [['', 'None (older medal)'], ['common', 'Common'], ['uncommon', 'Uncommon'], ['rare', 'Rare'], ['epic', 'Epic'], ['legendary', 'Legendary'], ['mythic', 'Mythic'], ['exclusive', 'Exclusive']] },
+      { k: 'points', label: 'Achievement Points', type: 'number' },
+      { k: 'category', label: 'Category (for Discord posts)', type: 'select', options: [['', 'None'], ['streaming', 'Streaming'], ['nitro', 'Nitro boosts'], ['loyalty', 'WPG loyalty'], ['chat', 'Discord chat'], ['voice', 'Discord voice'], ['recruitment', 'Recruitment'], ['events', 'Events & tournaments'], ['special', 'Special'], ['wardogs', 'Wardogs'], ['other', 'Other']] },
       { k: 'sort_order', label: 'Order', type: 'number' },
     ],
     defaults: { colors: '#1f3a93,#ffffff,#b22234' },
-    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b> ${r.auto_rule ? `<span class="pill mod">auto · ${esc(ruleText(r.auto_rule))}</span>` : ''}<div class="muted small">${esc(r.description)}</div></div>`,
+    row: (r) => `${ribbon(r.colors)}<div class="grow"><b>${esc(r.name)}</b> ${r.auto_rule ? `<span class="pill mod">auto · ${esc(ruleText(r.auto_rule))}</span>` : ''}${r.rarity ? ` <span class="muted small">${esc(r.rarity)} · ${r.points} pts</span>` : ''}<div class="muted small">${esc(r.description)}</div></div>`,
   },
   'stat-defs': {
     one: 'stat',
@@ -214,6 +219,8 @@ export async function viewAdmin(main, [tabParam]) {
   if (tab.key === 'wpgxp') return (await import('./wpgxp.js')).wpgXpAdminTab(body);
   if (tab.key === 'giveaways') return (await import('./giveaways.js')).giveawaysAdminTab(body);
   if (tab.key === 'frames') return (await import('./frames.js')).framesAdminTab(body);
+  if (tab.key === 'badges') return (await import('./badges.js')).badgesAdminTab(body);
+  if (tab.key === 'events') return (await import('./badges.js')).eventsAdminTab(body);
   if (tab.key === 'steambot') return (await import('./live.js')).steamBotAdminTab(body);
   return resourceTab(body, tab.key);
 }
@@ -536,10 +543,12 @@ async function editUser(id, ranks, awards, reload) {
         <input type="text" name="reason" placeholder="Reason (optional)" class="grow">
         <button class="btn">${icon('medal')} Give medal</button>
       </form>
+      <div id="memberBadges" style="border-top:1px solid var(--line);padding-top:14px"><div class="spinner"></div></div>
       ${isAdmin() ? `<div style="border-top:1px solid var(--line);padding-top:14px"><button class="btn danger" id="udel">${icon('trash')} Delete account</button> <span class="muted small">Removes them and all their messages.</span></div>` : ''}
     </div>`);
   const close = () => { m.close(); reload(); };
   m.el.querySelectorAll('[data-close]').forEach((b) => { b.onclick = close; });
+  import('./badges.js').then((mod) => mod.memberBadgesSection(m.el.querySelector('#memberBadges'), u.id)).catch((x) => { m.el.querySelector('#memberBadges').innerHTML = `<p class="muted small">${esc(x.message)}</p>`; });
   const f = m.el.querySelector('#uform');
   const syncRankBox = () => {
     f.rank_id.disabled = f.membership.value === 'pmc';

@@ -55,6 +55,11 @@ export const users = pgTable('users', {
   // Their choice (Edit profile → Friend requests): others can send them friend requests in the app, and their
   // profile shows the Add on Steam / Steam profile buttons.
   friend_requests: boolean().notNull().default(true),
+  // Their original WPG join date, set by staff once checked (Admin → Members; every change is in the audit log).
+  // Loyalty badges count from it. Members who join the app after loyalty tracking started get their app join date.
+  wpg_joined_at: timestamp({ withTimezone: true }),
+  wpg_joined_note: text().notNull().default(''),
+  badge_showcase: jsonb().notNull().default([]), // up to 5 badge ids they show at the top of their profile
   steam_add_button: boolean().notNull().default(true),
   discord_id: text().notNull().default(''), // linked with /link in Discord, for the Barracks bot
   joined_at: now(),
@@ -186,6 +191,10 @@ export const awards = pgTable('awards', {
   sort_order: integer().notNull().default(0),
   // Automatic medal rule, e.g. 'class:assault:20' (class level) or 'hours:300' (hours played). Empty = given by hand.
   auto_rule: text().notNull().default(''),
+  // Achievement medals (badges.js): rarity (common … exclusive, empty for older medals), Achievement Points, category.
+  rarity: text().notNull().default(''),
+  points: integer().notNull().default(0),
+  category: text().notNull().default(''),
 });
 
 export const userAwards = pgTable('user_awards', {
@@ -711,6 +720,102 @@ export const streamAccounts = pgTable('stream_accounts', {
   last_checked: timestamp({ withTimezone: true }),
   created_at: now(),
 }, (t) => [uniqueIndex('stream_accounts_user_platform_key').on(t.user_id, t.platform)]);
+
+// Discord activity per Discord account (discordactivity.js), counted from when tracking started. Credited to a member
+// once they link their Discord with /link. messages: valid messages (no bots, commands, spam, repeats or deleted
+// messages); voice_minutes: time in voice with someone else there (not deafened, not the AFK channel); boost_since:
+// when their current Nitro boost started (Discord's own date; null when not boosting).
+export const discordActivity = pgTable('discord_activity', {
+  discord_id: text().primaryKey(),
+  messages: integer().notNull().default(0),
+  voice_minutes: integer().notNull().default(0),
+  boost_since: timestamp({ withTimezone: true }),
+  last_msg_at: timestamp({ withTimezone: true }),
+  last_msg: text().notNull().default(''),
+  updated_at: now(),
+});
+// Each server boost Discord announced (its "X just boosted the server" message): counted once per message.
+export const discordBoosts = pgTable('discord_boosts', {
+  message_id: text().primaryKey(),
+  discord_id: text().notNull(),
+  boosted_at: now(),
+}, (t) => [index('discord_boosts_user_idx').on(t.discord_id)]);
+// Who invited whom (from which invite link was used). Each new member is recorded once, ever, so leaving and
+// rejoining never counts again. verified: still on the server 14 days later, a real person who passed the entry check.
+export const discordRecruits = pgTable('discord_recruits', {
+  member_id: text().primaryKey(),
+  inviter_id: text().notNull(),
+  invite_code: text().notNull().default(''),
+  joined_at: now(),
+  verified: boolean().notNull().default(false),
+  rejected: text().notNull().default(''), // why it can't count (bot, own account, left, new account…)
+}, (t) => [index('discord_recruits_inviter_idx').on(t.inviter_id)]);
+
+// ---------- Collectible badges (badges.js) ----------
+// A badge: artwork, rarity and Achievement Points, earned automatically from a tracked stat (rule 'stat:<stat>:<target>'),
+// from a position ('role:staff' / 'role:admin', temporary: taken away when it stops applying) or given by staff ('').
+export const badges = pgTable('badges', {
+  id: serial().primaryKey(),
+  key: text().notNull().default(''), // starter set key (empty for badges staff make)
+  name: text().notNull(),
+  description: text().notNull().default(''),
+  category: text().notNull().default('other'), // streaming | nitro | loyalty | chat | voice | recruitment | events | special | wardogs | other
+  series: text().notNull().default(''),
+  rarity: text().notNull().default('common'), // common | uncommon | rare | epic | legendary | mythic | exclusive
+  points: integer().notNull().default(10),
+  rule: text().notNull().default(''),
+  temporary: boolean().notNull().default(false),
+  limited: boolean().notNull().default(false), // shows "Limited edition"
+  image_id: integer(),
+  sort_order: integer().notNull().default(0),
+  enabled: boolean().notNull().default(true),
+  swept: boolean().notNull().default(false), // first quiet check of everyone done (so a new badge never floods Discord)
+  created_at: now(),
+});
+export const userBadges = pgTable('user_badges', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  badge_id: integer().notNull().references(() => badges.id, { onDelete: 'cascade' }),
+  given_by: integer(),
+  reason: text().notNull().default(''),
+  earned_at: now(),
+}, (t) => [uniqueIndex('user_badges_once').on(t.user_id, t.badge_id)]);
+// Badge artwork (kept in the database: the host's disk is wiped on every deploy).
+export const badgeImages = pgTable('badge_images', {
+  id: serial().primaryKey(),
+  mime: text().notNull(),
+  data: text().notNull(), // base64
+  created_at: now(),
+});
+// Official WPG events and tournaments, with who attended and who won (Admin → Events & tournaments).
+export const wpgEvents = pgTable('wpg_events', {
+  id: serial().primaryKey(),
+  name: text().notNull(),
+  kind: text().notNull().default('event'), // event | tournament
+  held_at: timestamp({ withTimezone: true }).notNull(),
+  notes: text().notNull().default(''),
+  created_by: integer(),
+  created_at: now(),
+});
+export const wpgEventPeople = pgTable('wpg_event_people', {
+  event_id: integer().notNull().references(() => wpgEvents.id, { onDelete: 'cascade' }),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  won: boolean().notNull().default(false),
+}, (t) => [primaryKey({ name: 'wpg_event_people_pkey', columns: [t.event_id, t.user_id] })]);
+
+// Verified stream history: one row per stream the checker saw live on the platform's own API (Twitch, YouTube, Kick).
+// "I'm live" button presses are never recorded (they can't be verified). Reconnects within a few minutes continue the
+// same row. ended_at is null while live; the stream counts from started_at to last_seen_at (streams.js, trackstats.js).
+export const streamSessions = pgTable('stream_sessions', {
+  id: serial().primaryKey(),
+  user_id: integer().notNull().references(() => users.id, { onDelete: 'cascade' }),
+  account_id: integer().notNull(),
+  platform: text().notNull(),
+  stream_ref: text().notNull().default(''), // the platform's id for this stream (Twitch stream id, YouTube video id, Kick start time)
+  started_at: timestamp({ withTimezone: true }).notNull(),
+  last_seen_at: timestamp({ withTimezone: true }).notNull(),
+  ended_at: timestamp({ withTimezone: true }),
+}, (t) => [index('stream_sessions_user_idx').on(t.user_id), index('stream_sessions_account_idx').on(t.account_id)]);
 
 // WPG's own chat under each streamer's stream (shared by all their platforms).
 export const streamMessages = pgTable('stream_messages', {

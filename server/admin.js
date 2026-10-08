@@ -225,6 +225,10 @@ const RESOURCES = {
         if (r === null) throw new HttpError(400, 'Pick a stat and a target for the automatic rule (or leave it as given by hand).');
         return r;
       },
+      // Achievement medals: rarity (empty = an older medal), Achievement Points and category (for Discord posts).
+      rarity: (v) => (['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic', 'exclusive'].includes(v) ? v : ''),
+      points: (v) => Math.max(0, Math.min(100000, int(v))),
+      category: (v) => (['streaming', 'nitro', 'loyalty', 'chat', 'voice', 'recruitment', 'events', 'special', 'wardogs', 'other'].includes(v) ? v : ''),
     },
   },
   channels: {

@@ -16,10 +16,12 @@ async function socketClass() {
 const GUILDS = 1 << 0;
 const GUILD_MEMBERS = 1 << 1;
 const GUILD_MODERATION = 1 << 2;
+const GUILD_INVITES = 1 << 6; // which invite a new member used (recruit achievements)
+const GUILD_VOICE_STATES = 1 << 7; // who is in voice (voice time achievements)
 const GUILD_MESSAGES = 1 << 9;
 const MESSAGE_CONTENT = 1 << 15;
-const FULL = GUILDS | GUILD_MEMBERS | GUILD_MODERATION | GUILD_MESSAGES | MESSAGE_CONTENT;
-const BASIC = GUILDS | GUILD_MODERATION | GUILD_MESSAGES;
+const FULL = GUILDS | GUILD_MEMBERS | GUILD_MODERATION | GUILD_INVITES | GUILD_VOICE_STATES | GUILD_MESSAGES | MESSAGE_CONTENT;
+const BASIC = GUILDS | GUILD_MODERATION | GUILD_INVITES | GUILD_VOICE_STATES | GUILD_MESSAGES;
 
 const state = { connected: false, since: null, intents: FULL, problem: null, events: 0, user: null };
 export const gatewayStatus = () => ({ ...state, limited: state.intents !== FULL });

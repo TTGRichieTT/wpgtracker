@@ -11,6 +11,7 @@
 import { q, one } from './db.js';
 import { checkFrames } from './frames.js';
 import { giveAutoMedals } from './medals.js';
+import { checkBadges } from './badges.js';
 import { rcon, queuedMap, restoreRotation } from './servers.js';
 import { recalcXp } from './steam.js';
 import { bus } from './bus.js';
@@ -86,6 +87,7 @@ async function finishMatch(server, state) {
       for (const u of await q("SELECT id FROM users WHERE status='active' AND steam_id = ANY($1)", [ids])) {
         await checkFrames(u.id).catch((e) => console.warn('[tracker] frames', e.message));
         await giveAutoMedals(u.id).catch((e) => console.warn('[tracker] medals', e.message));
+        await checkBadges(u.id).catch((e) => console.warn('[tracker] badges', e.message));
       }
     }
   }

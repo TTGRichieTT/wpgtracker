@@ -34,6 +34,8 @@ const SITE = () => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL ||
 const ENDPOINT = () => `${SITE()}/discord/interactions`;
 const COLOR = 0x29b6f6;
 const GOLD = 0xc9a227;
+const CYAN_HEX = '#29b6f6'; // picture card colours
+const GREEN_HEX = '#3ddc84';
 
 export const botReady = () => !!TOKEN();
 export const discordAppId = APP_ID;
@@ -364,6 +366,70 @@ async function cmdRank(data, caller) {
   }), text, profileLink(f.user));
 }
 
+// ---------- Achievements (badges.js) ----------
+async function cmdAchievements(data, caller) {
+  const f = await findMember(data, caller);
+  if (f.error) return { content: f.error };
+  const { collectionFor } = await import('./badges.js');
+  const c = await collectionFor(f.user);
+  const byId = new Map(c.badges.map((b) => [b.id, b]));
+  const recent = c.badges.filter((b) => b.unlocked).sort((a, b) => new Date(b.earned_at) - new Date(a.earned_at));
+  const t = c.totals;
+  const text = () => ({ embeds: [{ color: GOLD, title: `🏅 ${f.user.persona_name}: achievements`, url: `${SITE()}/#/u/${f.user.id}`,
+    description: `**${num(t.points)}** Achievement Points · **${t.badges} / ${t.badges_total}** badges · **${t.medals}** medals · ${t.completion}% complete${recent.length ? `\nLatest: ${recent.slice(0, 5).map((b) => b.name).join(', ')}` : ''}`, footer }] });
+  return asPicture('achievements', async (cards) => cards.renderAchievementsCard({
+    name: await cardName(f.user), avatar: avatarOf(f.user), frame: await frameOf(f.user), totals: t,
+    showcase: c.showcase.map((id) => byId.get(id)).filter(Boolean), recent: recent.slice(0, 8),
+  }), text, profileLink(f.user));
+}
+// The next badge in a series they haven't got yet (for the stream and loyalty cards).
+function nextIn(c, series) {
+  return c.badges.filter((b) => b.series === series && !b.unlocked && b.progress).sort((a, b) => a.progress.target - b.progress.target)[0] || null;
+}
+const hrs = (h) => (h >= 1 ? `${Math.round(h * 10) / 10}h` : `${Math.round(h * 60)}m`);
+async function cmdStreamStats(data, caller) {
+  const f = await findMember(data, caller);
+  if (f.error) return { content: f.error };
+  const { collectionFor } = await import('./badges.js');
+  const c = await collectionFor(f.user);
+  const st = c.stream;
+  if (!st.streams && !st.hours) return { content: `No verified streams for **${f.user.persona_name}** yet. Link a Twitch, YouTube or Kick channel in WPG Barracks (Edit profile → My streams); streams count once staff approve it.` };
+  const next = nextIn(c, 'stream_hours') || nextIn(c, 'stream_count');
+  const text = () => ({ embeds: [{ color: COLOR, title: `📺 ${f.user.persona_name}: streaming`, url: `${SITE()}/#/u/${f.user.id}`,
+    description: `**${num(st.streams)}** streams · **${hrs(st.hours)}** streamed · best day **${hrs(st.bestDay)}** · longest **${hrs(st.longest)}** · streak **${st.streak}** (best ${st.bestStreak})`, footer }] });
+  return asPicture('streamstats', async (cards) => cards.renderStatTilesCard({
+    heading: 'STREAM STATS', name: await cardName(f.user), avatar: avatarOf(f.user), frame: await frameOf(f.user),
+    tiles: [
+      { label: 'Streams', value: num(st.streams) }, { label: 'Hours streamed', value: hrs(st.hours), color: CYAN_HEX },
+      { label: 'Best day', value: hrs(st.bestDay) }, { label: 'Longest stream', value: hrs(st.longest) },
+      { label: 'Current streak', value: `${st.streak} day${st.streak === 1 ? '' : 's'}`, color: GREEN_HEX }, { label: 'Best streak', value: `${st.bestStreak} day${st.bestStreak === 1 ? '' : 's'}` },
+      { label: 'Days streamed', value: num(st.days) },
+    ],
+    next, nextText: next ? `${next.description} · ${next.progress.value} / ${next.progress.target}` : '',
+    lines: ['Verified streams on Twitch, YouTube and Kick · days in New York time'],
+  }), text, profileLink(f.user));
+}
+async function cmdLoyalty(data, caller) {
+  const f = await findMember(data, caller);
+  if (f.error) return { content: f.error };
+  const { collectionFor } = await import('./badges.js');
+  const c = await collectionFor(f.user);
+  const l = c.loyalty;
+  if (!l.joined) return { content: `**${f.user.persona_name}**'s original WPG join date hasn't been checked by staff yet, so loyalty badges haven't started. Ask a WPG admin.` };
+  const held = c.badges.filter((b) => b.category === 'loyalty' && b.unlocked).length;
+  const next = nextIn(c, 'wpg_months');
+  const since = new Date(l.joined).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const span = l.months >= 12 ? `${Math.floor(l.months / 12)}y ${l.months % 12}m` : `${l.months}m`;
+  const text = () => ({ embeds: [{ color: GOLD, title: `🐺 ${f.user.persona_name}: WPG loyalty`, url: `${SITE()}/#/u/${f.user.id}`,
+    description: `In WPG since **${since}** (${span}) · **${held}** loyalty badges${next ? ` · next: **${next.name}**` : ''}`, footer }] });
+  return asPicture('loyalty', async (cards) => cards.renderStatTilesCard({
+    heading: 'WPG LOYALTY', name: await cardName(f.user), avatar: avatarOf(f.user), frame: await frameOf(f.user),
+    tiles: [{ label: 'In WPG since', value: since.toUpperCase() }, { label: 'Time in WPG', value: span, color: CYAN_HEX }, { label: 'Days', value: num(l.days) }, { label: 'Loyalty badges', value: num(held), color: GREEN_HEX }],
+    next, nextText: next ? `${next.progress.target - next.progress.value} month${next.progress.target - next.progress.value === 1 ? '' : 's'} to go` : '',
+    lines: [l.verified ? 'Original WPG join date checked by WPG staff' : 'Counted from when they joined WPG Barracks'],
+  }), text, profileLink(f.user));
+}
+
 async function cmdMedals(data, caller) {
   const f = await findMember(data, caller);
   if (f.error) return { content: f.error };
@@ -541,6 +607,16 @@ const BOARDS = {
            WHERE u.status='active' AND ws.ranks->>'source'='wardogs.tools' AND ${ACCOUNT_WORTH_SQL} IS NOT NULL ORDER BY v DESC NULLS LAST LIMIT 10`,
     show: (r) => `**${money(r.v)}**`,
     value: (r) => money(r.v),
+  },
+  points: {
+    title: 'Achievement Points',
+    sql: `SELECT u.persona_name AS name,
+            (COALESCE((SELECT SUM(b.points) FROM user_badges ub JOIN badges b ON b.id = ub.badge_id WHERE ub.user_id = u.id), 0)
+           + COALESCE((SELECT SUM(a.points) FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id = u.id), 0))::int AS v,
+            (SELECT COUNT(*) FROM user_badges ub WHERE ub.user_id = u.id)::int AS badges
+          FROM users u WHERE u.status='active' ORDER BY v DESC, badges DESC, u.persona_name LIMIT 10`,
+    show: (r) => `**${num(r.v)}** points · ${num(r.badges)} badges`,
+    value: (r) => `${num(r.v)} PTS`,
   },
   kills: {
     title: 'WPG server kills',
@@ -999,6 +1075,9 @@ const COMMANDS = {
   leaderboard: { run: cmdLeaderboard, description: 'Top 10 leaderboards' },
   money: { run: cmdMoney, description: "Live Wardogs match money: who's in a match and the last 24 hours' totals" },
   serverboard: { run: cmdServerBoard, description: 'The WPG server leaderboard (top 14)' },
+  achievements: { run: cmdAchievements, description: 'Achievement Points, badges and showcase' },
+  streamstats: { run: cmdStreamStats, description: 'Verified streaming stats: streams, hours, best day, streaks' },
+  loyalty: { run: cmdLoyalty, description: 'Time in WPG and loyalty badges' },
   live: { run: cmdLive, description: 'What is happening on the WPG server right now' },
   link: { run: cmdLink, description: 'Link your Discord to the Barracks app', private: true },
   unlink: { run: cmdUnlink, description: 'Unlink your Discord from the Barracks app', private: true },
@@ -1071,11 +1150,11 @@ async function commandDefinitions() {
 function baseDefinitions() {
   return Object.entries(COMMANDS).map(([name, c]) => {
     const def = { name, description: c.description, type: 1, dm_permission: false };
-    if (['stats', 'rank', 'medals', 'frames', 'server', 'progress'].includes(name)) def.options = WHO;
+    if (['stats', 'rank', 'medals', 'frames', 'server', 'progress', 'achievements', 'streamstats', 'loyalty'].includes(name)) def.options = WHO;
     if (name === 'leaderboard') {
       def.options = [{
         type: 3, name: 'board', description: 'Which leaderboard', required: false,
-        choices: [['WPG rank', 'wpg'], ['Clan XP', 'clan'], ['Wardog level', 'level'], ['Account worth', 'worth'], ['Server kills', 'kills']].map(([n, v]) => ({ name: n, value: v })),
+        choices: [['WPG rank', 'wpg'], ['Clan XP', 'clan'], ['Wardog level', 'level'], ['Account worth', 'worth'], ['Server kills', 'kills'], ['Achievement Points', 'points']].map(([n, v]) => ({ name: n, value: v })),
       }];
     }
     if (name === 'serverboard') {
@@ -1416,6 +1495,36 @@ async function promotionPost(u, rank, from) {
     name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), rank, from, xp: u.xp,
   }), () => ({ embeds: [{ color: GOLD, title: '⬆️ Promotion', description: text.replace(/^⬆️ /, ''), url: `${SITE()}/#/u/${u.id}` }] }), profileLink(u));
 }
+// Badges and achievement medals: their own channel (Admin → Badges) if set, else the posts channel.
+async function badgeChannelKey(names = null) {
+  if (names) {
+    const cats = await q("SELECT DISTINCT category FROM awards WHERE name = ANY($1) AND category <> ''", [names]);
+    if (!cats.length) return 'discord_post_channel'; // older medals stay where they always went
+  }
+  return /^\d{15,22}$/.test(String((await setting('discord_badge_channel')) || '').trim()) ? 'discord_badge_channel' : 'discord_post_channel';
+}
+async function quietCategories() {
+  return new Set(String((await setting('discord_badge_quiet')) || '').split(',').filter(Boolean));
+}
+async function loudMedals(names) {
+  const quiet = await quietCategories();
+  if (!quiet.size) return names;
+  const rows = await q('SELECT name, category FROM awards WHERE name = ANY($1)', [names]);
+  return names.filter((n) => !quiet.has(rows.find((r) => r.name === n)?.category));
+}
+const RARITY_NAME = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary', mythic: 'Mythic', exclusive: 'Exclusive' };
+async function badgesPost(u, list, reason) {
+  const { badgeOut } = await import('./badges.js');
+  const top = list[0];
+  const pts = list.reduce((n, b) => n + b.points, 0);
+  const text = list.length === 1
+    ? `🏆 **${u.persona_name}**${mentionFor(u)} unlocked **${top.name}** (${RARITY_NAME[top.rarity] || ''} badge, +${num(top.points)} Achievement Points).`
+    : `🏆 **${u.persona_name}**${mentionFor(u)} unlocked **${list.length} badges**: ${list.map((b) => `**${b.name}**`).join(', ')} (+${num(pts)} Achievement Points).`;
+  return announcePicture('achievement', text, async (cards) => cards.renderAchievementCard({
+    name: await cardName(u), avatar: avatarOf(u), frame: await frameOf(u), badges: list.map((b) => badgeOut(b)), reason,
+  }), () => ({ embeds: [{ color: GOLD, title: '🏆 WPG ACHIEVEMENT UNLOCKED', url: `${SITE()}/#/u/${u.id}`,
+    description: `${text.replace(/^🏆 /, '')}\n${list.slice(0, 5).map((b) => `• **${b.name}**: ${b.description}`).join('\n')}`, footer: { text: '🐺 Wasted Prodigy Gamers' } }] }), profileLink(u));
+}
 async function medalPost(u, names) {
   const rows = await q('SELECT DISTINCT ON (name) name, description, colors, auto_rule FROM awards WHERE name = ANY($1) ORDER BY name, id', [names]);
   const medals = names.map((n) => rows.find((m) => m.name === n) || { name: n, description: '', colors: '' });
@@ -1526,7 +1635,14 @@ bus.on('announce', async (a) => {
       if (isWpgMember(u)) await postToChannel(await promotionPost(u, a.rank, a.from));
     } else if (a.type === 'medals' && (await flag('discord_post_medals'))) {
       const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
-      if (isWpgMember(u) && a.names?.length) await postToChannel(await medalPost(u, a.names));
+      // Achievement medals in a category switched off in Admin → Badges aren't posted.
+      const names = a.names?.length ? await loudMedals(a.names) : [];
+      if (isWpgMember(u) && names.length) await postToChannel(await medalPost(u, names), await badgeChannelKey(names, 'medals'));
+    } else if (a.type === 'badges' && (await flag('discord_post_badges'))) {
+      const u = await one('SELECT * FROM users WHERE id=$1', [a.userId]);
+      const quiet = await quietCategories();
+      const list = (await q('SELECT * FROM badges WHERE id = ANY($1) ORDER BY points DESC, sort_order', [a.badgeIds || []])).filter((b) => !quiet.has(b.category));
+      if (isWpgMember(u) && list.length) await postToChannel(await badgesPost(u, list, a.reason), await badgeChannelKey());
     } else if (a.type === 'wpgrank' && (await flag('discord_post_wpg_ranks'))) {
       const u = await one("SELECT * FROM users WHERE steam_id=$1 AND status='active'", [a.steamId]);
       if (isWpgMember(u)) await postToChannel(await wpgRankPost(u, a.name, a.rank, a.xp, a.level));

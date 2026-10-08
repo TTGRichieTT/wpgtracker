@@ -888,6 +888,7 @@ async function viewProfile(main, [id]) {
             ${u.callsign ? `<div class="accent">“${esc(u.callsign)}”</div>` : ''}
             <div class="row" style="margin-top:6px">${rolePill(u)} ${playingTag(u)} <span class="muted small">${state.online.has(u.id) ? '<span style="color:var(--green)">● Online</span>' : `Last seen ${timeAgo(u.last_seen)}`} · Joined ${fmtDate(u.joined_at)}</span></div>
             ${customFields ? `<div class="row" style="margin-top:8px">${customFields}</div>` : ''}
+            <div id="showcaseBox"></div>
             ${p.combat?.unit ? `<div class="row" style="margin-top:8px;gap:8px"><a href="#/command" class="pill" style="color:${esc(p.combat.unit.color)};border-color:${esc(p.combat.unit.color)}">${icon('shield', 'width="12" height="12" style="vertical-align:-1px"')} ${esc(p.combat.unit.name)}</a><b style="font:700 15px var(--head);text-transform:uppercase">${esc(p.combat.role)}</b><span class="muted small">${esc(p.combat.unit.label)}</span></div>` : ''}
           </div>
           <div style="text-align:center">${badgeFor(u, 88)}<div style="font:700 15px var(--head);text-transform:uppercase">${esc(isPmc(u) ? 'PMC' : u.rank ? u.rank.name : 'Unranked')}</div></div>
@@ -965,13 +966,14 @@ async function viewProfile(main, [id]) {
         <div class="panel">
           <div class="panel-title">${icon('medal')} Medals & ribbons</div>
           ${p.awards.length ? `<div class="ribbon-rack">${p.awards.map((a) => `
-            <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}">
-              ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
+            <div class="rack-item" title="${esc(`${a.name} — ${a.description}${a.rarity ? ` · ${a.rarity[0].toUpperCase()}${a.rarity.slice(1)}` : ''}${a.reason && a.reason !== 'Earned automatically' ? ` (${a.reason})` : ''} · ${fmtDate(a.given_at)}`)}"${a.rarity ? ` style="box-shadow:inset 0 -2px 0 ${RARITY_COLORS[a.rarity] || 'transparent'}"` : ''}>
+              ${ribbon(a.colors)}<b>${esc(a.name)}</b><span class="muted small">${a.rarity ? `<span style="color:${RARITY_COLORS[a.rarity] || 'inherit'}">${esc(a.rarity[0].toUpperCase() + a.rarity.slice(1))}</span> · ` : ''}${fmtDate(a.given_at)}</span></div>`).join('')}</div>` : `<p class="muted">${p.medals?.length ? 'No WPG medals yet.' : 'No medals yet.'}</p>`}
           ${p.awards.some((a) => /^(class|career):/i.test(a.auto_rule || '')) ? `<p class="muted small" style="margin:8px 0 0">Class and career level medals use stats provided by <a href="${TRACKER_URL}" target="_blank" rel="noopener">wardogs.tools</a>.</p>` : ''}
           ${steamMedalsHtml(p.medals || [])}
         </div>
       </div>
       <div id="liveBox"></div>
+      <div id="badgesBox"></div>
       <div id="framesBox"></div>
     </div>`;
 
@@ -989,6 +991,11 @@ async function viewProfile(main, [id]) {
   import('./live.js').then((m) => {
     const box = document.getElementById('liveBox');
     if (box) m.profileLivePanel(box, u);
+  }).catch(() => {});
+  // Badge collection (and the badges they showcase under their name).
+  import('./badges.js').then((m) => {
+    const box = document.getElementById('badgesBox');
+    if (box) m.profileBadgesPanel(box, u, document.getElementById('showcaseBox'));
   }).catch(() => {});
   // Profile frames: what they've unlocked, progress on the rest, and (on your own) which one to show.
   import('./frames.js').then((m) => {
@@ -1029,6 +1036,7 @@ function steamMedalsHtml(medals) {
   }).join('');
 }
 
+const RARITY_COLORS = { common: '#b8c4d0', uncommon: '#3ddc84', rare: '#29b6f6', epic: '#b05cff', legendary: '#f5a524', mythic: '#ff4d6d', exclusive: '#ffe066' };
 export function ribbon(colors) {
   const list = String(colors || '#888888').split(',').map((c) => (/^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : '#888888'));
   const step = 100 / list.length;

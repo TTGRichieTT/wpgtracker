@@ -235,7 +235,7 @@ api.get('/users/:id', member, async (req, res) => {
       [u.id],
     ),
     q(
-      `SELECT ua.id, ua.reason, ua.given_at, a.name, a.description, a.colors, a.auto_rule, a.sort_order
+      `SELECT ua.id, ua.reason, ua.given_at, a.name, a.description, a.colors, a.auto_rule, a.sort_order, a.rarity, a.points
          FROM user_awards ua JOIN awards a ON a.id = ua.award_id WHERE ua.user_id=$1 ORDER BY a.sort_order, ua.given_at`,
       [u.id],
     ),
