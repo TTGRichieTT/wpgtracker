@@ -415,9 +415,7 @@ h1 { font-size: 34px; margin-bottom: 14px; }
   mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
 
 /* Career profile: emblem column like the card */
-.player-info { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; }
-.player-info .emblem { width: 100%; border-radius: 6px; border: 1px solid rgba(41,182,246,.5); box-shadow: 0 0 22px rgba(41,182,246,.3); }
-@media (max-width: 700px) { .player-info { grid-template-columns: 1fr; } .player-info .emblem { max-width: 200px; margin: 0 auto; } }
+.profile-info { margin-top: 16px; padding-top: 16px; border-top: 1px solid #13263d; }
 
 /* Role cards with the real artwork */
 .roles { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }

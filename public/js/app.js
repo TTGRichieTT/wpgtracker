@@ -881,7 +881,7 @@ async function viewProfile(main, [id, page]) {
       </div></div>`;
   }).join('');
 
-  const headHtml = `<div class="panel glow">
+  const headHtml = (extra = '') => `<div class="panel glow">
         <div class="banner" style="background:linear-gradient(90deg, ${esc(u.banner_color)}, transparent)"></div>
         <div class="profile-head">
           ${u.frame ? `<span class="av-wrap framed lg" title="${esc(u.frame.name)} frame"><img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">${frameSVG(u.frame)}</span>` : `<img class="avatar lg" src="${esc(u.avatar || '/img/icon-192.png')}" alt="" referrerpolicy="no-referrer">`}
@@ -902,7 +902,21 @@ async function viewProfile(main, [id, page]) {
           ${u.profile_url ? `<a class="btn ghost" href="${esc(u.profile_url)}" target="_blank" rel="noopener">${icon('steam')} Steam</a>` : ''}
           ${isStaff() ? `<a class="btn ghost" href="#/admin/users?edit=${u.id}">${icon('shield')} Admin edit</a>` : ''}
         </div>
+      ${extra}
       </div>`;
+  // Player information inside the name box (Career page): only what the box doesn't already show.
+  const playerInfo = `<div class="profile-info">
+      <div class="tiles">
+        ${tile('steam', 'Steam ID', /^\d{17}$/.test(u.steam_id) ? u.steam_id : 'Test account', 'fit')}
+        ${u.membership === 'pmc'
+    ? tile('swords', `${state.settings.clan_tag || 'WPG'} member`, 'PMC', 'pmc')
+    : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
+        ${u.custom_fields?.discord ? tile('discord', 'Discord', u.custom_fields.discord) : ''}
+      </div>
+      ${u.skills?.length ? `<div class="profile-skills"><div class="lbl">${icon('target')} Skills</div><div class="row" style="gap:6px">${u.skills.map((sk) => `<span class="pill">${esc(sk)}</span>`).join('')}</div></div>` : ''}
+      <h4 class="row" style="margin:14px 0 0">${icon('steam', 'width="18" height="18"')} Steam playtime</h4>
+      ${games || `<p class="muted" style="margin:8px 0 0">${u.steam_private ? 'Steam game details are private. Set “Game details” to Public in Steam privacy settings.' : 'No tracked games synced yet.'}</p>`}
+    </div>`;
   const tabs = `<div class="tabs" style="margin:0">
       <a href="#/u/${u.id}" class="${rewards ? '' : 'active'}">${icon('user', 'width="14" height="14" style="vertical-align:-2px"')} Career</a>
       <a href="#/u/${u.id}/rewards" class="${rewards ? 'active' : ''}">${icon('medal', 'width="14" height="14" style="vertical-align:-2px"')} Medals, badges &amp; frames</a></div>`;
@@ -910,7 +924,7 @@ async function viewProfile(main, [id, page]) {
     <div class="stack">
       <img class="banner-img" src="/img/brand/header-career.webp" alt="Wardogs player career profile">
       ${tabs}
-      ${headHtml}
+      ${headHtml()}
       ${seasonMedalsHtml(p)}
       <div id="badgesBox"></div>
       <div id="framesBox"></div>
@@ -919,25 +933,7 @@ async function viewProfile(main, [id, page]) {
     <div class="stack">
       <img class="banner-img" src="/img/brand/header-career.webp" alt="Wardogs player career profile">
       ${tabs}
-      ${headHtml}
-      <div class="panel player-info">
-        <img class="emblem" src="/img/brand/wolf-emblem.webp" alt="WPG Wardogs private server">
-        <div>
-          <div class="panel-title">${icon('user')} Player <span class="sub">information</span></div>
-          <div class="tiles">
-            ${tile('user', 'Player name', u.name)}
-            ${tile('steam', 'Steam ID', /^\d{17}$/.test(u.steam_id) ? u.steam_id : 'Test account', 'fit')}
-            ${u.custom_fields?.discord ? tile('discord', 'Discord', u.custom_fields.discord) : ''}
-            ${u.membership === 'pmc'
-            ? tile('swords', `${state.settings.clan_tag || 'WPG'} member`, 'PMC', 'pmc')
-            : tile('users', `${state.settings.clan_tag || 'WPG'} member`, u.status === 'active' ? 'YES' : 'NO', u.status === 'active' ? 'good' : '')}
-            ${p.combat?.unit ? tile('shield', 'Unit', p.combat.unit.name) + tile('chevrons', 'Role', p.combat.role, 'fit') : ''}
-          </div>
-          ${u.skills?.length ? `<div class="profile-skills"><div class="lbl">${icon('target')} Skills</div><div class="row" style="gap:6px">${u.skills.map((s) => `<span class="pill">${esc(s)}</span>`).join('')}</div></div>` : ''}
-          <h4 class="row" style="margin:16px 0 0">${icon('steam', 'width="18" height="18"')} Steam playtime</h4>
-          ${games || `<p class="muted" style="margin:8px 0 0">${u.steam_private ? 'Steam game details are private. Set “Game details” to Public in Steam privacy settings.' : 'No tracked games synced yet.'}</p>`}
-        </div>
-      </div>
+      ${headHtml(playerInfo)}
       <div id="liveBox"></div>
       <div id="combatBox"></div>
       <div class="panel">
