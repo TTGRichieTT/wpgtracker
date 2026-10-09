@@ -184,6 +184,41 @@ export const discordJoinWelcomes = pgTable('discord_join_welcomes', {
   discord_id: text().notNull().default(''),
   posted_at: now(),
 });
+// Scheduled announcements (discordschedule.js, Discord control → Scheduled announcements): posted by the bot at a set
+// day and time (UK), once or repeating. A one-off leaves this list once it's sent; every send is kept in the history.
+export const discordScheduled = pgTable('discord_scheduled', {
+  id: serial().primaryKey(),
+  channel_id: text().notNull(),
+  title: text().notNull().default(''),
+  body: text().notNull().default(''),
+  style: text().notNull().default('card'), // card (WPG banner + boxes) | text
+  ping: boolean().notNull().default(false),
+  show_in_app: boolean().notNull().default(false),
+  date: text().notNull(), // first send, UK date YYYY-MM-DD
+  time: text().notNull(), // UK time HH:MM
+  repeat: text().notNull().default('none'), // none | daily | weekly | fortnightly | monthly | days
+  weekdays: jsonb().notNull().default([]), // weekly: 0 = Sunday … 6 = Saturday
+  every_days: integer().notNull().default(0), // days: every N days
+  until_date: text().notNull().default(''), // optional last UK date
+  max_sends: integer().notNull().default(0), // optional: stop after this many (0 = no limit)
+  sends: integer().notNull().default(0),
+  next_at: timestamp({ withTimezone: true }),
+  paused: boolean().notNull().default(false),
+  created_by: integer(),
+  created_at: now(),
+});
+export const discordScheduledLog = pgTable('discord_scheduled_log', {
+  id: serial().primaryKey(),
+  scheduled_id: integer(),
+  channel_id: text().notNull(),
+  title: text().notNull().default(''),
+  body: text().notNull().default(''),
+  message_id: text().notNull().default(''),
+  ok: boolean().notNull().default(true),
+  problem: text().notNull().default(''),
+  how: text().notNull().default('scheduled'), // scheduled | now
+  sent_at: now(),
+});
 // The weekly welcome (discordwelcome.js): who has been welcomed, so nobody is welcomed twice.
 export const discordWelcomed = pgTable('discord_welcomed', {
   discord_id: text().primaryKey(),

@@ -636,6 +636,41 @@ admin.post('/discord-welcome/post', role('admin'), async (req, res) => {
   res.json(r);
 });
 
+// Discord control → Scheduled announcements (discordschedule.js). Admins only.
+admin.get('/discord-scheduled', role('admin'), async (_req, res) => {
+  const { overview } = await import('./discordschedule.js');
+  res.json(await overview());
+});
+admin.post('/discord-scheduled', role('admin'), async (req, res) => {
+  const { saveScheduled } = await import('./discordschedule.js');
+  const row = await saveScheduled(0, req.body || {}, req.user.id).catch((e) => { throw new HttpError(400, e.message); });
+  await audit(req.user.id, 'discord.scheduled.add', String(row.id), { title: row.title, next_at: row.next_at });
+  res.json(row);
+});
+admin.put('/discord-scheduled/:id', role('admin'), async (req, res) => {
+  const { saveScheduled } = await import('./discordschedule.js');
+  const row = await saveScheduled(int(req.params.id), req.body || {}, req.user.id).catch((e) => { throw new HttpError(400, e.message); });
+  await audit(req.user.id, 'discord.scheduled.edit', String(row.id), { title: row.title, next_at: row.next_at });
+  res.json(row);
+});
+admin.post('/discord-scheduled/:id/pause', role('admin'), async (req, res) => {
+  const row = await one('UPDATE discord_scheduled SET paused=$2 WHERE id=$1 RETURNING *', [int(req.params.id), !!req.body?.paused]);
+  if (!row) throw new HttpError(404, 'Not found.');
+  await audit(req.user.id, row.paused ? 'discord.scheduled.pause' : 'discord.scheduled.resume', String(row.id));
+  res.json(row);
+});
+admin.post('/discord-scheduled/:id/send', role('admin'), async (req, res) => {
+  const { sendNow } = await import('./discordschedule.js');
+  const r = await sendNow(int(req.params.id)).catch((e) => { throw new HttpError(400, e.message); });
+  await audit(req.user.id, 'discord.scheduled.send', req.params.id, r);
+  res.json(r);
+});
+admin.delete('/discord-scheduled/:id', role('admin'), async (req, res) => {
+  await q('DELETE FROM discord_scheduled WHERE id=$1', [int(req.params.id)]);
+  await audit(req.user.id, 'discord.scheduled.delete', req.params.id);
+  res.json({ ok: true });
+});
+
 // Tidy up an existing server: scan (nothing changes), then apply the chosen removals with a backup first.
 admin.post('/discord-server/tidy/scan', role('admin'), async (req, res) => {
   try {
