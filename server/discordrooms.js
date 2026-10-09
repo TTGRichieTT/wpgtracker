@@ -688,12 +688,28 @@ export async function shownVoiceRooms() {
   return q('SELECT channel_id, name, position, parent_id FROM discord_rooms WHERE show_in_app = true AND type = ANY($1) ORDER BY position, name', [[...VOICE_TYPES]]);
 }
 
+// One-off: the "Discord roles" announcement in #announcements was posted before @Role / #room mentions worked. On the
+// next start it's deleted and posted again fresh with its roles pinged (an edit can't ping), then never again.
+async function repostRolesAnnouncement() {
+  const { setting } = await import('./db.js');
+  if (await setting('_repost_roles_announcement')) return;
+  const posts = await q(`SELECT id, channel_id, message_id FROM discord_bot_posts WHERE channel_id='1216495498035200102' AND kind='custom'
+                          AND (title ILIKE '%discord roles%' OR body ILIKE '%@wardogs%')`);
+  for (const p of posts) {
+    if (p.message_id) await discordFetch(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE').catch(() => {});
+    await q("UPDATE discord_bot_posts SET message_id='', ping=true WHERE id=$1", [p.id]);
+    await publishPost(p.id, { force: true });
+  }
+  await q("INSERT INTO settings (key, value) VALUES ('_repost_roles_announcement', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [`${posts.length} reposted ${new Date().toISOString()}`]);
+}
+
 export function startDiscordRooms() {
   if (!botReady()) return;
   setTimeout(async () => {
     await syncRooms().catch((e) => console.warn('[rooms] sync', e.message));
     await firstPosts().catch((e) => console.warn('[rooms] first posts', e.message));
     await firstShown().catch((e) => console.warn('[rooms] first shown', e.message));
+    await repostRolesAnnouncement().catch((e) => console.warn('[rooms] repost announcement', e.message));
     refreshPosts();
   }, 20e3);
   setInterval(() => sweepRooms().catch((e) => console.warn('[rooms] clear', e.message)), 60e3);
