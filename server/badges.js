@@ -11,6 +11,9 @@
 //    already qualifies (no Discord flood); after that each unlock is announced (one post for several at once).
 // Also here: the verified WPG join date (Admin → Members) and official events / tournaments (Admin → Events).
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { q, one, audit, setting } from './db.js';
 import { bus } from './bus.js';
@@ -32,7 +35,9 @@ export const RARITIES = {
 };
 export const CATEGORIES = {
   streaming: 'Streaming', nitro: 'Nitro boosts', loyalty: 'WPG loyalty', chat: 'Discord chat', voice: 'Discord voice',
-  recruitment: 'Recruitment', events: 'Events & tournaments', special: 'Special recognition', wardogs: 'Wardogs', other: 'Other',
+  recruitment: 'Recruitment', events: 'Events & tournaments', special: 'Special recognition', wardogs: 'Wardogs',
+  combat: 'Combat & mission', community: 'Community & activity', achievements: 'Achievements', vip: 'VIP & exclusive', extra: 'Extra / special',
+  other: 'Other',
 };
 export async function rarityPoints(rarity) {
   if (rarity === 'exclusive') return Math.max(0, Number(await setting('points_exclusive')) || 500);
@@ -72,7 +77,7 @@ const SERIES = [
     ['Two-Year Nitro Veteran', 24, 'legendary badge'], ['Three-Year Nitro Veteran', 36, 'mythic badge'], ['Four-Year Nitro Veteran', 48, 'mythic badge'],
     ['Five-Year Nitro Legend', 60, 'exclusive badge'], ['Eternal WPG Supporter', 120, 'exclusive badge']]],
   ['loyalty', 'wpg_days', 'Your first day in WPG', [['Welcome to the Pack', 1, 'common badge']]],
-  ['loyalty', 'wpg_months', '{n} months in WPG (from your verified WPG join date)', [
+  ['loyalty', 'wpg_months', '{time} in WPG (from your verified WPG join date)', [
     ['Pack Recruit', 1, 'common badge'], ['Established Member', 3, 'common badge'], ['Loyal Pack Member', 6, 'rare badge'],
     ['One-Year Veteran', 12, 'rare badge'], ['Two-Year Veteran', 24, 'rare badge'], ['Three-Year Veteran', 36, 'epic badge'],
     ['Four-Year Veteran', 48, 'epic badge'], ['Five-Year Legacy', 60, 'legendary badge'], ['Six-Year Legacy', 72, 'legendary badge'],
@@ -97,7 +102,42 @@ const SERIES = [
   ['events', 'giveaway_wins', 'Win {n} WPG giveaways', [
     ['Lucky Wolf', 1, 'medal'], ['Lucky Streak', 3, 'medal'], ['Fortune Favors You', 5, 'epic badge'], ['WPG Lucky Legend', 10, 'legendary badge']]],
   ['events', 'tournament_wins', 'Win {n} official WPG tournaments', [
-    ['First Victory', 1, 'medal'], ['Tournament Veteran', 5, 'epic badge'], ['WPG Champion', 10, 'legendary badge'], ['Tournament Legend', 25, 'mythic badge']]],
+    ['First Victory', 1, 'medal'], ['Tournament Veteran', 5, 'epic badge'], ['WPG Champion', 10, 'mythic badge'], ['Tournament Legend', 25, 'mythic badge']]],
+];
+// "12" months → "1 year", "18" → "18 months", "1" → "1 month".
+const timeText = (m) => (m % 12 === 0 ? `${m / 12} year${m === 12 ? '' : 's'}` : `${m} month${m === 1 ? '' : 's'}`);
+// The rest of the WPG badge sheet: [name, description, category, rarity, rule ('' = given by staff)].
+const SHEET = [
+  ['Streaming Master', 'Go live 2,500 times (verified streams of 15+ minutes)', 'streaming', 'mythic', 'stat:stream_count:2500'],
+  ['Mission Ready', 'Finish your first match on the WPG server', 'combat', 'common', 'stat:finished:1'],
+  ['Operation Support', 'Finish 100 matches on the WPG server', 'combat', 'rare', 'stat:finished:100'],
+  ['Combat Veteran', '1,000 kills on the WPG server', 'combat', 'epic', 'stat:kills:1000'],
+  ['Elite Operator', '5,000 kills on the WPG server', 'combat', 'legendary', 'stat:kills:5000'],
+  ['War Dog', '1,000 hours on the WPG server', 'combat', 'mythic', 'stat:hours:1000'],
+  ['Active Participant', 'Send 250 messages in the WPG Discord', 'community', 'common', 'stat:discord_messages:250'],
+  ['Helpful Member', 'Recognised by staff for helping other members', 'community', 'rare', ''],
+  ['Post Master', 'Send 7,500 messages in the WPG Discord', 'community', 'epic', 'stat:discord_messages:7500'],
+  ['Community Builder', 'Bring 25 verified members to WPG', 'community', 'legendary', 'stat:recruits:25'],
+  ['WPG Influencer', 'Recognised by staff for growing WPG (content, socials and streams)', 'community', 'mythic', ''],
+  ['Achievement Hunter', 'Unlock 50 Steam achievements in tracked games', 'achievements', 'common', 'stat:steam_achievements:50'],
+  ['Challenge Complete', 'Unlock 250 Steam achievements in tracked games', 'achievements', 'rare', 'stat:steam_achievements:250'],
+  ['Skill Master', 'Unlock 25 rare Steam achievements (under 10% of players have them)', 'achievements', 'epic', 'stat:rare_achievements:25'],
+  ['Perfectionist', 'Unlock 100 rare Steam achievements (under 10% of players have them)', 'achievements', 'legendary', 'stat:rare_achievements:100'],
+  ['Legendary Achiever', 'Reach 10,000 Achievement Points', 'achievements', 'mythic', 'stat:achievement_points:10000'],
+  ['Event Participant', 'Take part in an official WPG event', 'events', 'common', 'stat:events_attended:1'],
+  ['Event Winner', 'Win an official WPG event or tournament', 'events', 'rare', 'stat:event_wins:1'],
+  ['Tournament Finalist', 'Reach the final of an official WPG tournament', 'events', 'epic', ''],
+  ['Tournament Champion', 'Win 3 official WPG tournaments', 'events', 'legendary', 'stat:tournament_wins:3'],
+  ['VIP Member', 'WPG VIP member', 'vip', 'exclusive', ''],
+  ['Early Access', 'Early access to new WPG features', 'vip', 'exclusive', ''],
+  ['Beta Tester', 'Helped test the WPG app and bot', 'vip', 'exclusive', ''],
+  ['Premium Supporter', 'Premium supporter of WPG', 'vip', 'exclusive', ''],
+  ['Legendary Supporter', 'A legendary, long-term supporter of WPG', 'vip', 'exclusive', ''],
+  ['Good Sport', 'Plays fair and takes wins and losses well', 'extra', 'common', ''],
+  ['Team Player', 'Puts the squad first', 'extra', 'rare', ''],
+  ['Respected Member', 'Respected across the WPG community', 'extra', 'epic', ''],
+  ['Trusted Ally', 'A trusted ally of WPG', 'extra', 'legendary', ''],
+  ['WPG Elite', "One of WPG's very best", 'extra', 'mythic', ''],
 ];
 // Given by staff (or, for the two position badges, while the member holds that position).
 const SPECIAL = [
@@ -125,7 +165,7 @@ export function starterSet() {
   for (const [category, stat, text, tiers] of SERIES) {
     for (const [name, n, reward] of tiers) {
       const { kind, rarity } = REWARD(reward);
-      const description = text.replace('{n}', Number(n).toLocaleString('en-GB'));
+      const description = text.replace('{n}', Number(n).toLocaleString('en-GB')).replace('{time}', timeText(n));
       const rule = `stat:${stat}:${n}`;
       order += 1;
       if (kind === 'badge') badgesOut.push({ key: slug(name), name, description, category, series: stat, rarity, rule, sort_order: order });
@@ -138,6 +178,9 @@ export function starterSet() {
   }
   for (const [name, description, rarity, rule, temporary] of SPECIAL) {
     badgesOut.push({ key: slug(name), name, description, category: 'special', series: '', rarity, rule, temporary: !!temporary, sort_order: (order += 1) });
+  }
+  for (const [name, description, category, rarity, rule] of SHEET) {
+    badgesOut.push({ key: slug(name), name, description, category, series: rule ? rule.split(':')[1] : '', rarity, rule, sort_order: (order += 1) });
   }
   return { badges: badgesOut, medals: medalsOut };
 }
@@ -154,12 +197,13 @@ export async function seedAchievements() {
   const doneM = new Set(seeded.medals || []);
   const { badges: list, medals } = starterSet();
   const haveB = new Set((await q("SELECT key FROM badges WHERE key <> ''")).map((r) => r.key));
+  const haveNames = new Set((await q('SELECT lower(name) AS n FROM badges')).map((r) => r.n));
   const haveM = new Set((await q('SELECT lower(name) AS n FROM awards')).map((r) => r.n));
   let added = 0;
   for (const b of list) {
     if (doneB.has(b.key)) continue;
     doneB.add(b.key);
-    if (haveB.has(b.key)) continue;
+    if (haveB.has(b.key) || haveNames.has(b.name.toLowerCase())) continue;
     await q(`INSERT INTO badges (key, name, description, category, series, rarity, points, rule, temporary, sort_order)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [b.key, b.name, b.description, b.category, b.series, b.rarity, await rarityPoints(b.rarity), b.rule, !!b.temporary, b.sort_order]);
@@ -183,8 +227,27 @@ export async function seedAchievements() {
     const { giveAutoMedalsToAll } = await import('./medals.js');
     await giveAutoMedalsToAll().catch(() => {});
   }
+  await matchBadgeSheet().catch((e) => console.warn('[badges] sheet', e.message));
+  await attachBundledArt().catch((e) => console.warn('[badges] bundled art', e.message));
   await pointsForOlderMedals().catch((e) => console.warn('[badges] older medal points', e.message));
   return added;
+}
+
+// Once: starter badges added before the WPG badge sheet get its rarity and wording (WPG Champion is Mythic; loyalty
+// badges say "1 year in WPG" instead of "12 months…"). Only badges still as the app made them are changed.
+async function matchBadgeSheet() {
+  if (await one("SELECT 1 FROM settings WHERE key='_badges_sheet_v1'")) return; // read directly: settings are cached
+  let n = 0;
+  const champ = await q("UPDATE badges SET rarity='mythic', points=$1 WHERE key='wpg-champion' AND rarity='legendary' RETURNING id", [await rarityPoints('mythic')]);
+  n += champ.length;
+  for (const b of starterSet().badges.filter((x) => x.series === 'wpg_months')) {
+    const months = Number(b.rule.split(':')[2]);
+    const old = `${months.toLocaleString('en-GB')} months in WPG (from your verified WPG join date)`;
+    n += (await q('UPDATE badges SET description=$3 WHERE key=$1 AND description=$2 RETURNING id', [b.key, old, b.description])).length;
+  }
+  await q("INSERT INTO settings (key, value) VALUES ('_badges_sheet_v1', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [new Date().toISOString()]);
+  if (n) { clearBadges(); console.log(`[badges] Matched ${n} starter badges to the WPG badge sheet`); }
+  return n;
 }
 
 // Older medals (made before Achievement Points, so no rarity and 0 points) get a rarity and points once, on the same
@@ -514,6 +577,69 @@ export async function saveBadgeArt(dataUrl) {
   const row = await one('INSERT INTO badge_images (mime, data) VALUES ($1,$2) RETURNING id', [mime, out.toString('base64')]);
   return { id: row.id, url: imageUrl(row.id), notes };
 }
+// ---------- Animated artwork that ships with the app (server/assets/badges) ----------
+// On start, each picture is put on its badge once: the sheet badges by their name (file name = badge name), and the
+// WPG badges staff made themselves by a clear name match. A badge that already has an animated picture is left alone;
+// one with no picture or a still one gets the animated one (the still is removed if nothing else uses it).
+// Each file is only ever applied once, so a picture staff change afterwards stays as they set it.
+const BUNDLED_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets', 'badges');
+const OWN_ART = [
+  ['wpg-admin', (n) => ['admin', 'wpg admin', 'administrator', 'wpg administrator'].includes(n)],
+  ['wpg-moderator', (n) => ['moderator', 'wpg moderator', 'mod'].includes(n)],
+  ['wpg-member', (n) => ['member', 'wpg member'].includes(n)],
+  ['wpg-donation-bot-hosting', (n) => n.includes('donation') && (n.includes('bot') || n.includes('hosting'))],
+  ['wpg-donation-wardogs-server', (n) => n.includes('donation') && (n.includes('wardogs') || n.includes('server'))],
+  ['wpg-first-friend', (n) => n.includes('first friend')],
+  ['wpg-first-sign-up', (n) => n.includes('sign up') || n.includes('signup') || n.includes('sign-up')],
+  ['wpg-discord-nitro', (n) => n.includes('nitro') && n.includes('supporter') && !n.includes('first')],
+  ['wpg-first-time-nitro', (n) => n.includes('first time') && n.includes('nitro')],
+];
+// Animated: a GIF with more than one frame, or a WebP with an animation chunk.
+export function isAnimated(buf) {
+  if (!buf) return false;
+  if (buf.subarray(0, 3).toString('latin1') === 'GIF') {
+    let frames = 0;
+    for (let i = buf.indexOf(0x21); i !== -1 && frames < 2; i = buf.indexOf(0x21, i + 1)) if (buf[i + 1] === 0xf9 && buf[i + 2] === 0x04) frames++;
+    return frames > 1;
+  }
+  return buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.includes(Buffer.from('ANIM'));
+}
+export async function attachBundledArt() {
+  if (!fs.existsSync(BUNDLED_DIR)) return 0;
+  const row = await one("SELECT value FROM settings WHERE key='_bundled_badge_art'");
+  let done = [];
+  try { done = JSON.parse(row?.value || '[]'); } catch { done = []; }
+  const doneSet = new Set(done);
+  const badges = await q('SELECT id, key, name, image_id FROM badges');
+  const jobs = [];
+  for (const f of fs.readdirSync(BUNDLED_DIR).filter((x) => x.endsWith('.gif'))) {
+    const base = f.replace(/\.gif$/, '');
+    for (const b of badges.filter((x) => x.key === base || slug(x.name) === base)) jobs.push({ tag: `sheet:${base}`, file: path.join(BUNDLED_DIR, f), b });
+  }
+  const ownDir = path.join(BUNDLED_DIR, 'own');
+  for (const [file, match] of OWN_ART) {
+    const p = path.join(ownDir, `${file}.gif`);
+    if (!fs.existsSync(p)) continue;
+    for (const b of badges.filter((x) => match(String(x.name || '').toLowerCase().trim()))) jobs.push({ tag: `own:${file}:${b.id}`, file: p, b });
+  }
+  let n = 0;
+  for (const j of jobs) {
+    if (doneSet.has(j.tag)) continue;
+    doneSet.add(j.tag);
+    const old = j.b.image_id ? await one('SELECT id, data FROM badge_images WHERE id=$1', [j.b.image_id]) : null;
+    if (old && isAnimated(Buffer.from(old.data, 'base64'))) continue; // already animated: keep it
+    const buf = fs.readFileSync(j.file);
+    const img = await one('INSERT INTO badge_images (mime, data) VALUES ($1,$2) RETURNING id', ['image/gif', buf.toString('base64')]);
+    await q('UPDATE badges SET image_id=$2 WHERE id=$1', [j.b.id, img.id]);
+    j.b.image_id = img.id;
+    if (old && !(await one('SELECT 1 FROM badges WHERE image_id=$1', [old.id]))) await q('DELETE FROM badge_images WHERE id=$1', [old.id]);
+    n++;
+  }
+  await q("INSERT INTO settings (key, value) VALUES ('_bundled_badge_art', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify([...doneSet])]);
+  if (n) { clearBadges(); imageCache.clear(); console.log(`[badges] Put animated pictures on ${n} badges`); }
+  return n;
+}
+
 const imageCache = new Map();
 async function badgeImage(id) {
   if (imageCache.has(id)) return imageCache.get(id);
