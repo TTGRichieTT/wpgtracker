@@ -632,6 +632,10 @@ export async function deletePost(id) {
   const p = await one('DELETE FROM discord_bot_posts WHERE id=$1 RETURNING *', [id]);
   if (p?.message_id) await discordFetch(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE').catch(() => {});
 }
+// The finished message for a post (banner, boxes, mentions, ping), for the scheduled announcements.
+export async function buildPostPayload(b) {
+  return (await postPayload({ channel_id: String(b.channel_id || ''), kind: 'custom', title: b.title || '', body: b.body || '', style: b.style === 'text' ? 'text' : 'card', ping: !!b.ping })).payload;
+}
 export async function previewPost(b) {
   const { payload, names } = await postPayload({ channel_id: String(b.channel_id || ''), kind: KINDS[b.kind] ? b.kind : 'custom', title: b.title || '', body: b.body || '', style: b.style === 'text' ? 'text' : 'card', ping: !!b.ping });
   return { ...payload, names };
