@@ -143,7 +143,7 @@ export async function badgesAdminTab(body) {
       <div class="row between"><div class="panel-title" style="margin:0">Badges <span class="sub">${d.badges.length}</span></div><button class="btn primary" id="bNew">${icon('plus')} New badge</button></div>
       <p class="muted small">Collectible badges with artwork, rarity and Achievement Points. Automatic ones are earned from a tracked stat (WPG server, wardogs.tools, Steam, streaming, Discord, boosts, WPG membership, events); the rest are given by staff from Admin → Members. A new badge is given quietly to everyone who already qualifies, then announced for everyone after.</p>
       <div class="frame-upload" style="margin-top:8px"><b>Upload artwork for many badges at once</b>
-        <ul class="small"><li>Square <b>PNG or WebP</b> (animated WebP / GIF are fine), <b>512 x 512</b> is best, with a <b>real transparent background</b>. Pictures with a checkerboard drawn in are refused.</li>
+        <ul class="small"><li>Square <b>PNG or WebP</b> (animated WebP / GIF are fine), <b>512 x 512</b> is best, with a <b>real transparent background</b>, up to <b>3.5 MB</b>. Pictures with a checkerboard drawn in are refused.</li>
           <li>Name each file after its badge, e.g. <b>one-year-veteran.png</b> for "One-Year Veteran". Up to 40 at a time.</li>
           <li>Don't draw a rarity border: the app adds a glow in the rarity's colour.</li></ul>
         <label class="btn small primary" style="cursor:pointer">${icon('plus')} Pick files<input type="file" id="bBulk" accept="image/png,image/webp,image/gif" multiple hidden></label>

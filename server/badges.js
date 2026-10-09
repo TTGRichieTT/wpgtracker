@@ -510,7 +510,7 @@ export async function saveBadgeArt(dataUrl) {
     mime = TYPES.png;
     notes.push(`Resized from ${w} x ${h} to ${ART} x ${ART} px.`);
   }
-  if (out.length > 1.5 * 1024 * 1024) throw new HttpError(400, `It's ${kb(out.length)} at ${ART} x ${ART}: the most is 1.5 MB. Export as WebP or with fewer colours.`);
+  if (out.length > 3.5 * 1024 * 1024) throw new HttpError(400, `It's ${kb(out.length)} at ${ART} x ${ART}: the most is 3.5 MB. Export as WebP or with fewer colours.`);
   const row = await one('INSERT INTO badge_images (mime, data) VALUES ($1,$2) RETURNING id', [mime, out.toString('base64')]);
   return { id: row.id, url: imageUrl(row.id), notes };
 }
