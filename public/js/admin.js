@@ -979,6 +979,7 @@ async function discordServerTab(body) {
         <form id="dsForm" class="form-grid">
           <label class="field"><span>Discord server ID (right-click the server → Copy Server ID)</span><input type="text" name="guild_id" value="${esc(d.guild_id)}" inputmode="numeric"></label>
           <label class="field"><span>Game roles: hours played on Steam</span><input type="number" name="game_hours" min="10" value="${esc(d.game_hours)}"></label>
+          <label class="field"><span>Wardogs role: hours of Wardogs on Steam</span><input type="number" name="wardogs_hours" min="1" value="${esc(d.wardogs_hours)}"></label>
           <label class="check" style="grid-column:1/-1"><input type="checkbox" name="sync_roles" ${d.sync_roles ? 'checked' : ''}> Keep members' roles in step (every 2 minutes and straight after changes in the app)</label>
           <div class="row" style="grid-column:1/-1"><button class="btn primary">Save</button></div>
         </form></div>
@@ -999,7 +1000,7 @@ async function discordServerTab(body) {
         </form>
         <div id="dsStaffRolesOut" class="small" style="margin-top:8px"></div></div>
       <div class="panel"><div class="panel-title">Roles</div>
-        <p class="small muted" style="margin-top:0">The app gives <b>WPG Community</b> to everyone who passes the entry check (to everyone if it's off), <b>Wardogs</b> to PMC guests and <b>WPG Member</b> to full members. For members who linked their Discord with <b>/link</b> it also manages
+        <p class="small muted" style="margin-top:0">The app gives <b>WPG Community</b> to everyone who passes the entry check (to everyone if it's off), <b>Wardogs</b> to Wardogs players (they say yes to "Do you play Wardogs?" after the entry check or tap <b>Wardogs player</b> in #pick-roles, or they've linked the app with ${esc(d.wardogs_hours)}+ hours of Wardogs on Steam) and <b>WPG Member</b> to full members. For members who linked their Discord with <b>/link</b> it also manages
           Admin / Moderator (given to app admins and mods, never taken away), WPG Member, Combat Command (CO, XO, Deputy), their unit, Unit Leader, their faction and a grey role for every Steam game
           they've played ${esc(d.game_hours)}+ hours (show only). Content Creator, Partner and Military Vet are given by hand; members pick PC / Xbox / PlayStation / Switch / 18+ in #pick-roles.
           Roles on members who haven't linked are never taken away.</p>
@@ -1110,7 +1111,7 @@ async function discordServerTab(body) {
     body.querySelector('#dsForm').onsubmit = async (e) => {
       e.preventDefault();
       const f = e.target;
-      try { await api('admin/discord-server', { method: 'PUT', body: { guild_id: f.guild_id.value, game_hours: f.game_hours.value, sync_roles: f.sync_roles.checked } }); toast('Saved'); reload(); } catch (x) { fail(x); }
+      try { await api('admin/discord-server', { method: 'PUT', body: { guild_id: f.guild_id.value, game_hours: f.game_hours.value, wardogs_hours: f.wardogs_hours.value, sync_roles: f.sync_roles.checked } }); toast('Saved'); reload(); } catch (x) { fail(x); }
     };
     body.querySelector('#dsPreview').onclick = async () => {
       out.innerHTML = '<div class="spinner"></div>';

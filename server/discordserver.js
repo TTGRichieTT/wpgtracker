@@ -3,7 +3,8 @@
 //    each, on the server set in discord_build_server_id. It adds and fixes; it never deletes channels or roles
 //    it didn't make, and roles that already exist are reused as they are. Preview first lists what it would do.
 //  - Sync (when discord_sync_roles is on, every 2 minutes and shortly after changes in the app):
-//      · Wardogs for everyone on the server (once they've accepted the rules screen, if there is one);
+//      · WPG Community for everyone on the server (once they've passed the entry check, if it's on);
+//      · Wardogs for Wardogs players (said yes to "Do you play Wardogs?", or 5+ hours of Wardogs on Steam once linked);
 //      · for members who linked Discord with /link: Admin / Moderator (app role), WPG Member (WPG members, not
 //        PMC guests), Combat Command (CO, XO, Deputy…), their unit, Unit Leader, their faction, and a game role
 //        for every Steam game they've played for discord_game_role_hours+ hours (show only, no access).
@@ -72,7 +73,8 @@ async function roleSpec() {
   list.push({ key: 'wpg', name: 'WPG Member', aliases: ['WPG Members'], color: '#29b6f6', hoist: true });
   for (const u of units.filter((x) => x.kind !== 'command')) list.push({ key: `unit:${u.id}`, name: titleCase(u.name), color: u.color });
   for (const [id, name, color] of FACTIONS) list.push({ key: `faction:${id}`, name, color });
-  // Wardogs = PMC guests (linked to the app as PMC); taken off anyone who is a full WPG member.
+  // Wardogs = Wardogs players: said yes on entry / in #pick-roles, or linked members with the set hours of Wardogs on
+  // Steam (5 by default). (Its key stays 'pmc' from when it was the PMC guests' role.)
   list.push({ key: 'pmc', name: 'Wardogs', aliases: ['PMC'], color: '#3ddc84', hoist: true });
   list.push(divider('special', 'Special'));
   for (const name of ['Content Creator', 'Partner', 'Military Vet']) list.push({ key: `manual:${name}`, name, color: '#9b59b6', manual: true });
@@ -880,6 +882,12 @@ export async function syncRoles() {
       deleted++;
     }
     if (created || deleted) await saveMap(map);
+    // Wardogs players: their own answer ("Do you play Wardogs?"), or linked members with enough Wardogs hours on Steam.
+    const answered = new Map((await q('SELECT discord_id, plays FROM discord_wardogs_players')).map((r) => [r.discord_id, r.plays]));
+    const wardogsHours = Math.max(1, Number(await setting('discord_wardogs_role_hours')) || 5);
+    const wardogsPlayers = new Set(linkedHere.length ? (await q(`SELECT user_id FROM steam_playtime WHERE user_id = ANY($1::int[])
+        AND (app_id = ANY($2::int[]) OR name ILIKE '%wardogs%') GROUP BY user_id HAVING SUM(minutes) >= $3`,
+    [linkedHere.map((u) => u.id), [...wardogsApps], wardogsHours * 60])).map((r) => r.user_id) : []);
 
     const rid = (key) => (live.has(map.roles[key]) ? map.roles[key] : null);
     const managed = new Set([...managedKeys.map(rid), ...Object.values(map.games)].filter(Boolean));
@@ -895,13 +903,13 @@ export async function syncRoles() {
       const u = byDiscord.get(m.user.id);
       const want = new Set();
       if (!gate || u || m.roles.includes(rid('wardogs')) || passed(m)) want.add(rid('wardogs'));
+      if (answered.get(m.user.id) === true || (u?.status === 'active' && wardogsPlayers.has(u.id))) want.add(rid('pmc'));
       if (u) {
         linked++;
         if (u.status === 'active') {
           if (u.role === 'admin' || isOwner(u)) want.add(rid('admin'));
           else if (u.role === 'mod') want.add(rid('mod'));
           if (u.membership !== 'pmc') want.add(rid('wpg'));
-          else want.add(rid('pmc')); // PMC guest: Wardogs
           const p = postings.get(u.id);
           const unit = p && unitById.get(p.unit_id);
           if (unit) {
@@ -923,12 +931,6 @@ export async function syncRoles() {
         if (have.has(id)) continue;
         await discordFetch(`/guilds/${guild}/members/${m.user.id}/roles/${id}`, 'PUT').catch(() => {});
         added++;
-      }
-      // Wardogs is for PMC guests: anyone with WPG Member (given here or by hand) doesn't keep it.
-      if (rid('pmc') && have.has(rid('pmc')) && (want.has(rid('wpg')) || have.has(rid('wpg'))) && !want.has(rid('pmc'))) {
-        await discordFetch(`/guilds/${guild}/members/${m.user.id}/roles/${rid('pmc')}`, 'DELETE').catch(() => {});
-        have.delete(rid('pmc'));
-        removed++;
       }
       // Only linked members lose roles: the app knows exactly what they should have. Admin and Moderator are only
       // ever given, never taken: staff made staff in Discord keep it even if the app has them as a member.

@@ -460,6 +460,7 @@ admin.get('/discord-server', role('admin'), async (req, res) => {
     guild_id: guild,
     sync_roles: (await setting('discord_sync_roles')) === 'true',
     game_hours: Number(await setting('discord_game_role_hours')) || 100,
+    wardogs_hours: Number(await setting('discord_wardogs_role_hours')) || 5,
     invite_url: `https://discord.com/oauth2/authorize?client_id=${discordAppId()}&scope=bot%20applications.commands&permissions=8${guild ? `&guild_id=${guild}&disable_guild_select=true` : ''}`,
     portal_url: `https://discord.com/developers/applications/${discordAppId()}/bot`,
     build: buildStatus(),
@@ -502,6 +503,7 @@ admin.put('/discord-server', role('admin'), async (req, res) => {
   }
   if ('sync_roles' in b) values.discord_sync_roles = bool(b.sync_roles) ? 'true' : 'false';
   if ('game_hours' in b) values.discord_game_role_hours = String(Math.min(10000, Math.max(10, int(b.game_hours) || 100)));
+  if ('wardogs_hours' in b) values.discord_wardogs_role_hours = String(Math.min(10000, Math.max(1, int(b.wardogs_hours) || 5)));
   // Entry check and moderation settings (sent by the page's other forms; left alone when not sent).
   const e = b.entry;
   if (e && typeof e === 'object') {

@@ -299,6 +299,12 @@ async function letIn(guild, user, status) {
            ON CONFLICT (discord_id) DO UPDATE SET status=EXCLUDED.status, guild_id=EXCLUDED.guild_id, updated_at=now()`, [user.id, guild, nameOf(user).slice(0, 64), status]);
   scheduleSync(5000);
 }
+// Asked straight after getting in: Yes gives the Wardogs role (Wardogs players). Also a button in #pick-roles.
+const WARDOGS_ASK = [{ type: 1, components: [
+  { type: 2, style: 3, label: 'Yes, I play Wardogs', emoji: { name: '🐺' }, custom_id: 'wpg:wardogs:yes' },
+  { type: 2, style: 2, label: 'No', custom_id: 'wpg:wardogs:no' },
+] }];
+const welcomeAsk = (c) => ({ content: `${welcomeIn(c)}\n\n**One question: do you play Wardogs?**`, components: WARDOGS_ASK });
 const welcomeIn = (c) => `✅ **You're in. Welcome to WPG!**${c.ch('info:pick-roles') ? `\nPick your platform in <#${c.ch('info:pick-roles')}>.` : ''}${c.ch('app:app-help') ? `\nIn the WPG app? Type **/link** in <#${c.ch('app:app-help')}> to get your clan, unit and game roles.` : ''}`;
 
 async function onEnterButton(body) {
@@ -307,7 +313,7 @@ async function onEnterButton(body) {
   if (body.guild_id !== c.guild || !user) return { now: ephemeral('This button only works on the WPG server.') };
   if (c.role('wardogs') && body.member.roles?.includes(c.role('wardogs'))) return { now: ephemeral("You're already in. 👍") };
   if (!(await entryOn())) {
-    return { now: { type: 5, data: { flags: EPHEMERAL } }, later: async () => { await letIn(c.guild, user, 'passed'); return { content: welcomeIn(c) }; } };
+    return { now: { type: 5, data: { flags: EPHEMERAL } }, later: async () => { await letIn(c.guild, user, 'passed'); return welcomeAsk(c); } };
   }
   if (raidUntil > Date.now()) return { now: ephemeral('A lot of people are joining at once, so entry is paused for a few minutes. Please try again shortly.') };
   const entry = await one('SELECT * FROM discord_entries WHERE discord_id=$1', [user.id]);
@@ -357,7 +363,7 @@ async function onEntrySubmit(body) {
       if (codeOk && answerOk) {
         await letIn(c.guild, user, 'passed');
         await modLog(c.guild, { color: COLOR.green, title: '✅ Passed the entry check', description: `<@${user.id}> (${nameOf(user)})` });
-        return { content: welcomeIn(c) };
+        return welcomeAsk(c);
       }
       const row = await one(`INSERT INTO discord_entries (discord_id, guild_id, user_name, status, attempts) VALUES ($1,$2,$3,'started',1)
                              ON CONFLICT (discord_id) DO UPDATE SET attempts=discord_entries.attempts+1, updated_at=now() RETURNING attempts`, [user.id, c.guild, nameOf(user).slice(0, 64)]);
@@ -416,6 +422,29 @@ export async function decideHeld(id, letInIt, staffName) {
     await q("UPDATE discord_entries SET status='kicked' WHERE discord_id=$1", [id]);
     await addCase(c.guild, user, 'entry-kick', `New account, not let in (by ${staffName} in the app)`, null);
   }
+}
+
+// ---------- "Do you play Wardogs?" (after the entry check, and the Wardogs player button in #pick-roles) ----------
+// Yes: the Wardogs role. No: not given (linked members with 5+ hours of Wardogs on Steam still get it from the sync).
+// The answer is kept so the role sync keeps it in step.
+async function onWardogsButton(body) {
+  const c = await ctx();
+  const user = body.member?.user;
+  if (body.guild_id !== c.guild || !user) return { now: ephemeral('This button only works on the WPG server.') };
+  const role = c.role('pmc');
+  if (!role) return { now: ephemeral("The Wardogs role isn't set up yet: ask staff to run Build server.") };
+  const act = String(body.data.custom_id).split(':')[2];
+  const has = (body.member.roles || []).includes(role);
+  const plays = act === 'yes' || (act === 'toggle' && !has);
+  await q(`INSERT INTO discord_wardogs_players (discord_id, plays) VALUES ($1,$2)
+           ON CONFLICT (discord_id) DO UPDATE SET plays=EXCLUDED.plays, answered_at=now()`, [user.id, plays]);
+  if (plays && !has) await discordFetch(`/guilds/${c.guild}/members/${user.id}/roles/${role}`, 'PUT').catch(() => {});
+  if (!plays && has && act === 'toggle') await discordFetch(`/guilds/${c.guild}/members/${user.id}/roles/${role}`, 'DELETE').catch(() => {});
+  scheduleSync(5000);
+  const text = plays ? '🐺 **Wardogs** added. Welcome, Wardog!' : act === 'toggle' ? 'Removed **Wardogs**.' : 'No problem. If you start playing Wardogs, tap **Wardogs player** in #pick-roles.';
+  // After the entry check: replace the question (and its buttons) with the answer.
+  if (act === 'toggle') return { now: ephemeral(text) };
+  return { now: { type: 7, data: { content: `${welcomeIn(c)}\n\n${text}`, components: [] } } };
 }
 
 // ---------- Buttons: roles, tickets ----------
@@ -511,6 +540,7 @@ export async function handleComponent(body) {
   if (id.startsWith('wpg:kickheld:')) return onHeldDecision(body, false);
   if (id === 'wpg:role18:yes') return onRoleButton({ ...body, data: { ...body.data, custom_id: 'wpg:role:yes18' } });
   if (id.startsWith('wpg:role:')) return onRoleButton(body);
+  if (id.startsWith('wpg:wardogs:')) return onWardogsButton(body);
   if (id === 'wpg:ticket') return onTicket(body);
   if (id === 'wpg:ticketclose') return onTicketClose(body);
   return { now: ephemeral('That button is no longer in use.') };
@@ -525,8 +555,11 @@ async function rulesPayload() {
   };
 }
 const ROLES_PANEL = {
-  embeds: [{ color: COLOR.blue, title: '🎮 Pick your roles', description: 'Tap a platform to add it, tap again to remove it.\n**18+** opens the 18+ chat: only take it if you are 18 or older.\n\nGame roles come automatically from your Steam library once you /link the WPG app.' }],
-  components: [{ type: 1, components: [...PICKS.map((p) => ({ type: 2, style: 2, label: p, custom_id: `wpg:role:${p}` })), { type: 2, style: 4, label: '18+', custom_id: 'wpg:role:18+' }] }],
+  embeds: [{ color: COLOR.blue, title: '🎮 Pick your roles', description: 'Tap a platform to add it, tap again to remove it.\n**Wardogs player**: tap if you play Wardogs (you also get it once you /link the WPG app with 5+ hours of Wardogs on Steam).\n**18+** opens the 18+ chat: only take it if you are 18 or older.\n\nGame roles come automatically from your Steam library once you /link the WPG app.' }],
+  components: [
+    { type: 1, components: [...PICKS.map((p) => ({ type: 2, style: 2, label: p, custom_id: `wpg:role:${p}` })), { type: 2, style: 4, label: '18+', custom_id: 'wpg:role:18+' }] },
+    { type: 1, components: [{ type: 2, style: 3, label: 'Wardogs player', emoji: { name: '🐺' }, custom_id: 'wpg:wardogs:toggle' }] },
+  ],
 };
 const TICKET_PANEL = {
   embeds: [{ color: COLOR.blue, title: '🎫 Contact staff', description: 'Need help, want to report someone or disagree with a decision? Press the button for a private channel with WPG staff.' }],
@@ -789,7 +822,19 @@ export async function kickStragglers() {
   return n;
 }
 
+// The #pick-roles buttons changed (the Wardogs player button): edit the posted panel once, on the next start.
+const ROLES_PANEL_VERSION = '2';
+async function refreshRolesPanel() {
+  if ((await setting('_roles_panel_version')) === ROLES_PANEL_VERSION) return;
+  const c = await ctx();
+  const id = c.map.messages?.roles;
+  if (!c.guild || !id || !c.ch('info:pick-roles')) return;
+  await discordFetch(`/channels/${c.ch('info:pick-roles')}/messages/${id}`, 'PATCH', ROLES_PANEL);
+  await saveSetting('_roles_panel_version', ROLES_PANEL_VERSION);
+}
+
 export function startDiscordMod() {
   bus.on('discord:event', (ev) => onEvent(ev).catch((e) => console.warn('[discord mod]', ev.t, e.message)));
+  setTimeout(() => refreshRolesPanel().catch((e) => console.warn('[discord mod] roles panel', e.message)), 30e3);
   setInterval(() => kickStragglers().catch((e) => console.warn('[discord mod] stragglers', e.message)), 10 * 60 * 1000);
 }
