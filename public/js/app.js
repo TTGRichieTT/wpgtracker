@@ -67,15 +67,23 @@ export function modal(inner) {
   const back = document.createElement('div');
   back.className = 'modal-back';
   back.innerHTML = `<div class="modal panel glow">${inner}</div>`;
-  const close = () => back.remove();
-  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  const onKey = (e) => {
+    // Escape closes the top popup (through its ✕ when it has one, so anything waiting on it is told).
+    if (e.key !== 'Escape' || [...document.querySelectorAll('.modal-back')].at(-1) !== back) return;
+    const x = back.querySelector('[data-close]');
+    if (x) x.click(); else close();
+  };
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  // Clicking outside the popup, or any ✕ / button marked data-close inside it, closes it.
+  back.addEventListener('click', (e) => { if (e.target === back || e.target.closest('[data-close]')) close(); });
+  document.addEventListener('keydown', onKey);
   document.body.append(back);
   return { el: back.firstElementChild, close };
 }
 
 export function confirmBox(text) {
   return new Promise((resolve) => {
-    const m = modal(`<p>${esc(text)}</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-no>Cancel</button><button class="btn danger" data-yes>Confirm</button></div>`);
+    const m = modal(`<p>${esc(text)}</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-no data-close>Cancel</button><button class="btn danger" data-yes>Confirm</button></div>`);
     m.el.querySelector('[data-no]').onclick = () => { m.close(); resolve(false); };
     m.el.querySelector('[data-yes]').onclick = () => { m.close(); resolve(true); };
   });
