@@ -65,6 +65,7 @@ export const STATS = {
   wpg_months: { label: 'Months in WPG (from the verified WPG join date)', scope: 'all', source: WPG, unit: 'months' },
   events_attended: { label: 'Official WPG events attended', scope: 'all', source: WPG },
   tournament_wins: { label: 'Official WPG tournaments won', scope: 'all', source: WPG },
+  event_wins: { label: 'Official WPG events or tournaments won', scope: 'all', source: WPG },
   is_staff: { label: 'WPG staff now (moderator or admin)', scope: 'all', source: WPG, yesno: true },
   is_admin: { label: 'WPG administrator now', scope: 'all', source: WPG, yesno: true },
   combat_posted: { label: 'Posted in Combat Command (any unit and role)', scope: 'all', source: WPG, yesno: true },
@@ -145,7 +146,7 @@ export async function statsFor(user, season) {
     did ? one(`SELECT COUNT(*)::int n FROM discord_boosts b JOIN discord_activity a ON a.discord_id = b.discord_id
                 WHERE b.discord_id=$1 AND a.boost_since IS NOT NULL AND b.boosted_at >= a.boost_since - interval '1 day'`, [did]) : null,
     did ? one('SELECT COUNT(*)::int n FROM discord_recruits WHERE inviter_id=$1 AND verified', [did]) : null,
-    one(`SELECT COUNT(*)::int attended, COUNT(*) FILTER (WHERE p.won AND e.kind='tournament')::int won
+    one(`SELECT COUNT(*)::int attended, COUNT(*) FILTER (WHERE p.won AND e.kind='tournament')::int won, COUNT(*) FILTER (WHERE p.won)::int won_any
            FROM wpg_event_people p JOIN wpg_events e ON e.id = p.event_id WHERE p.user_id=$1`, [user.id]),
     wpgJoinedAt(user),
     one(`SELECT (COALESCE((SELECT SUM(b.points) FROM user_badges ub JOIN badges b ON b.id = ub.badge_id WHERE ub.user_id = $1), 0)
@@ -211,6 +212,7 @@ export async function statsFor(user, season) {
     wpg_months: joinedWpg ? monthsBetween(joinedWpg) : 0,
     wpgJoined: joinedWpg,
     events_attended: events?.attended || 0,
+    event_wins: events?.won_any || 0,
     tournament_wins: events?.won || 0,
     is_staff: user.status === 'active' && (user.role === 'mod' || user.role === 'admin') ? 1 : 0,
     is_admin: user.status === 'active' && user.role === 'admin' ? 1 : 0,

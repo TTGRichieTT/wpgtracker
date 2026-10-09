@@ -22,6 +22,7 @@ const GLYPH = {
   wardogs: 'M0 -14 L13 -6 V5 L0 14 L-13 5 V-6 Z',
   other: 'M0 -14 L4 -4 L14 -4 L6 2 L9 13 L0 6 L-9 13 L-6 2 L-14 -4 L-4 -4 Z',
 };
+Object.assign(GLYPH, { combat: GLYPH.wardogs, community: GLYPH.chat, achievements: GLYPH.loyalty, vip: GLYPH.special, extra: GLYPH.other });
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let uid = 0;
 
