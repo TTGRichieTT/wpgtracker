@@ -581,6 +581,7 @@ badgesRouter.post('/admin/badges', role('admin'), async (req, res) => {
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
   [b.name, b.description, b.category, b.series, b.rarity, b.points, b.rule, b.temporary, b.limited, b.image_id, b.sort_order, b.enabled]);
   clearBadges();
+  if (b.rule) sweep().catch((e) => console.warn('[badges] sweep', e.message));
   await audit(req.user.id, 'badge.create', row.id, b);
   res.json({ ok: true, id: row.id });
 });
@@ -593,6 +594,7 @@ badgesRouter.put('/admin/badges/:id', role('admin'), async (req, res) => {
              image_id=$11, sort_order=$12, enabled=$13, swept = swept AND rule = $8 WHERE id=$1`,
   [id, b.name, b.description, b.category, b.series, b.rarity, b.points, b.rule, b.temporary, b.limited, b.image_id, b.sort_order, b.enabled]);
   clearBadges();
+  if (b.rule) sweep().catch((e) => console.warn('[badges] sweep', e.message)); // give it to everyone who already qualifies now, not in an hour
   await audit(req.user.id, 'badge.edit', id, b);
   res.json({ ok: true });
 });
