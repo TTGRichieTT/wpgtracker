@@ -171,6 +171,12 @@ export const discordRooms = pgTable('discord_rooms', {
   problem: text().notNull().default(''),
   created_at: now(),
 });
+// "Do you play Wardogs?" (entry check / #pick-roles): their answer, for the Wardogs role.
+export const discordWardogsPlayers = pgTable('discord_wardogs_players', {
+  discord_id: text().primaryKey(),
+  plays: boolean().notNull(),
+  answered_at: now(),
+});
 // The weekly welcome (discordwelcome.js): who has been welcomed, so nobody is welcomed twice.
 export const discordWelcomed = pgTable('discord_welcomed', {
   discord_id: text().primaryKey(),
