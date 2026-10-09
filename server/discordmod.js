@@ -568,16 +568,6 @@ async function rulesPayload() {
     ['✅ HOW TO GET IN', how, 'Breaking the rules can mean a warning, a timeout, a kick or a ban.'],
   ], [{ type: 1, components: [{ type: 2, style: 3, label: "I've read the rules, let me in", emoji: { name: '✅' }, custom_id: 'wpg:enter' }] }]);
 }
-// #welcome: the first thing new people see (they can only see #welcome and #rules until they get in).
-async function welcomePanel(map) {
-  const ch = (k, name) => (map.channels?.[k] ? `<#${map.channels[k]}>` : `#${name}`);
-  return withBanner('WELCOME', [
-    ['🐺 WELCOME TO WASTED PRODIGY GAMERS', 'A community of real players and real squads in **Wardogs** and more. Glad to have you here!'],
-    ['✅ GETTING IN', `Read the rules in ${ch('start:rules', 'rules')} and press the button under them. That gives you **WPG Community**, which opens the whole server.`],
-    ['🎮 ONCE YOU\'RE IN', `Pick your platform (and tell us if you play Wardogs) in ${ch('info:pick-roles', 'pick-roles')}.\nNeed staff? Press the button in ${ch('info:contact-staff', 'contact-staff')}.`],
-    ['📱 THE WPG APP', `Already in WPG Barracks, the WPG app? Type /link in ${ch('app:app-help', 'app-help')} to connect your Discord: your clan, unit, faction and game roles then follow your app profile.`],
-  ]);
-}
 // #pick-roles: the WPG banner on top, the explanations as boxes, the buttons underneath (like the bot's guides).
 const ROLES_COMPONENTS = {
   components: [
@@ -662,7 +652,6 @@ export async function setupModeration({ guild, info, map, roleIds, apply, say })
   await upsertPost(map, 'rules', map.channels?.['start:rules'], await rulesPayload(), apply, say, 'the rules with the entry button in #rules');
   await upsertPost(map, 'roles', map.channels?.['info:pick-roles'], await rolesPanel(), apply, say, 'the role buttons in #pick-roles');
   await upsertPost(map, 'ticket', map.channels?.['info:contact-staff'], await ticketPanel(), apply, say, 'the Contact staff button in #contact-staff');
-  await upsertPost(map, 'welcome', map.channels?.['start:welcome'], await welcomePanel(map), apply, say, 'the welcome in #welcome');
   await setupAutoMod({ guild, map, roleIds, apply, say });
   if ((await flagOn('discord_raise_verification')) && ((info.verification_level ?? 0) < 2 || (info.explicit_content_filter ?? 0) < 2)) {
     say("Raise Discord's own checks: verified email, account older than 5 minutes, scan media from everyone");
@@ -683,6 +672,48 @@ export async function refreshPosts() {
   await setupModeration({ guild, info, map, roleIds: map.roles, apply: true, say: (t) => log.push(t) });
   await saveMap(map);
   return log;
+}
+
+// ---------- Welcome for each new joiner (#welcome) ----------
+// "Welcome to the WPG community, @name!" with their own WPG card (their picture and name, then the three steps) and
+// buttons to the rules, roles, contact staff and the app. Deleted after 48 hours. When lots of people are joining
+// at once (5+ in a minute, or the raid alarm), a short line instead of the card.
+const SITE = () => (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || 'https://wpg-barracks.onrender.com').replace(/\/$/, '');
+const avatarUrl = (u) => (u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=256`
+  : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(u.id) >> 22n) % 6n)}.png`);
+async function welcomeJoiner(c, user) {
+  const channel = c.ch('start:welcome');
+  const link = (k) => (c.ch(k) ? `https://discord.com/channels/${c.guild}/${c.ch(k)}` : null);
+  const buttons = [
+    ['Read the rules', '📜', link('start:rules')], ['Pick roles', '🎮', link('info:pick-roles')],
+    ['Open WPG Barracks', '📱', SITE()], ['Contact staff', '🎫', link('info:contact-staff')],
+  ].filter(([, , url]) => url).map(([label, emoji, url]) => ({ type: 2, style: 5, label, emoji: { name: emoji }, url }));
+  const content = `👋 **Welcome to the WPG community, <@${user.id}>!**`;
+  const busy = raidUntil > Date.now() || joins.filter((x) => x > Date.now() - 60000).length >= 5;
+  let msg;
+  if (busy) {
+    msg = await discordFetch(`/channels/${channel}/messages`, 'POST', {
+      content: `${content} Read the rules in ${c.ch('start:rules') ? `<#${c.ch('start:rules')}>` : '#rules'} and press the button under them to get in.`,
+      allowed_mentions: { users: [user.id] },
+    });
+  } else {
+    const { renderWelcomeCard } = await import('./cards.js');
+    const data = await renderWelcomeCard({ name: user.global_name || user.username || 'New recruit', avatar: avatarUrl(user) });
+    msg = await sendToChannel(channel, {
+      content,
+      files: [{ name: 'welcome.jpg', data, type: 'image/jpeg' }],
+      components: buttons.length ? [{ type: 1, components: buttons }] : [],
+      allowed_mentions: { users: [user.id] },
+    });
+  }
+  if (msg?.id) await q('INSERT INTO discord_join_welcomes (message_id, channel_id, discord_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [msg.id, channel, user.id]);
+}
+export async function clearOldWelcomes() {
+  const old = await q("SELECT message_id, channel_id FROM discord_join_welcomes WHERE posted_at < now() - interval '48 hours' ORDER BY posted_at LIMIT 50");
+  for (const w of old) {
+    await discordFetch(`/channels/${w.channel_id}/messages/${w.message_id}`, 'DELETE').catch(() => {});
+    await q('DELETE FROM discord_join_welcomes WHERE message_id=$1', [w.message_id]);
+  }
 }
 
 // ---------- Live events: mod log, welcome, spam filter, raid alarm ----------
@@ -779,12 +810,7 @@ async function onEvent({ t, d }) {
       if (d.user.bot) return;
       const age = Date.now() - createdAt(d.user.id);
       if (await flagOn('discord_log_joins')) await modLog(c.guild, { color: COLOR.green, title: '📥 Joined', description: `<@${d.user.id}> (${nameOf(d.user)}) · account ${ago(age)} old${age < 7 * 86400000 ? ' ⚠️ new account' : ''}` });
-      if (c.ch('start:welcome') && (await flagOn('discord_welcome_posts'))) {
-        await discordFetch(`/channels/${c.ch('start:welcome')}/messages`, 'POST', {
-          content: `👋 Welcome <@${d.user.id}>! Read the rules in ${c.ch('start:rules') ? `<#${c.ch('start:rules')}>` : '#rules'} and press the button under them to get in.`,
-          allowed_mentions: { users: [d.user.id] },
-        }).catch(() => {});
-      }
+      if (c.ch('start:welcome') && (await flagOn('discord_welcome_posts'))) await welcomeJoiner(c, d.user).catch((e) => console.warn('[discord mod] welcome', e.message));
       // Raid alarm: 10 joins in a minute pauses entry for 15 minutes.
       const now = Date.now();
       joins = joins.filter((x) => x > now - 60000);
@@ -858,15 +884,20 @@ export async function kickStragglers() {
 }
 
 // The panels' look or text changed: edit the posted ones once, on the next start (same messages, buttons keep
-// working). The #welcome intro is posted the first time (the old plain one from Build server is removed).
-const PANELS_VERSION = '4';
+// working). The pinned #welcome panel (and the plain welcome Build server once posted) are removed: each new
+// joiner now gets their own welcome instead.
+const PANELS_VERSION = '5';
 async function refreshPanels() {
   if ((await setting('_roles_panel_version')) === PANELS_VERSION) return;
   const c = await ctx();
   if (!c.guild || !c.map.channels?.['start:rules']) return;
   const map = c.map;
   const say = () => {};
-  if (!map.messages?.welcome && c.ch('start:welcome')) {
+  if (c.ch('start:welcome')) {
+    if (map.messages?.welcome) {
+      await discordFetch(`/channels/${c.ch('start:welcome')}/messages/${map.messages.welcome}`, 'DELETE').catch(() => {});
+      delete map.messages.welcome;
+    }
     const old = await discordFetch(`/channels/${c.ch('start:welcome')}/messages?limit=50`).catch(() => []);
     for (const m of old || []) {
       if (m.author?.bot && !m.interaction_metadata && /^\*\*Welcome to Wasted Prodigy Gamers!\*\*/.test(m.content || '')) {
@@ -874,7 +905,6 @@ async function refreshPanels() {
       }
     }
   }
-  await upsertPost(map, 'welcome', c.ch('start:welcome'), await welcomePanel(map), true, say, '');
   await upsertPost(map, 'rules', c.ch('start:rules'), await rulesPayload(), true, say, '');
   await upsertPost(map, 'roles', c.ch('info:pick-roles'), await rolesPanel(), true, say, '');
   await upsertPost(map, 'ticket', c.ch('info:contact-staff'), await ticketPanel(), true, say, '');
@@ -885,5 +915,6 @@ async function refreshPanels() {
 export function startDiscordMod() {
   bus.on('discord:event', (ev) => onEvent(ev).catch((e) => console.warn('[discord mod]', ev.t, e.message)));
   setTimeout(() => refreshPanels().catch((e) => console.warn('[discord mod] panels', e.message)), 30e3);
+  setInterval(() => clearOldWelcomes().catch((e) => console.warn('[discord mod] old welcomes', e.message)), 15 * 60 * 1000);
   setInterval(() => kickStragglers().catch((e) => console.warn('[discord mod] stragglers', e.message)), 10 * 60 * 1000);
 }

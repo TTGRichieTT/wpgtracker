@@ -177,6 +177,13 @@ export const discordWardogsPlayers = pgTable('discord_wardogs_players', {
   plays: boolean().notNull(),
   answered_at: now(),
 });
+// The welcome the bot posts in #welcome when someone joins: deleted after 48 hours (staff can look back until then).
+export const discordJoinWelcomes = pgTable('discord_join_welcomes', {
+  message_id: text().primaryKey(),
+  channel_id: text().notNull(),
+  discord_id: text().notNull().default(''),
+  posted_at: now(),
+});
 // The weekly welcome (discordwelcome.js): who has been welcomed, so nobody is welcomed twice.
 export const discordWelcomed = pgTable('discord_welcomed', {
   discord_id: text().primaryKey(),

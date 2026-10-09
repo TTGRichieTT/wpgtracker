@@ -997,6 +997,37 @@ export function renderWpgRankUpCard(d) {
   });
 }
 
+// ---------- Welcome (discordmod.js: someone joins the Discord) ----------
+// d: { name, avatar }: the newcomer's Discord name and picture, then the three steps to get going.
+export function renderWelcomeCard(d) {
+  const steps = [
+    ['1', 'READ THE RULES', 'Press the button under the rules to get in'],
+    ['2', 'PICK YOUR ROLES', 'Your platform, and whether you play Wardogs'],
+    ['3', 'JOIN THE APP', 'Your stats, medals, badges and Combat Command'],
+  ];
+  return frame('WELCOME', 76 + 250 + 20, async (g, top) => {
+    const y = await playerStrip(g, top, upper(d.name || 'NEW RECRUIT'), d.avatar, null);
+    bigValue(g, 'WELCOME TO THE WPG COMMUNITY', W / 2, y + 30, 1400, { size: 44, color: CYAN, font: LABEL_FONT, weight: 700, align: 'center' });
+    const colW = (1480 - 2 * 16) / 3;
+    steps.forEach(([n, t, sub], i) => {
+      const x = 28 + i * (colW + 16);
+      panel(g, x, y + 70, colW, 170);
+      // The step number in a gold ring.
+      const cx = x + 70;
+      const cy = y + 155;
+      g.beginPath(); g.arc(cx, cy, 40, 0, Math.PI * 2); g.fillStyle = '#0b1a2b'; g.fill();
+      g.lineWidth = 4; g.strokeStyle = AMBER; g.stroke();
+      bigValue(g, n, cx, cy + 2, 60, { size: 46, color: AMBER, font: LABEL_FONT, weight: 700, align: 'center' });
+      bigValue(g, t, x + 130, y + 128, colW - 150, { size: 38, color: WHITE, font: LABEL_FONT, weight: 700 });
+      g.font = `600 22px ${VALUE_FONT}`;
+      g.fillStyle = MUTED;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      wrapLines(g, sub, colW - 150, 2).forEach((line, k) => g.fillText(line, x + 130, y + 176 + k * 28));
+    });
+  });
+}
+
 // ---------- Big match win (steambot.js: live match money) ----------
 // d: { name, avatar, frame, money, best (true: their biggest ever), day: { total, matches } }
 export function renderBigWinCard(d) {
