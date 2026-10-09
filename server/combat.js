@@ -275,6 +275,7 @@ async function postMember(userId, unitId, roleId, byId) {
     [userId, unit.id, r.id, byId],
   );
   bus.emit('combat:changed');
+  bus.emit('stats:changed', userId); // badges for being posted (e.g. WPG Member)
   return { unit, role: r };
 }
 

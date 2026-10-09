@@ -67,6 +67,7 @@ export const STATS = {
   tournament_wins: { label: 'Official WPG tournaments won', scope: 'all', source: WPG },
   is_staff: { label: 'WPG staff now (moderator or admin)', scope: 'all', source: WPG, yesno: true },
   is_admin: { label: 'WPG administrator now', scope: 'all', source: WPG, yesno: true },
+  combat_posted: { label: 'Posted in Combat Command (any unit and role)', scope: 'all', source: WPG, yesno: true },
   // WPG Barracks.
   founding: { label: 'Joined in Season 1', scope: 'all', source: APP, yesno: true },
   days_in_wpg: { label: 'Days in WPG Barracks', scope: 'all', source: APP, unit: 'days' },
@@ -213,6 +214,7 @@ export async function statsFor(user, season) {
     tournament_wins: events?.won || 0,
     is_staff: user.status === 'active' && (user.role === 'mod' || user.role === 'admin') ? 1 : 0,
     is_admin: user.status === 'active' && user.role === 'admin' ? 1 : 0,
+    combat_posted: posting ? 1 : 0,
     clan_member: isWpgMember(user) ? 1 : 0,
     unit: isWpgMember(user) && posting ? 1 : 0,
     unitInfo: posting || null,
