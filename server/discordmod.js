@@ -547,12 +547,36 @@ export async function handleComponent(body) {
 }
 
 // ---------- Set up during Build server: rules post, panels, AutoMod, verification level ----------
+// The bot's panels (#welcome, #rules, #pick-roles, #contact-staff): the WPG banner on top, the text as boxes, the
+// buttons underneath, like the bot's guides.
+async function withBanner(title, boxes, components) {
+  const { renderBanner } = await import('./cards.js');
+  return {
+    content: '',
+    files: [{ name: 'banner.jpg', data: await renderBanner(title), type: 'image/jpeg' }],
+    embeds: [{ color: COLOR.blue, image: { url: 'attachment://banner.jpg' } }, ...boxes.map(([t, d, footer]) => ({ color: COLOR.blue, title: t, description: String(d).slice(0, 4000), ...(footer ? { footer: { text: footer } } : {}) }))],
+    ...(components ? { components } : {}),
+  };
+}
 async function rulesPayload() {
   const rules = String((await setting('discord_rules')) || '').slice(0, 3900);
-  return {
-    embeds: [{ color: COLOR.blue, title: '📜 WPG server rules', description: rules, footer: { text: 'Press the button below once you have read them.' } }],
-    components: [{ type: 1, components: [{ type: 2, style: 3, label: "I've read the rules, let me in", emoji: { name: '✅' }, custom_id: 'wpg:enter' }] }],
-  };
+  const how = (await entryOn())
+    ? '**1.** Press **I\'ve read the rules, let me in** below.\n**2.** Type the short code it shows you and answer one question about the rules.\n**3.** You\'re in: you get **WPG Community** and the whole server opens up.'
+    : 'Press **I\'ve read the rules, let me in** below: you get **WPG Community** and the whole server opens up.';
+  return withBanner('SERVER RULES', [
+    ['📜 WPG SERVER RULES', rules || 'Be respectful, no cheating, no spam.'],
+    ['✅ HOW TO GET IN', how, 'Breaking the rules can mean a warning, a timeout, a kick or a ban.'],
+  ], [{ type: 1, components: [{ type: 2, style: 3, label: "I've read the rules, let me in", emoji: { name: '✅' }, custom_id: 'wpg:enter' }] }]);
+}
+// #welcome: the first thing new people see (they can only see #welcome and #rules until they get in).
+async function welcomePanel(map) {
+  const ch = (k, name) => (map.channels?.[k] ? `<#${map.channels[k]}>` : `#${name}`);
+  return withBanner('WELCOME', [
+    ['🐺 WELCOME TO WASTED PRODIGY GAMERS', 'A community of real players and real squads in **Wardogs** and more. Glad to have you here!'],
+    ['✅ GETTING IN', `Read the rules in ${ch('start:rules', 'rules')} and press the button under them. That gives you **WPG Community**, which opens the whole server.`],
+    ['🎮 ONCE YOU\'RE IN', `Pick your platform (and tell us if you play Wardogs) in ${ch('info:pick-roles', 'pick-roles')}.\nNeed staff? Press the button in ${ch('info:contact-staff', 'contact-staff')}.`],
+    ['📱 THE WPG APP', `Already in WPG Barracks, the WPG app? Type /link in ${ch('app:app-help', 'app-help')} to connect your Discord: your clan, unit, faction and game roles then follow your app profile.`],
+  ]);
 }
 // #pick-roles: the WPG banner on top, the explanations as boxes, the buttons underneath (like the bot's guides).
 const ROLES_COMPONENTS = {
@@ -562,25 +586,19 @@ const ROLES_COMPONENTS = {
   ],
 };
 async function rolesPanel() {
-  const { renderBanner } = await import('./cards.js');
-  const box = (title, description) => ({ color: COLOR.blue, title, description });
-  return {
-    content: '',
-    files: [{ name: 'banner.jpg', data: await renderBanner('PICK YOUR ROLES'), type: 'image/jpeg' }],
-    embeds: [
-      { color: COLOR.blue, image: { url: 'attachment://banner.jpg' } },
-      box('🎮 PLATFORMS', 'Tap **PC**, **Xbox**, **PlayStation** or **Switch** to add it.\nTap it again to remove it.'),
-      box('🐺 WARDOGS PLAYER', 'Tap if you play Wardogs: you get the **Wardogs** role. Tap again to remove it.\nYou also get it automatically once you /link the WPG app with 5+ hours of Wardogs on Steam.'),
-      box('🔞 18+', 'Opens the 18+ chat. **Only take it if you are 18 or older.**'),
-      box('🎯 GAME ROLES', 'Come automatically from your Steam library once you /link the WPG app.'),
-    ],
-    ...ROLES_COMPONENTS,
-  };
+  return withBanner('PICK YOUR ROLES', [
+    ['🎮 PLATFORMS', 'Tap **PC**, **Xbox**, **PlayStation** or **Switch** to add it.\nTap it again to remove it.'],
+    ['🐺 WARDOGS PLAYER', 'Tap if you play Wardogs: you get the **Wardogs** role. Tap again to remove it.\nYou also get it automatically once you /link the WPG app with 5+ hours of Wardogs on Steam.'],
+    ['🔞 18+', 'Opens the 18+ chat. **Only take it if you are 18 or older.**'],
+    ['🎯 GAME ROLES', 'Come automatically from your Steam library once you /link the WPG app.'],
+  ], ROLES_COMPONENTS.components);
 }
-const TICKET_PANEL = {
-  embeds: [{ color: COLOR.blue, title: '🎫 Contact staff', description: 'Need help, want to report someone or disagree with a decision? Press the button for a private channel with WPG staff.' }],
-  components: [{ type: 1, components: [{ type: 2, style: 1, label: 'Contact staff', emoji: { name: '🎫' }, custom_id: 'wpg:ticket' }] }],
-};
+async function ticketPanel() {
+  return withBanner('CONTACT STAFF', [
+    ['🎫 NEED STAFF?', 'Need help, want to report someone or disagree with a decision? Press **Contact staff** below for a private room with WPG staff.'],
+    ['🔒 PRIVATE', 'Only you and WPG staff can see your ticket. Staff close it once it\'s sorted.'],
+  ], [{ type: 1, components: [{ type: 2, style: 1, label: 'Contact staff', emoji: { name: '🎫' }, custom_id: 'wpg:ticket' }] }]);
+}
 
 // Posts (or updates) one of the bot's own messages, remembering it in the server map.
 async function upsertPost(map, key, channel, payload, apply, say, label) {
@@ -643,7 +661,8 @@ async function setupAutoMod({ guild, map, roleIds, apply, say }) {
 export async function setupModeration({ guild, info, map, roleIds, apply, say }) {
   await upsertPost(map, 'rules', map.channels?.['start:rules'], await rulesPayload(), apply, say, 'the rules with the entry button in #rules');
   await upsertPost(map, 'roles', map.channels?.['info:pick-roles'], await rolesPanel(), apply, say, 'the role buttons in #pick-roles');
-  await upsertPost(map, 'ticket', map.channels?.['info:contact-staff'], TICKET_PANEL, apply, say, 'the Contact staff button in #contact-staff');
+  await upsertPost(map, 'ticket', map.channels?.['info:contact-staff'], await ticketPanel(), apply, say, 'the Contact staff button in #contact-staff');
+  await upsertPost(map, 'welcome', map.channels?.['start:welcome'], await welcomePanel(map), apply, say, 'the welcome in #welcome');
   await setupAutoMod({ guild, map, roleIds, apply, say });
   if ((await flagOn('discord_raise_verification')) && ((info.verification_level ?? 0) < 2 || (info.explicit_content_filter ?? 0) < 2)) {
     say("Raise Discord's own checks: verified email, account older than 5 minutes, scan media from everyone");
@@ -838,19 +857,33 @@ export async function kickStragglers() {
   return n;
 }
 
-// The #pick-roles panel changed (Wardogs player button; then the WPG banner look): edit the posted one once, on the next start.
-const ROLES_PANEL_VERSION = '3';
-async function refreshRolesPanel() {
-  if ((await setting('_roles_panel_version')) === ROLES_PANEL_VERSION) return;
+// The panels' look or text changed: edit the posted ones once, on the next start (same messages, buttons keep
+// working). The #welcome intro is posted the first time (the old plain one from Build server is removed).
+const PANELS_VERSION = '4';
+async function refreshPanels() {
+  if ((await setting('_roles_panel_version')) === PANELS_VERSION) return;
   const c = await ctx();
-  const id = c.map.messages?.roles;
-  if (!c.guild || !id || !c.ch('info:pick-roles')) return;
-  await editMessage(c.ch('info:pick-roles'), id, await rolesPanel());
-  await saveSetting('_roles_panel_version', ROLES_PANEL_VERSION);
+  if (!c.guild || !c.map.channels?.['start:rules']) return;
+  const map = c.map;
+  const say = () => {};
+  if (!map.messages?.welcome && c.ch('start:welcome')) {
+    const old = await discordFetch(`/channels/${c.ch('start:welcome')}/messages?limit=50`).catch(() => []);
+    for (const m of old || []) {
+      if (m.author?.bot && !m.interaction_metadata && /^\*\*Welcome to Wasted Prodigy Gamers!\*\*/.test(m.content || '')) {
+        await discordFetch(`/channels/${c.ch('start:welcome')}/messages/${m.id}`, 'DELETE').catch(() => {});
+      }
+    }
+  }
+  await upsertPost(map, 'welcome', c.ch('start:welcome'), await welcomePanel(map), true, say, '');
+  await upsertPost(map, 'rules', c.ch('start:rules'), await rulesPayload(), true, say, '');
+  await upsertPost(map, 'roles', c.ch('info:pick-roles'), await rolesPanel(), true, say, '');
+  await upsertPost(map, 'ticket', c.ch('info:contact-staff'), await ticketPanel(), true, say, '');
+  await saveMap(map);
+  await saveSetting('_roles_panel_version', PANELS_VERSION);
 }
 
 export function startDiscordMod() {
   bus.on('discord:event', (ev) => onEvent(ev).catch((e) => console.warn('[discord mod]', ev.t, e.message)));
-  setTimeout(() => refreshRolesPanel().catch((e) => console.warn('[discord mod] roles panel', e.message)), 30e3);
+  setTimeout(() => refreshPanels().catch((e) => console.warn('[discord mod] panels', e.message)), 30e3);
   setInterval(() => kickStragglers().catch((e) => console.warn('[discord mod] stragglers', e.message)), 10 * 60 * 1000);
 }
