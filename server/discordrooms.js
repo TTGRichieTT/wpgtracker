@@ -457,7 +457,7 @@ const KINDS = {
   },
   custom: {
     label: 'Your own post',
-    help: 'Your own title and text, in as many boxes as you like (each shows as its own box on Discord). Blank lines stay as gaps. "name - text" lines show the name in blue.',
+    help: 'Your own title and text, in as many boxes as you like (each shows as its own box on Discord). Blank lines stay as gaps. @Role and #room become real mentions. "name - text" lines show the name in blue.',
     // The text: what comes first is the opening box; "## Heading" starts a box with a heading, "---" one without.
     // Blank lines are kept (as one gap).
     build: async (_room, p) => {
@@ -481,6 +481,54 @@ const KINDS = {
     },
   },
 };
+
+// @Role and #room in a post's text become real Discord mentions: "@WPG Community" → the role (clickable, and pinged
+// when the post asks for it), "#pick-roles" → a link to the room. Names are matched without emoji, brackets, dashes
+// or capitals ("#roles" finds "『🎮』pick-roles" when it's the only room ending that way).
+const plainName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9+]/g, '');
+let rolesCache = { at: 0, list: [] };
+async function guildRoles() {
+  if (Date.now() - rolesCache.at < 5 * 60e3) return rolesCache.list;
+  const guild = await guildId();
+  const list = guild ? await discordFetch(`/guilds/${guild}/roles`).catch(() => []) : [];
+  rolesCache = { at: Date.now(), list: (list || []).filter((r) => r.id !== guild && !r.managed && plainName(r.name)) };
+  return rolesCache.list;
+}
+export async function mentionTools() {
+  const guild = await guildId();
+  const rooms = guild ? await q('SELECT channel_id, name FROM discord_rooms WHERE guild_id=$1 AND type <> 4', [guild]) : [];
+  const roles = (await guildRoles()).slice().sort((a, b) => b.name.length - a.name.length);
+  const names = {};
+  const pinged = new Set();
+  const findRoom = (word) => {
+    const k = plainName(word);
+    if (!k) return null;
+    const exact = rooms.filter((r) => plainName(r.name) === k);
+    if (exact.length) return exact[0];
+    const ends = rooms.filter((r) => plainName(r.name).endsWith(k));
+    return ends.length === 1 ? ends[0] : null;
+  };
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const convert = (text) => {
+    let t = String(text || '');
+    for (const r of roles) {
+      const re = new RegExp(`@${esc(r.name.trim())}(?![\\w])`, 'gi');
+      if (re.test(t)) {
+        t = t.replace(re, `<@&${r.id}>`);
+        pinged.add(r.id);
+        names[r.id] = `@${r.name}`;
+      }
+    }
+    t = t.replace(/(^|[\s(])#([a-z0-9][\w-]*)/gi, (m, pre, word) => {
+      const room = findRoom(word);
+      if (!room) return m;
+      names[room.channel_id] = `#${room.name}`;
+      return `${pre}<#${room.channel_id}>`;
+    });
+    return t;
+  };
+  return { convert, names, pinged };
+}
 
 // A post is the WPG banner (header art with its title) and the text as Discord embeds underneath: real text, so it reads
 // at Discord's normal size on any screen (a tall picture gets shrunk to fit Discord's preview). Commands are clickable.
@@ -517,17 +565,27 @@ async function postPayload(p) {
   const room = await one('SELECT * FROM discord_rooms WHERE channel_id=$1', [p.channel_id]);
   const kind = KINDS[p.kind] || KINDS.custom;
   const d = await kind.build(room, p);
+  // @Role and #room mentions in the text.
+  const m = await mentionTools().catch(() => null);
+  if (m) {
+    d.intro = m.convert(d.intro);
+    for (const s of d.sections) s.rows = s.rows.map((r) => ({ ...r, text: m.convert(r.text) }));
+  }
+  const pingRoles = p.ping && m ? [...m.pinged] : [];
+  const ping = pingRoles.length ? { content: pingRoles.map((id) => `<@&${id}>`).join(' '), allowed_mentions: { parse: [], roles: pingRoles } } : {};
   const ids = await commandIds().catch(() => new Map());
   const buttons = [{ type: 1, components: [{ type: 2, style: 5, label: 'Open WPG Barracks', url: SITE() }] }];
-  const hash = crypto.createHash('sha1').update(JSON.stringify([p.style, d, [...ids]])).digest('hex');
+  const hash = crypto.createHash('sha1').update(JSON.stringify([p.style, d, [...ids], pingRoles])).digest('hex');
+  const names = m?.names || {};
   if (p.style === 'text') {
     const cmd = (name) => (name.startsWith('/') && ids.get(name.slice(1)) ? `</${name.slice(1)}:${ids.get(name.slice(1))}>` : `**${name}**`);
     const lines = [`## ${d.heading}`, d.intro || null, ...d.sections.flatMap((s) => [s.title ? `### ${s.title}` : '', ...s.rows.map((r) => (r.name ? `${cmd(r.name)} — ${r.text}` : r.text))]), ...(d.footer || []).map((f) => `-# ${f}`)].filter((x) => x !== undefined && x !== null);
-    return { hash, payload: { content: lines.join('\n').slice(0, 2000), components: buttons } };
+    const body = lines.join('\n');
+    return { hash, names, payload: { ...ping, content: `${ping.content ? `${ping.content}\n` : ''}${body}`.slice(0, 2000), components: buttons } };
   }
   const { renderBanner } = await import('./cards.js');
   const data = await renderBanner(d.heading);
-  return { hash, payload: { content: '', embeds: embedsFor(d, ids), files: [{ name: 'banner.jpg', data, type: 'image/jpeg' }], components: buttons } };
+  return { hash, names, payload: { content: '', ...ping, embeds: embedsFor(d, ids), files: [{ name: 'banner.jpg', data, type: 'image/jpeg' }], components: buttons } };
 }
 // Posts it (or edits the message it already has) and pins it. force: post again even if nothing changed.
 export async function publishPost(id, { force = false } = {}) {
@@ -555,7 +613,7 @@ export async function savePost(id, b, userId) {
   const kind = KINDS[b.kind] ? b.kind : 'custom';
   const room = await one('SELECT * FROM discord_rooms WHERE channel_id=$1', [String(b.channel_id || '')]);
   if (!room || !TEXT_TYPES.has(room.type)) throw new Error('Pick a text room.');
-  const vals = [String(b.channel_id), kind, String(b.title || '').slice(0, 60), String(b.body || '').slice(0, 4000), b.style === 'text' ? 'text' : 'card', b.pin !== false];
+  const vals = [String(b.channel_id), kind, String(b.title || '').slice(0, 60), String(b.body || '').slice(0, 4000), b.style === 'text' ? 'text' : 'card', b.pin !== false, !!b.ping];
   if (kind === 'custom' && !vals[3].trim()) throw new Error('Write the text first.');
   let row;
   if (id) {
@@ -563,10 +621,10 @@ export async function savePost(id, b, userId) {
     if (!old) throw new Error('Post not found.');
     // Moved to another room: the old message is removed and it's posted again in the new one.
     if (old.channel_id !== vals[0] && old.message_id) await discordFetch(`/channels/${old.channel_id}/messages/${old.message_id}`, 'DELETE').catch(() => {});
-    row = await one(`UPDATE discord_bot_posts SET channel_id=$2, kind=$3, title=$4, body=$5, style=$6, pin=$7,
+    row = await one(`UPDATE discord_bot_posts SET channel_id=$2, kind=$3, title=$4, body=$5, style=$6, pin=$7, ping=$8,
       message_id=CASE WHEN channel_id=$2 THEN message_id ELSE '' END WHERE id=$1 RETURNING *`, [id, ...vals]);
   } else {
-    row = await one('INSERT INTO discord_bot_posts (channel_id, kind, title, body, style, pin, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [...vals, userId]);
+    row = await one('INSERT INTO discord_bot_posts (channel_id, kind, title, body, style, pin, ping, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [...vals, userId]);
   }
   return { id: row.id, ...(await publishPost(row.id, { force: true })) };
 }
@@ -575,8 +633,8 @@ export async function deletePost(id) {
   if (p?.message_id) await discordFetch(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE').catch(() => {});
 }
 export async function previewPost(b) {
-  const { payload } = await postPayload({ channel_id: String(b.channel_id || ''), kind: KINDS[b.kind] ? b.kind : 'custom', title: b.title || '', body: b.body || '', style: b.style === 'text' ? 'text' : 'card' });
-  return payload;
+  const { payload, names } = await postPayload({ channel_id: String(b.channel_id || ''), kind: KINDS[b.kind] ? b.kind : 'custom', title: b.title || '', body: b.body || '', style: b.style === 'text' ? 'text' : 'card', ping: !!b.ping });
+  return { ...payload, names };
 }
 // Keeps every post up to date (only edits the ones whose content changed, e.g. a new command or new access).
 let refreshing = null;
@@ -630,12 +688,28 @@ export async function shownVoiceRooms() {
   return q('SELECT channel_id, name, position, parent_id FROM discord_rooms WHERE show_in_app = true AND type = ANY($1) ORDER BY position, name', [[...VOICE_TYPES]]);
 }
 
+// One-off: the "Discord roles" announcement in #announcements was posted before @Role / #room mentions worked. On the
+// next start it's deleted and posted again fresh with its roles pinged (an edit can't ping), then never again.
+async function repostRolesAnnouncement() {
+  const { setting } = await import('./db.js');
+  if (await setting('_repost_roles_announcement')) return;
+  const posts = await q(`SELECT id, channel_id, message_id FROM discord_bot_posts WHERE channel_id='1216495498035200102' AND kind='custom'
+                          AND (title ILIKE '%discord roles%' OR body ILIKE '%@wardogs%')`);
+  for (const p of posts) {
+    if (p.message_id) await discordFetch(`/channels/${p.channel_id}/messages/${p.message_id}`, 'DELETE').catch(() => {});
+    await q("UPDATE discord_bot_posts SET message_id='', ping=true WHERE id=$1", [p.id]);
+    await publishPost(p.id, { force: true });
+  }
+  await q("INSERT INTO settings (key, value) VALUES ('_repost_roles_announcement', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [`${posts.length} reposted ${new Date().toISOString()}`]);
+}
+
 export function startDiscordRooms() {
   if (!botReady()) return;
   setTimeout(async () => {
     await syncRooms().catch((e) => console.warn('[rooms] sync', e.message));
     await firstPosts().catch((e) => console.warn('[rooms] first posts', e.message));
     await firstShown().catch((e) => console.warn('[rooms] first shown', e.message));
+    await repostRolesAnnouncement().catch((e) => console.warn('[rooms] repost announcement', e.message));
     refreshPosts();
   }, 20e3);
   setInterval(() => sweepRooms().catch((e) => console.warn('[rooms] clear', e.message)), 60e3);

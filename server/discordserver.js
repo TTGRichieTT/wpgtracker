@@ -142,10 +142,6 @@ function channelSpec(units, command) {
   ];
 }
 
-const WELCOME = `**Welcome to Wasted Prodigy Gamers!** 🐺
-
-Read the rules in #rules and press the button under them to get in: that gives you the **WPG Community** role, which opens the server.
-Already in the WPG app? Type **/link** in #app-help afterwards to connect your Discord. Your clan, unit, faction and game roles then follow your app profile automatically.`;
 
 // ---------- Build (preview or for real) ----------
 const building = { running: false, log: [], done: null, error: null, at: null };
@@ -267,7 +263,6 @@ export async function buildServer({ apply = false, usePosts = false, tidy = fals
             if (ch.type !== NEWS) throw e;
             return discordFetch(`/guilds/${guild}/channels`, 'POST', { ...body, type: TEXT });
           });
-          if (ch.welcome) await discordFetch(`/channels/${found.id}/messages`, 'POST', { content: WELCOME }).catch(() => {});
         }
       } else if (tidy) {
         await replaceOverwrites(found, ow, apply, say, botRoles);

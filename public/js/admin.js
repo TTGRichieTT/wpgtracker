@@ -766,11 +766,14 @@ async function roomsPanel(box) {
 }
 
 // How a bot post will look on Discord: the banner, then each text box (blue edge) or the plain message.
+let previewNames = {};
 function discordMd(t) {
-  return esc(t).replace(/&lt;@(\d+)&gt;/g, '<span class="dp-cmd">@member</span>').replace(/&lt;#(\d+)&gt;/g, '<span class="dp-cmd">#room</span>').replace(/&lt;\/([\w-]+):\d+&gt;/g, '<span class="dp-cmd">/$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+  return esc(t).replace(/&lt;@&amp;(\d+)&gt;/g, (m, id) => `<span class="dp-cmd">${esc(previewNames[id] || '@role')}</span>`)
+    .replace(/&lt;@(\d+)&gt;/g, '<span class="dp-cmd">@member</span>').replace(/&lt;#(\d+)&gt;/g, (m, id) => `<span class="dp-cmd">${esc(previewNames[id] || '#room')}</span>`).replace(/&lt;\/([\w-]+):\d+&gt;/g, '<span class="dp-cmd">/$1</span>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/^### (.+)$/gm, '<b>$1</b>').replace(/^## (.+)$/gm, '<b style="font-size:1.15em">$1</b>').replace(/^-# (.+)$/gm, '<span class="muted small">$1</span>').replace(/\n/g, '<br>');
 }
 function discordPreview(r) {
+  previewNames = r.names || {};
   if (!r.embeds?.length) return `<div class="dp-msg">${discordMd(r.text || '')}</div>`;
   return `<div class="dp-msg">${r.text ? `<div style="margin-bottom:6px">${discordMd(r.text).replace(/&lt;@\d+&gt;/g, '<span class="dp-cmd">@member</span>')}</div>` : ''}${r.embeds.map((e, i) => `<div class="dp-embed" style="--ec:#${Number(e.color || 0x33d1ff).toString(16).padStart(6, '0')}">
       ${e.title ? `<div class="dp-title">${esc(e.title)}</div>` : ''}
@@ -860,13 +863,14 @@ async function botPostsPanel(box) {
       <p class="muted small" id="bpHelp" style="margin:0"></p>
       <label class="field" data-custom><span>Title (on the picture)</span><input type="text" name="title" maxlength="60" value="${esc(v.title)}"></label>
       <div class="field" data-custom><span style="display:block;font:600 13px var(--head);color:var(--accent2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px">Boxes</span>
-        <p class="muted small" style="margin:0 0 6px">Each box shows as its own box on Discord. Blank lines stay as gaps. A line like "Login - Use Steam" shows "Login" in blue.</p>
+        <p class="muted small" style="margin:0 0 6px">Each box shows as its own box on Discord. Blank lines stay as gaps. Write <b>@Role Name</b> or <b>#room-name</b> and they become real mentions (check them in Preview). A line like "Login - Use Steam" shows "Login" in blue.</p>
         <div id="bpBoxes" class="stack" style="gap:10px"></div>
         <button type="button" class="btn small" id="bpAddBox" style="margin-top:8px">+ Add box</button></div>
       <div class="row" style="gap:16px">
         <label class="check small"><input type="radio" name="style" value="card"${v.style !== 'text' ? ' checked' : ''}> WPG banner + text boxes</label>
         <label class="check small"><input type="radio" name="style" value="text"${v.style === 'text' ? ' checked' : ''}> Plain text</label>
         <label class="check small"><input type="checkbox" name="pin"${v.pin !== false ? ' checked' : ''}> Pin it</label>
+        <label class="check small" title="Puts the roles you @mention at the top so Discord notifies them (only when it's first posted, not on edits)"><input type="checkbox" name="ping"${v.ping ? ' checked' : ''}> Ping the roles you @mention</label>
       </div>
       <div id="bpPreview"></div>
       <div class="row"><button type="button" class="btn" id="bpPrev">Preview</button><button class="btn primary">${p ? 'Save & update on Discord' : 'Post on Discord'}</button></div>
@@ -902,7 +906,7 @@ async function botPostsPanel(box) {
     };
     f.kind.onchange = sync;
     sync();
-    const body = () => ({ channel_id: f.channel_id.value, kind: f.kind.value, title: f.title.value, body: boxesText(), style: f.style.value, pin: f.pin.checked });
+    const body = () => ({ channel_id: f.channel_id.value, kind: f.kind.value, title: f.title.value, body: boxesText(), style: f.style.value, pin: f.pin.checked, ping: f.ping.checked });
     m.el.querySelector('#bpPrev').onclick = async () => {
       const out = m.el.querySelector('#bpPreview');
       out.innerHTML = '<div class="spinner"></div>';

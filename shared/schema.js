@@ -191,6 +191,7 @@ export const discordBotPosts = pgTable('discord_bot_posts', {
   body: text().notNull().default(''),
   style: text().notNull().default('card'), // card (picture in the WPG artwork) | text
   pin: boolean().notNull().default(true),
+  ping: boolean().notNull().default(false), // ping the roles @mentioned in it when it's first posted
   message_id: text().notNull().default(''),
   hash: text().notNull().default(''),
   problem: text().notNull().default(''),

@@ -109,8 +109,11 @@ export async function welcomePayload(people, s) {
   const mentions = `${pinged.map((id) => `<@${id}>`).join(' ')}${more > 0 ? ` …and ${more} more` : ''}`;
   const cmds = await commandIds().catch(() => new Map());
   // {mentions} and {count} filled in; "/link" and the other commands written in the text are clickable.
-  const fill = (t) => String(t || '').replaceAll('{mentions}', mentions).replaceAll('{count}', String(ids.length))
-    .replace(/(^|\s)\/([a-z]+)\b/g, (m, pre, n) => (cmds.get(n) ? `${pre}</${n}:${cmds.get(n)}>` : m));
+  const { mentionTools } = await import('./discordrooms.js');
+  const m = await mentionTools().catch(() => null);
+  // @Role and #room written in the text become real mentions (shown, not pinged).
+  const fill = (t) => (m ? m.convert : (x) => x)(String(t || '').replaceAll('{mentions}', mentions).replaceAll('{count}', String(ids.length))
+    .replace(/(^|\s)\/([a-z]+)\b/g, (x, pre, n) => (cmds.get(n) ? `${pre}</${n}:${cmds.get(n)}>` : x)));
   let content = fill(s.weekly_welcome_title);
   if (!s.weekly_welcome_title.includes('{mentions}')) content = `${mentions}\n${content}`;
   const setup = await setupRoom();
