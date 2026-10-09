@@ -11,6 +11,9 @@
 //    already qualifies (no Discord flood); after that each unlock is announced (one post for several at once).
 // Also here: the verified WPG join date (Admin → Members) and official events / tournaments (Admin → Events).
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { q, one, audit, setting } from './db.js';
 import { bus } from './bus.js';
@@ -225,6 +228,7 @@ export async function seedAchievements() {
     await giveAutoMedalsToAll().catch(() => {});
   }
   await matchBadgeSheet().catch((e) => console.warn('[badges] sheet', e.message));
+  await attachBundledArt().catch((e) => console.warn('[badges] bundled art', e.message));
   await pointsForOlderMedals().catch((e) => console.warn('[badges] older medal points', e.message));
   return added;
 }
@@ -573,6 +577,69 @@ export async function saveBadgeArt(dataUrl) {
   const row = await one('INSERT INTO badge_images (mime, data) VALUES ($1,$2) RETURNING id', [mime, out.toString('base64')]);
   return { id: row.id, url: imageUrl(row.id), notes };
 }
+// ---------- Animated artwork that ships with the app (server/assets/badges) ----------
+// On start, each picture is put on its badge once: the sheet badges by their name (file name = badge name), and the
+// WPG badges staff made themselves by a clear name match. A badge that already has an animated picture is left alone;
+// one with no picture or a still one gets the animated one (the still is removed if nothing else uses it).
+// Each file is only ever applied once, so a picture staff change afterwards stays as they set it.
+const BUNDLED_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'assets', 'badges');
+const OWN_ART = [
+  ['wpg-admin', (n) => ['admin', 'wpg admin', 'administrator', 'wpg administrator'].includes(n)],
+  ['wpg-moderator', (n) => ['moderator', 'wpg moderator', 'mod'].includes(n)],
+  ['wpg-member', (n) => ['member', 'wpg member'].includes(n)],
+  ['wpg-donation-bot-hosting', (n) => n.includes('donation') && (n.includes('bot') || n.includes('hosting'))],
+  ['wpg-donation-wardogs-server', (n) => n.includes('donation') && (n.includes('wardogs') || n.includes('server'))],
+  ['wpg-first-friend', (n) => n.includes('first friend')],
+  ['wpg-first-sign-up', (n) => n.includes('sign up') || n.includes('signup') || n.includes('sign-up')],
+  ['wpg-discord-nitro', (n) => n.includes('nitro') && n.includes('supporter') && !n.includes('first')],
+  ['wpg-first-time-nitro', (n) => n.includes('first time') && n.includes('nitro')],
+];
+// Animated: a GIF with more than one frame, or a WebP with an animation chunk.
+export function isAnimated(buf) {
+  if (!buf) return false;
+  if (buf.subarray(0, 3).toString('latin1') === 'GIF') {
+    let frames = 0;
+    for (let i = buf.indexOf(0x21); i !== -1 && frames < 2; i = buf.indexOf(0x21, i + 1)) if (buf[i + 1] === 0xf9 && buf[i + 2] === 0x04) frames++;
+    return frames > 1;
+  }
+  return buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.includes(Buffer.from('ANIM'));
+}
+export async function attachBundledArt() {
+  if (!fs.existsSync(BUNDLED_DIR)) return 0;
+  const row = await one("SELECT value FROM settings WHERE key='_bundled_badge_art'");
+  let done = [];
+  try { done = JSON.parse(row?.value || '[]'); } catch { done = []; }
+  const doneSet = new Set(done);
+  const badges = await q('SELECT id, key, name, image_id FROM badges');
+  const jobs = [];
+  for (const f of fs.readdirSync(BUNDLED_DIR).filter((x) => x.endsWith('.gif'))) {
+    const base = f.replace(/\.gif$/, '');
+    for (const b of badges.filter((x) => x.key === base || slug(x.name) === base)) jobs.push({ tag: `sheet:${base}`, file: path.join(BUNDLED_DIR, f), b });
+  }
+  const ownDir = path.join(BUNDLED_DIR, 'own');
+  for (const [file, match] of OWN_ART) {
+    const p = path.join(ownDir, `${file}.gif`);
+    if (!fs.existsSync(p)) continue;
+    for (const b of badges.filter((x) => match(String(x.name || '').toLowerCase().trim()))) jobs.push({ tag: `own:${file}:${b.id}`, file: p, b });
+  }
+  let n = 0;
+  for (const j of jobs) {
+    if (doneSet.has(j.tag)) continue;
+    doneSet.add(j.tag);
+    const old = j.b.image_id ? await one('SELECT id, data FROM badge_images WHERE id=$1', [j.b.image_id]) : null;
+    if (old && isAnimated(Buffer.from(old.data, 'base64'))) continue; // already animated: keep it
+    const buf = fs.readFileSync(j.file);
+    const img = await one('INSERT INTO badge_images (mime, data) VALUES ($1,$2) RETURNING id', ['image/gif', buf.toString('base64')]);
+    await q('UPDATE badges SET image_id=$2 WHERE id=$1', [j.b.id, img.id]);
+    j.b.image_id = img.id;
+    if (old && !(await one('SELECT 1 FROM badges WHERE image_id=$1', [old.id]))) await q('DELETE FROM badge_images WHERE id=$1', [old.id]);
+    n++;
+  }
+  await q("INSERT INTO settings (key, value) VALUES ('_bundled_badge_art', $1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", [JSON.stringify([...doneSet])]);
+  if (n) { clearBadges(); imageCache.clear(); console.log(`[badges] Put animated pictures on ${n} badges`); }
+  return n;
+}
+
 const imageCache = new Map();
 async function badgeImage(id) {
   if (imageCache.has(id)) return imageCache.get(id);
