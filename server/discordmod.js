@@ -11,7 +11,7 @@
 //  - Extras: welcome posts, #pick-roles buttons (platforms, 18+) and #contact-staff tickets (private channels).
 import { q, one, setting } from './db.js';
 import { bus } from './bus.js';
-import { discordFetch, sendToChannel } from './discordbot.js';
+import { discordFetch, sendToChannel, editMessage } from './discordbot.js';
 import { guildId, loadMap, saveMap, allMembers, saveSetting, scheduleSync } from './discordserver.js';
 
 const flagOn = async (k) => (await setting(k)) === 'true';
@@ -554,13 +554,29 @@ async function rulesPayload() {
     components: [{ type: 1, components: [{ type: 2, style: 3, label: "I've read the rules, let me in", emoji: { name: '✅' }, custom_id: 'wpg:enter' }] }],
   };
 }
-const ROLES_PANEL = {
-  embeds: [{ color: COLOR.blue, title: '🎮 Pick your roles', description: 'Tap a platform to add it, tap again to remove it.\n**Wardogs player**: tap if you play Wardogs (you also get it once you /link the WPG app with 5+ hours of Wardogs on Steam).\n**18+** opens the 18+ chat: only take it if you are 18 or older.\n\nGame roles come automatically from your Steam library once you /link the WPG app.' }],
+// #pick-roles: the WPG banner on top, the explanations as boxes, the buttons underneath (like the bot's guides).
+const ROLES_COMPONENTS = {
   components: [
     { type: 1, components: [...PICKS.map((p) => ({ type: 2, style: 2, label: p, custom_id: `wpg:role:${p}` })), { type: 2, style: 4, label: '18+', custom_id: 'wpg:role:18+' }] },
     { type: 1, components: [{ type: 2, style: 3, label: 'Wardogs player', emoji: { name: '🐺' }, custom_id: 'wpg:wardogs:toggle' }] },
   ],
 };
+async function rolesPanel() {
+  const { renderBanner } = await import('./cards.js');
+  const box = (title, description) => ({ color: COLOR.blue, title, description });
+  return {
+    content: '',
+    files: [{ name: 'banner.jpg', data: await renderBanner('PICK YOUR ROLES'), type: 'image/jpeg' }],
+    embeds: [
+      { color: COLOR.blue, image: { url: 'attachment://banner.jpg' } },
+      box('🎮 PLATFORMS', 'Tap **PC**, **Xbox**, **PlayStation** or **Switch** to add it.\nTap it again to remove it.'),
+      box('🐺 WARDOGS PLAYER', 'Tap if you play Wardogs: you get the **Wardogs** role. Tap again to remove it.\nYou also get it automatically once you /link the WPG app with 5+ hours of Wardogs on Steam.'),
+      box('🔞 18+', 'Opens the 18+ chat. **Only take it if you are 18 or older.**'),
+      box('🎯 GAME ROLES', 'Come automatically from your Steam library once you /link the WPG app.'),
+    ],
+    ...ROLES_COMPONENTS,
+  };
+}
 const TICKET_PANEL = {
   embeds: [{ color: COLOR.blue, title: '🎫 Contact staff', description: 'Need help, want to report someone or disagree with a decision? Press the button for a private channel with WPG staff.' }],
   components: [{ type: 1, components: [{ type: 2, style: 1, label: 'Contact staff', emoji: { name: '🎫' }, custom_id: 'wpg:ticket' }] }],
@@ -573,11 +589,11 @@ async function upsertPost(map, key, channel, payload, apply, say, label) {
   const have = map.messages[key];
   if (!apply) { if (!have) say(`Post ${label}`); return; }
   if (have) {
-    const ok = await discordFetch(`/channels/${channel}/messages/${have}`, 'PATCH', payload).then(() => true).catch(() => false);
+    const ok = await (payload.files ? editMessage(channel, have, payload) : discordFetch(`/channels/${channel}/messages/${have}`, 'PATCH', payload)).then(() => true).catch(() => false);
     if (ok) return;
   }
   say(`Post ${label}`);
-  const m = await discordFetch(`/channels/${channel}/messages`, 'POST', { ...payload, allowed_mentions: { parse: [] } });
+  const m = payload.files ? await sendToChannel(channel, payload) : await discordFetch(`/channels/${channel}/messages`, 'POST', { ...payload, allowed_mentions: { parse: [] } });
   map.messages[key] = m.id;
 }
 
@@ -626,7 +642,7 @@ async function setupAutoMod({ guild, map, roleIds, apply, say }) {
 
 export async function setupModeration({ guild, info, map, roleIds, apply, say }) {
   await upsertPost(map, 'rules', map.channels?.['start:rules'], await rulesPayload(), apply, say, 'the rules with the entry button in #rules');
-  await upsertPost(map, 'roles', map.channels?.['info:pick-roles'], ROLES_PANEL, apply, say, 'the role buttons in #pick-roles');
+  await upsertPost(map, 'roles', map.channels?.['info:pick-roles'], await rolesPanel(), apply, say, 'the role buttons in #pick-roles');
   await upsertPost(map, 'ticket', map.channels?.['info:contact-staff'], TICKET_PANEL, apply, say, 'the Contact staff button in #contact-staff');
   await setupAutoMod({ guild, map, roleIds, apply, say });
   if ((await flagOn('discord_raise_verification')) && ((info.verification_level ?? 0) < 2 || (info.explicit_content_filter ?? 0) < 2)) {
@@ -822,14 +838,14 @@ export async function kickStragglers() {
   return n;
 }
 
-// The #pick-roles buttons changed (the Wardogs player button): edit the posted panel once, on the next start.
-const ROLES_PANEL_VERSION = '2';
+// The #pick-roles panel changed (Wardogs player button; then the WPG banner look): edit the posted one once, on the next start.
+const ROLES_PANEL_VERSION = '3';
 async function refreshRolesPanel() {
   if ((await setting('_roles_panel_version')) === ROLES_PANEL_VERSION) return;
   const c = await ctx();
   const id = c.map.messages?.roles;
   if (!c.guild || !id || !c.ch('info:pick-roles')) return;
-  await discordFetch(`/channels/${c.ch('info:pick-roles')}/messages/${id}`, 'PATCH', ROLES_PANEL);
+  await editMessage(c.ch('info:pick-roles'), id, await rolesPanel());
   await saveSetting('_roles_panel_version', ROLES_PANEL_VERSION);
 }
 
