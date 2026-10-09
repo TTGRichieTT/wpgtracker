@@ -194,12 +194,13 @@ export const discordScheduled = pgTable('discord_scheduled', {
   style: text().notNull().default('card'), // card (WPG banner + boxes) | text
   ping: boolean().notNull().default(false),
   show_in_app: boolean().notNull().default(false),
-  date: text().notNull(), // first send, UK date YYYY-MM-DD
-  time: text().notNull(), // UK time HH:MM
+  date: text().notNull(), // first send, YYYY-MM-DD in `tz`
+  time: text().notNull(), // HH:MM in `tz`
+  tz: text().notNull().default('Europe/London'), // the time zone of the admin who set it (repeats keep that local time)
   repeat: text().notNull().default('none'), // none | daily | weekly | fortnightly | monthly | days
   weekdays: jsonb().notNull().default([]), // weekly: 0 = Sunday … 6 = Saturday
   every_days: integer().notNull().default(0), // days: every N days
-  until_date: text().notNull().default(''), // optional last UK date
+  until_date: text().notNull().default(''), // optional last date (in `tz`)
   max_sends: integer().notNull().default(0), // optional: stop after this many (0 = no limit)
   sends: integer().notNull().default(0),
   next_at: timestamp({ withTimezone: true }),

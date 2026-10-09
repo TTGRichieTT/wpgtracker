@@ -1,6 +1,6 @@
 // Scheduled announcements (Discord control → Scheduled announcements, admins only).
 // Admins write an announcement (WPG banner + boxes, @Role / #room mentions, optional ping), pick the room (default
-// #announcements), a UK date and time, and whether it repeats (daily, chosen weekdays, every 2 weeks, monthly, every
+// #announcements), a date and time in their own time zone (saved with it, so a US admin's 4pm is 9pm UK), and whether it repeats (daily, chosen weekdays, every 2 weeks, monthly, every
 // N days; optional last date or number of sends). The bot posts it as a fresh message at that time; the app never
 // edits or deletes it on Discord. A one-off leaves the scheduled list once it's sent; repeating ones stay with their
 // next time. Every send goes in the history. Optionally it's also added to the app's announcements on HQ.
@@ -14,26 +14,32 @@ export const REPEATS = ['none', 'daily', 'weekly', 'fortnightly', 'monthly', 'da
 const LATE_LIMIT = 3 * 3600e3;
 const DAY = 86400e3;
 
-// ---------- UK time ----------
-function ukParts(date) {
+// ---------- Time zones ----------
+// Each announcement keeps the time zone of the admin who set it; its date, time and repeats are in that zone.
+const UK = 'Europe/London';
+export function validZone(tz) {
+  try { new Intl.DateTimeFormat('en-GB', { timeZone: String(tz) }); return !!tz; } catch { return false; }
+}
+function zoneParts(date, tz = UK) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(date).map((x) => [x.type, x.value]));
   return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour % 24, mi: +p.minute };
 }
-// A UK wall-clock date and time → the real moment (handles summer time).
-export function ukToDate(dateStr, timeStr) {
+// A wall-clock date and time in a zone → the real moment (handles summer time).
+export function zoneToDate(dateStr, timeStr, tz = UK) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const [h, mi] = timeStr.split(':').map(Number);
   const wall = Date.UTC(y, m - 1, d, h, mi);
   let guess = wall;
   for (let i = 0; i < 2; i++) {
-    const u = ukParts(new Date(guess));
+    const u = zoneParts(new Date(guess), tz);
     const shown = Date.UTC(u.y, u.m - 1, u.d, u.h, u.mi);
     guess += wall - shown;
   }
   return new Date(guess);
 }
+export const ukToDate = (dateStr, timeStr) => zoneToDate(dateStr, timeStr, UK);
 const ymd = (t) => { const x = new Date(t); return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`; };
 const addDays = (dateStr, n) => { const [y, m, d] = dateStr.split('-').map(Number); return ymd(Date.UTC(y, m - 1, d + n)); };
 const weekday = (dateStr) => { const [y, m, d] = dateStr.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
@@ -63,21 +69,21 @@ export function firstSend(s, from = Date.now()) {
   if (s.repeat === 'weekly' && Array.isArray(s.weekdays) && s.weekdays.length && !s.weekdays.map(Number).includes(weekday(date))) date = nextDate(s, date);
   for (let i = 0; i < 2000 && date; i++) {
     if (s.until_date && date > s.until_date) return null;
-    const at = ukToDate(date, s.time);
+    const at = zoneToDate(date, s.time, s.tz || UK);
     if (at.getTime() >= from - 60e3) return at;
     date = nextDate(s, date);
   }
   return null;
 }
-function ukDateOf(at) { const u = ukParts(new Date(at)); return `${u.y}-${String(u.m).padStart(2, '0')}-${String(u.d).padStart(2, '0')}`; }
+function dateIn(at, tz) { const u = zoneParts(new Date(at), tz); return `${u.y}-${String(u.m).padStart(2, '0')}-${String(u.d).padStart(2, '0')}`; }
 // After a send (or a skipped late one): the next time, or null when it's finished.
 function afterSend(s, sentAt) {
   if (s.repeat === 'none') return null;
   if (s.max_sends && s.sends >= s.max_sends) return null;
-  let date = nextDate(s, ukDateOf(sentAt));
+  let date = nextDate(s, dateIn(sentAt, s.tz || UK));
   for (let i = 0; i < 2000 && date; i++) {
     if (s.until_date && date > s.until_date) return null;
-    const at = ukToDate(date, s.time);
+    const at = zoneToDate(date, s.time, s.tz || UK);
     if (at.getTime() > Date.now() - 60e3) return at;
     date = nextDate(s, date);
   }
@@ -96,6 +102,7 @@ const clean = (b) => {
     show_in_app: !!b.show_in_app,
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? String(b.date) : '',
     time: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.time || '')) ? String(b.time) : '',
+    tz: validZone(b.tz) ? String(b.tz) : UK,
     repeat,
     weekdays: repeat === 'weekly' ? [...new Set((Array.isArray(b.weekdays) ? b.weekdays : []).map(Number).filter((d) => d >= 0 && d <= 6))] : [],
     every_days: repeat === 'days' ? Math.min(365, Math.max(1, Number(b.every_days) || 1)) : 0,
@@ -191,6 +198,8 @@ export async function overview() {
     q('SELECT * FROM discord_scheduled ORDER BY paused, next_at NULLS LAST, id'),
     q('SELECT * FROM discord_scheduled_log ORDER BY sent_at DESC LIMIT 200'),
   ]);
+  // start_at: the first send as a real moment, so the form can show it in the viewing admin's own time.
+  for (const s of list) s.start_at = zoneToDate(s.date, s.time, s.tz || UK);
   return { list, history, guild: await guildId() };
 }
 

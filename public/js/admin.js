@@ -864,10 +864,28 @@ function boxEditor(boxesEl, addBtn, initial) {
 
 // ---------- Discord control → Scheduled announcements (server/discordschedule.js) ----------
 const SCHED_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const ukWhen = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
-const ukToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+// Times are entered and shown in the admin's own time zone (saved with the announcement), so a US admin's 4pm is 9pm UK.
+const MY_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London'; } catch { return 'Europe/London'; } })();
+// Short zone names: "CDT" / "EST" for US zones, "BST" / "GMT" for UK ones.
+const zoneLabel = (tz, at = new Date()) => {
+  const name = (loc) => { try { return new Intl.DateTimeFormat(loc, { timeZone: tz, timeZoneName: 'short' }).formatToParts(at).find((x) => x.type === 'timeZoneName')?.value || ''; } catch { return ''; } };
+  const us = name('en-US');
+  return (us && !us.startsWith('GMT') ? us : name('en-GB')) || tz;
+};
+const localWhen = (iso) => (iso ? `${new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} ${zoneLabel(MY_TZ, new Date(iso))}` : '—');
+const ymdIn = (at, tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(at);
+const hmIn = (at, tz) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
+// A scheduled announcement's day, time and weekdays as the viewing admin sees them (it may have been set in another zone).
+function schedLocal(s) {
+  if (!s.start_at || (s.tz || 'Europe/London') === MY_TZ) return { date: s.date, time: s.time, weekdays: s.weekdays || [] };
+  const at = new Date(s.start_at);
+  const date = ymdIn(at, MY_TZ);
+  const shift = Math.round((Date.parse(date) - Date.parse(s.date)) / 86400e3);
+  return { date, time: hmIn(at, MY_TZ), weekdays: (s.weekdays || []).map((d) => (Number(d) + shift + 7) % 7) };
+}
 const nth = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] || 'th'}`;
-function repeatText(s) {
+function repeatText(row) {
+  const s = { ...row, ...schedLocal(row) };
   const base = {
     none: 'Once',
     daily: 'Every day',
@@ -877,7 +895,8 @@ function repeatText(s) {
     days: `Every ${s.every_days} days`,
   }[s.repeat] || 'Once';
   const ends = [s.until_date ? `until ${s.until_date.split('-').reverse().join('/')}` : '', s.max_sends ? `${s.sends || 0} of ${s.max_sends} sent` : ''].filter(Boolean).join(' · ');
-  return `${base} at ${s.time} UK${ends ? ` · ${ends}` : ''}`;
+  const elsewhere = (row.tz || 'Europe/London') !== MY_TZ ? ` (set as ${row.time} ${zoneLabel(row.tz, new Date(row.start_at || Date.now()))})` : '';
+  return `${base} at ${s.time} your time${elsewhere}${ends ? ` · ${ends}` : ''}`;
 }
 async function scheduledPanel(box) {
   let d;
@@ -891,14 +910,14 @@ async function scheduledPanel(box) {
   }).join('');
   const link = (h) => (d.guild && h.message_id ? `https://discord.com/channels/${d.guild}/${h.channel_id}/${h.message_id}` : '');
   box.innerHTML = `<div class="panel">
-      <p class="muted small" style="margin-top:0">Write an announcement now and the bot posts it at the UK day and time you pick, as a fresh message (WPG banner + text boxes, or plain text).
+      <p class="muted small" style="margin-top:0">Write an announcement now and the bot posts it at the day and time you pick (in your own time zone: <b>${esc(zoneLabel(MY_TZ))}</b>; other admins see it in theirs), as a fresh message (WPG banner + text boxes, or plain text).
         It can repeat (every day, chosen weekdays, every 2 weeks, every month or every few days). Once a one-off is sent it leaves this list; it's never deleted from Discord.
         Tick <b>Show in the app</b> to add it to the app's announcements on HQ too. Every send is kept in the history below.</p>
       <button class="btn primary" id="saNew">${icon('plus')} New scheduled announcement</button></div>
     <div class="panel"><div class="panel-title">Scheduled <span class="sub">${d.list.length}</span></div>
       ${d.list.length ? d.list.map((s) => `<div class="dc-room"${s.paused ? ' style="opacity:.6"' : ''}><span class="grow"><b>${esc(s.title || 'Announcement')}</b>
           <span class="muted small">in # ${esc(roomName[s.channel_id] || s.channel_id)}${s.show_in_app ? ' · also in the app' : ''}${s.ping ? ' · pings' : ''}</span><br>
-          <span class="small">${s.paused ? '⏸ Paused' : `Next: <b>${esc(ukWhen(s.next_at))}</b>`} <span class="muted">· ${esc(repeatText(s))}</span></span></span>
+          <span class="small">${s.paused ? '⏸ Paused' : `Next: <b>${esc(localWhen(s.next_at))}</b>`} <span class="muted">· ${esc(repeatText(s))}</span></span></span>
         <button class="btn small" data-edit="${s.id}">${icon('edit')} Edit</button>
         <button class="btn small ghost" data-pause="${s.id}">${s.paused ? '▶ Resume' : '⏸ Pause'}</button>
         <button class="btn small ghost" data-send="${s.id}">Send now</button>
@@ -906,7 +925,7 @@ async function scheduledPanel(box) {
     : '<p class="muted small" style="margin:0">Nothing scheduled.</p>'}</div>
     <div class="panel"><div class="panel-title">History <span class="sub">newest ${d.history.length}</span></div>
       ${d.history.length ? d.history.map((h) => `<div class="dc-room"><span class="grow"><b>${esc(h.title || 'Announcement')}</b>
-          <span class="muted small">in # ${esc(roomName[h.channel_id] || h.channel_id)} · ${esc(ukWhen(h.sent_at))}${h.how === 'now' ? ' · sent by hand' : ''}</span>
+          <span class="muted small">in # ${esc(roomName[h.channel_id] || h.channel_id)} · ${esc(localWhen(h.sent_at))}${h.how === 'now' ? ' · sent by hand' : ''}</span>
           ${h.ok ? '' : `<br><span class="small" style="color:var(--red)">${h.how === 'skipped' ? '' : 'Not sent: '}${esc(h.problem || 'unknown problem')}</span>`}</span>
         <button class="btn small ghost" data-view="${h.id}">View</button>
         ${link(h) ? `<a class="btn small ghost" href="${esc(link(h))}" target="_blank" rel="noopener">On Discord</a>` : ''}
@@ -914,7 +933,7 @@ async function scheduledPanel(box) {
     : '<p class="muted small" style="margin:0">Nothing sent yet.</p>'}</div>`;
   const reload = () => scheduledPanel(box);
   const open = (s, copy) => {
-    const v = s || { channel_id: copy?.channel_id || ANNOUNCE, title: copy?.title || '', body: copy?.body || '', style: copy?.style || 'card', ping: false, show_in_app: false, date: ukToday(), time: '', repeat: 'none', weekdays: [], every_days: 3, until_date: '', max_sends: 0 };
+    const v = s ? { ...s, ...schedLocal(s) } : { channel_id: copy?.channel_id || ANNOUNCE, title: copy?.title || '', body: copy?.body || '', style: copy?.style || 'card', ping: false, show_in_app: false, date: ymdIn(new Date(), MY_TZ), time: '', repeat: 'none', weekdays: [], every_days: 3, until_date: '', max_sends: 0 };
     const m = modal(`<form class="stack" id="saForm">
       <div class="row between"><h3 style="margin:0">${s ? 'Edit' : 'New'} scheduled announcement</h3><button type="button" class="btn ghost small" data-close>✕</button></div>
       <label class="field"><span>Room</span><select name="channel_id" required><option value="">Pick a room…</option>${roomOptions(v.channel_id)}</select></label>
@@ -930,11 +949,12 @@ async function scheduledPanel(box) {
         <label class="check small" title="Also adds it to the app's announcements (HQ) when it's sent"><input type="checkbox" name="show_in_app"${v.show_in_app ? ' checked' : ''}> Show in the app as well</label>
       </div>
       <div class="form-grid">
-        <label class="field"><span>Day (UK)</span><input type="date" name="date" required value="${esc(v.date)}"></label>
-        <label class="field"><span>Time (UK)</span><input type="time" name="time" required value="${esc(v.time)}"></label>
+        <label class="field"><span>Day (your time)</span><input type="date" name="date" required value="${esc(v.date)}"></label>
+        <label class="field"><span>Time (your time)</span><input type="time" name="time" required value="${esc(v.time)}"></label>
         <label class="field"><span>Repeat</span><select name="repeat">${[['none', 'Don\'t repeat'], ['daily', 'Every day'], ['weekly', 'Every week (pick days)'], ['fortnightly', 'Every 2 weeks'], ['monthly', 'Every month (same date)'], ['days', 'Every few days']]
           .map(([k, l]) => `<option value="${k}"${k === v.repeat ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
       </div>
+      <p class="muted small" id="saZone" style="margin:0"></p>
       <div class="row" data-r="weekly" style="gap:12px">${SCHED_DAYS.map((n, i) => `<label class="check small"><input type="checkbox" name="wd" value="${i}"${(v.weekdays || []).map(Number).includes(i) ? ' checked' : ''}> ${n}</label>`).join('')}</div>
       <div class="form-grid" data-r="repeat">
         <label class="field" data-r="days"><span>Every how many days</span><input type="number" name="every_days" min="1" max="365" value="${esc(v.every_days || 3)}"></label>
@@ -954,7 +974,17 @@ async function scheduledPanel(box) {
     };
     f.repeat.onchange = sync;
     sync();
-    const body = () => ({
+    // "Your time" plus the same moment in UK time, so nobody has to work it out.
+    const zone = () => {
+      const at = f.date.value && f.time.value ? new Date(`${f.date.value}T${f.time.value}`) : null;
+      const uk = at && !Number.isNaN(at.getTime()) && MY_TZ !== 'Europe/London'
+        ? ` That's <b>${esc(at.toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))} UK time</b>.` : '';
+      m.el.querySelector('#saZone').innerHTML = `Times are in your time zone (<b>${esc(zoneLabel(MY_TZ, at || new Date()))}</b>, ${esc(MY_TZ)}).${uk}`;
+    };
+    f.date.oninput = zone;
+    f.time.oninput = zone;
+    zone();
+    const body = () => ({ tz: MY_TZ,
       channel_id: f.channel_id.value, title: f.title.value, body: boxes.text(), style: f.style.value, ping: f.ping.checked, show_in_app: f.show_in_app.checked,
       date: f.date.value, time: f.time.value, repeat: f.repeat.value, weekdays: [...f.querySelectorAll('[name="wd"]:checked')].map((x) => Number(x.value)),
       every_days: f.every_days.value, until_date: f.until_date.value, max_sends: f.max_sends.value,
@@ -968,7 +998,7 @@ async function scheduledPanel(box) {
       e.preventDefault();
       try {
         const r = await api(s ? `admin/discord-scheduled/${s.id}` : 'admin/discord-scheduled', { method: s ? 'PUT' : 'POST', body: body() });
-        toast(s ? 'Saved' : 'Scheduled', `Goes out ${ukWhen(r.next_at)} (UK).`);
+        toast(s ? 'Saved' : 'Scheduled', `Goes out ${localWhen(r.next_at)}.`);
         m.close();
         reload();
       } catch (x) { fail(x); }
@@ -1000,7 +1030,7 @@ async function scheduledPanel(box) {
     b.onclick = async () => {
       const h = byId(d.history, b.dataset.view);
       const m = modal(`<div class="stack"><div class="row between"><h3 style="margin:0">${esc(h.title || 'Announcement')}</h3><button type="button" class="btn ghost small" data-close>✕</button></div>
-        <p class="muted small" style="margin:0">Sent ${esc(ukWhen(h.sent_at))} in # ${esc(roomName[h.channel_id] || h.channel_id)}</p><div id="saView"><div class="spinner"></div></div></div>`);
+        <p class="muted small" style="margin:0">Sent ${esc(localWhen(h.sent_at))} in # ${esc(roomName[h.channel_id] || h.channel_id)}</p><div id="saView"><div class="spinner"></div></div></div>`);
       try { m.el.querySelector('#saView').innerHTML = discordPreview(await api('admin/discord-posts/preview', { method: 'POST', body: { channel_id: h.channel_id, kind: 'custom', title: h.title, body: h.body } })); } catch { m.el.querySelector('#saView').innerHTML = `<pre class="small" style="white-space:pre-wrap">${esc(h.body)}</pre>`; }
     };
   });
