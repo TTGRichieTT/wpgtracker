@@ -726,12 +726,13 @@ async function roomsPanel(box) {
         ${r.problem ? `<br><span class="small" style="color:var(--red)">${esc(r.problem)}</span>` : ''}</span>
       <label class="check small" title="Members can read but not post or use /commands. Staff and the bot still can."><input type="checkbox" data-view ${r.view_only ? 'checked' : ''}> View only</label>
       ${r.no_clear ? '<span class="muted small" title="Rules, logs, tickets and friend codes are never auto-cleared">Never cleared</span>'
-    : `<label class="small" title="Members' messages and the replies to their /commands are deleted after this">Auto-clear <select data-clear>${d.clear_choices.map((m) => `<option value="${m}"${m === r.clear_minutes ? ' selected' : ''}>${clearLabel(m)}</option>`).join('')}</select></label>`}
+    : `<label class="small" title="Members' messages and the replies to their /commands are deleted after this">Auto-clear <select data-clear>${d.clear_choices.map((m) => `<option value="${m}"${m === r.clear_minutes ? ' selected' : ''}>${clearLabel(m)}</option>`).join('')}</select></label>
+      <label class="check small" title="Bot posts are cleared too after the same time. Pinned posts, the live cash / leaderboard boards and the bot's guides and panels always stay."${r.clear_minutes ? '' : ' style="opacity:.5"'}><input type="checkbox" data-bots ${r.clear_bots ? 'checked' : ''}${r.clear_minutes ? '' : ' disabled'}> Clear bot posts too</label>`}
     </div>`;
   };
   box.innerHTML = `<div class="panel">
       <p class="muted small" style="margin-top:0"><b>View only</b>: members can read the room (leaderboards, live cash…) but not post, start threads or use /commands; staff and the bot still can, and the room's permissions are put back exactly when you switch it off.
-        <b>Auto-clear</b>: members' messages and the replies to their /commands are deleted after the time you pick. Staff messages, the bot's own posts and announcements, other bots' posts and pinned messages are never auto-deleted (remove those by hand).
+        <b>Auto-clear</b>: members' messages and the replies to their /commands are deleted after the time you pick. Staff messages and pinned messages are never auto-deleted. Bot posts stay too, unless you tick <b>Clear bot posts too</b> for that room (pinned posts, the live cash and leaderboard boards and the bot's guides and panels still stay). Big-win posts always go 3 hours after posting.
         New rooms and categories made in Discord show up here by themselves.</p>
       <div class="row"><button class="btn small" id="dsRoomsSync">${icon('refresh')} Refresh from Discord</button>${d.guild ? '' : '<span class="muted small">Set the Discord server first (Server &amp; roles).</span>'}</div>
     </div>
@@ -761,7 +762,15 @@ async function roomsPanel(box) {
     const v = el.querySelector('[data-view]');
     v.onchange = () => save({ view_only: v.checked }, () => { v.checked = !v.checked; });
     const c = el.querySelector('[data-clear]');
-    if (c) { const was = c.value; c.onchange = () => save({ clear_minutes: Number(c.value) }, () => { c.value = was; }); }
+    const bots = el.querySelector('[data-bots]');
+    if (c) {
+      const was = c.value;
+      c.onchange = () => {
+        save({ clear_minutes: Number(c.value) }, () => { c.value = was; });
+        if (bots) { bots.disabled = !Number(c.value); bots.parentElement.style.opacity = Number(c.value) ? '' : '.5'; }
+      };
+    }
+    if (bots) bots.onchange = () => save({ clear_bots: bots.checked }, () => { bots.checked = !bots.checked; });
   });
 }
 

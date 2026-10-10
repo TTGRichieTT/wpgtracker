@@ -165,6 +165,7 @@ export const discordRooms = pgTable('discord_rooms', {
   view_only: boolean().notNull().default(false),
   view_saved: jsonb(), // the channel's permissions before it was made view only (put back when switched off)
   clear_minutes: integer().notNull().default(0),
+  clear_bots: boolean().notNull().default(false), // auto-clear the bots' posts too (pinned ones, boards and panels stay)
   show_in_app: boolean().notNull().default(false), // voice rooms members need a role for: show the real name in the app's Discord comms panel
   last_cleared_at: timestamp({ withTimezone: true }),
   last_cleared_count: integer().notNull().default(0),

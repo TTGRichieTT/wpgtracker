@@ -3,7 +3,8 @@
 //    categories show up in the app straight away; admins are told about new ones). Admins choose per room:
 //      view only: members can read it but not post, start threads or use /commands (staff and the bot still can);
 //      auto-clear: members' messages and the replies to their /commands are deleted after the room's time.
-//    Auto-clear never deletes staff messages, the bot's own posts and announcements, other bots' posts or pinned
+//    Auto-clear never deletes staff messages, the bot's own posts and announcements, other bots' posts (unless the room's
+//    "clear bot posts too" is ticked; boards and panels still stay) or pinned
 //    messages: those are removed by hand. Some rooms can't be auto-cleared at all (rules, logs, tickets, friend codes).
 //  - Bot posts: messages the bot posts in a room the admin picks and keeps up to date (edited in place, pinned):
 //    ready-made guides (the #stats-bot guide lists the member commands, staff ones hidden, and rebuilds itself
@@ -113,7 +114,7 @@ export async function roomsOverview() {
   const groups = [{ id: '', name: 'No category', rooms: [] }, ...cats.map((c) => ({ id: c.channel_id, name: c.name, position: c.position, rooms: [] }))];
   for (const r of rows.filter((x) => x.type !== 4)) {
     (groups.find((g) => g.id === r.parent_id) || groups[0]).rooms.push({
-      id: r.channel_id, name: r.name, type: r.type, text: TEXT_TYPES.has(r.type), voice: VOICE_TYPES.has(r.type), show_in_app: r.show_in_app, view_only: r.view_only, clear_minutes: r.clear_minutes,
+      id: r.channel_id, name: r.name, type: r.type, text: TEXT_TYPES.has(r.type), voice: VOICE_TYPES.has(r.type), show_in_app: r.show_in_app, view_only: r.view_only, clear_minutes: r.clear_minutes, clear_bots: r.clear_bots,
       no_clear: locked.has(r.channel_id), last_cleared_at: r.last_cleared_at, last_cleared_count: r.last_cleared_count, problem: r.problem,
       posts: posts.filter((p) => p.channel_id === r.channel_id).length,
     });
@@ -129,7 +130,7 @@ export async function roomsOverview() {
 }
 
 // ---------- Room settings ----------
-export async function setRoom(channelId, { view_only, clear_minutes, show_in_app }) {
+export async function setRoom(channelId, { view_only, clear_minutes, show_in_app, clear_bots }) {
   const room = await one('SELECT * FROM discord_rooms WHERE channel_id=$1', [channelId]);
   if (!room) throw new Error('That room is no longer on the server.');
   if (show_in_app !== undefined) {
@@ -146,6 +147,7 @@ export async function setRoom(channelId, { view_only, clear_minutes, show_in_app
     await q('UPDATE discord_rooms SET clear_minutes=$2 WHERE channel_id=$1', [channelId, mins]);
     if (mins) problem = await ensureBotCan(channelId);
   }
+  if (clear_bots !== undefined) await q('UPDATE discord_rooms SET clear_bots=$2 WHERE channel_id=$1', [channelId, !!clear_bots]);
   if (view_only !== undefined && !!view_only !== room.view_only) {
     problem = (await (view_only ? makeViewOnly(room) : undoViewOnly(room))) || problem;
   }
@@ -236,12 +238,15 @@ const isBigWin = (m) => !!m.author?.bot && /profit in one Wardogs match/.test(St
 // Which messages auto-clear removes: members' own messages and the replies to members' /commands. Never staff, the
 // bot's or other bots' own posts (announcements, boards such as live cash, guides; big wins go after 3 hours, below),
 // or pinned messages.
-export async function clearable(m, { guild, staff, ownerId, keep }) {
+export async function clearable(m, { guild, staff, ownerId, keep, room }) {
   if (m.pinned || keep.has(m.id)) return false;
   const by = m.author || {};
   if (m.type === 6) return !!by.bot; // "WPG pinned a message" notices
   const invoker = m.interaction_metadata?.user?.id || m.interaction?.user?.id || '';
-  if (by.bot || m.webhook_id) return !!invoker && !(await isStaffUser(guild, invoker, staff, ownerId));
+  if (by.bot || m.webhook_id) {
+    if (room?.clear_bots && !isBigWin(m)) return true; // "clear bot posts too" (pinned, boards and panels were kept above)
+    return !!invoker && !(await isStaffUser(guild, invoker, staff, ownerId));
+  }
   return !(await isStaffUser(guild, by.id, staff, ownerId));
 }
 async function clearRoom(room, ctx) {
@@ -255,7 +260,7 @@ async function clearRoom(room, ctx) {
     for (const m of list) {
       const at = Date.parse(m.timestamp);
       if (at >= cutoff || at < oldest) continue;
-      if (await clearable(m, ctx)) out.push(m.id);
+      if (await clearable(m, { ...ctx, room })) out.push(m.id);
     }
     before = list[list.length - 1].id;
     if (list.length < 100) break;
@@ -280,6 +285,9 @@ export async function sweepRooms() {
     const staff = await staffRoleIds(guild);
     const ownerId = (await discordFetch(`/guilds/${guild}`).catch(() => null))?.owner_id || '';
     const keep = new Set((await q("SELECT message_id FROM discord_bot_posts WHERE message_id <> ''")).map((r) => r.message_id));
+    // Messages the bot keeps editing are never cleared: the live cash and leaderboard boards and the entry / roles / ticket panels.
+    for (const r of await q("SELECT value FROM settings WHERE key IN ('_money_board_msg', '_leaderboard_board_msg')")) keep.add(String(r.value).split(':')[1] || '');
+    for (const v of Object.values((await loadMap(guild)).messages || {})) if (typeof v === 'string') keep.add(v);
     for (const room of rooms) {
       if (locked.has(room.channel_id)) continue;
       try {
