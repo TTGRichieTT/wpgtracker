@@ -57,3 +57,49 @@ export function badgeHTML(b, size = 64, { locked = false } = {}) {
     : `<span style="display:block;width:100%;height:100%;filter:${locked ? 'none' : `drop-shadow(0 0 ${Math.max(2, size / 18)}px ${r.color})`}">${badgeSVG(b, { locked })}</span>`;
   return `<span class="badge-art" style="display:inline-block;width:${size}px;height:${size}px;vertical-align:middle">${inner}</span>`;
 }
+
+// 3D tilt: a badge leans towards the mouse (or finger) over it and eases back when it leaves. One listener for the
+// whole page, so every badge everywhere gets it. Tiny badges (next to names) and "reduce motion" are left still.
+const MAX_ROTATE_X = 20;
+const MAX_ROTATE_Y = 18;
+if (typeof document !== 'undefined' && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+  let current = null;
+  const settle = (el) => {
+    el.style.transition = 'transform 400ms ease-out';
+    el.style.transform = 'perspective(600px) rotateX(0deg) rotateY(0deg)';
+  };
+  const tilt = (el, e) => {
+    const r = el.getBoundingClientRect();
+    const halfW = r.width / 2;
+    const halfH = r.height / 2;
+    const x = Math.max(0, Math.min(r.width, e.clientX - r.left));
+    const y = Math.max(0, Math.min(r.height, e.clientY - r.top));
+    const rotY = ((halfW - x) * MAX_ROTATE_Y) / halfW;
+    const rotX = ((halfH - y) * -MAX_ROTATE_X) / halfH;
+    el.style.transform = `perspective(600px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+  };
+  const target = (e) => {
+    const el = e.target.closest?.('.badge-art');
+    return el && el.offsetWidth >= 40 ? el : null;
+  };
+  document.addEventListener('pointerover', (e) => {
+    const el = target(e);
+    if (!el || el === current) return;
+    if (current) settle(current);
+    current = el;
+    el.style.transition = 'transform 50ms linear';
+    el.style.willChange = 'transform';
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (current && current.contains(e.target)) tilt(current, e);
+  }, { passive: true });
+  const leave = (e) => {
+    if (!current) return;
+    if (e.type === 'pointerout' && current.contains(e.relatedTarget)) return; // still over the same badge
+    settle(current);
+    current = null;
+  };
+  document.addEventListener('pointerout', leave);
+  document.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') leave(e); });
+  document.addEventListener('pointercancel', leave);
+}
