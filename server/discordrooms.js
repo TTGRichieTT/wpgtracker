@@ -3,13 +3,13 @@
 //    categories show up in the app straight away; admins are told about new ones). Admins choose per room:
 //      view only: members can read it but not post, start threads or use /commands (staff and the bot still can);
 //      auto-clear: members' messages and the replies to their /commands are deleted after the room's time.
-//    Auto-clear never deletes staff messages, the bot's own posts and announcements (except its big-win posts), other bots' posts or pinned
+//    Auto-clear never deletes staff messages, the bot's own posts and announcements, other bots' posts or pinned
 //    messages: those are removed by hand. Some rooms can't be auto-cleared at all (rules, logs, tickets, friend codes).
 //  - Bot posts: messages the bot posts in a room the admin picks and keeps up to date (edited in place, pinned):
 //    ready-made guides (the #stats-bot guide lists the member commands, staff ones hidden, and rebuilds itself
 //    when commands change) and the admins' own posts, as a picture in the WPG artwork or plain text.
 import crypto from 'node:crypto';
-import { q, one } from './db.js';
+import { q, one, setting } from './db.js';
 import { bus } from './bus.js';
 import { discordFetch, sendToChannel, editMessage, botReady, commandList, commandAccess, commandIds } from './discordbot.js';
 import { guildId, loadMap, staffRoles } from './discordserver.js';
@@ -231,15 +231,15 @@ async function isStaffUser(guild, userId, staff, ownerId) {
   staffCache.set(userId, { staff: yes, at: Date.now() });
   return yes;
 }
-// The bot's big-win posts ("… just made +$… profit in one Wardogs match!"): short-lived news, cleared like members' messages.
+// The bot's big-win posts ("… just made +$… profit in one Wardogs match!"): removed 3 hours after posting (clearBigWins).
 const isBigWin = (m) => !!m.author?.bot && /profit in one Wardogs match/.test(String(m.content || ''));
-// Which messages auto-clear removes: members' own messages, the replies to members' /commands and the bot's big-win
-// posts. Never staff, the bot's or other bots' other posts (announcements, boards such as live cash, guides), or pinned messages.
+// Which messages auto-clear removes: members' own messages and the replies to members' /commands. Never staff, the
+// bot's or other bots' own posts (announcements, boards such as live cash, guides; big wins go after 3 hours, below),
+// or pinned messages.
 export async function clearable(m, { guild, staff, ownerId, keep }) {
   if (m.pinned || keep.has(m.id)) return false;
   const by = m.author || {};
   if (m.type === 6) return !!by.bot; // "WPG pinned a message" notices
-  if (isBigWin(m)) return true;
   const invoker = m.interaction_metadata?.user?.id || m.interaction?.user?.id || '';
   if (by.bot || m.webhook_id) return !!invoker && !(await isStaffUser(guild, invoker, staff, ownerId));
   return !(await isStaffUser(guild, by.id, staff, ownerId));
@@ -248,30 +248,24 @@ async function clearRoom(room, ctx) {
   const cutoff = Date.now() - room.clear_minutes * 60e3;
   const oldest = Date.now() - 14 * DAY + 3600e3; // bulk delete only takes messages under 14 days old
   const out = [];
-  const old = []; // big-win posts older than 14 days: Discord won't bulk delete them, so one at a time (a few per sweep)
   let before = '';
   for (let page = 0; page < 10; page++) {
     const list = await discordFetch(`/channels/${room.channel_id}/messages?limit=100${before ? `&before=${before}` : ''}`);
     if (!list.length) break;
     for (const m of list) {
       const at = Date.parse(m.timestamp);
-      if (at >= cutoff) continue;
-      if (at < oldest) {
-        if (old.length < 20 && isBigWin(m) && !m.pinned && !ctx.keep.has(m.id)) old.push(m.id);
-        continue;
-      }
+      if (at >= cutoff || at < oldest) continue;
       if (await clearable(m, ctx)) out.push(m.id);
     }
     before = list[list.length - 1].id;
     if (list.length < 100) break;
   }
-  for (const id of old) await discordFetch(`/channels/${room.channel_id}/messages/${id}`, 'DELETE').catch(() => {});
   for (let i = 0; i < out.length; i += 100) {
     const chunk = out.slice(i, i + 100);
     if (chunk.length === 1) await discordFetch(`/channels/${room.channel_id}/messages/${chunk[0]}`, 'DELETE');
     else await discordFetch(`/channels/${room.channel_id}/messages/bulk-delete`, 'POST', { messages: chunk });
   }
-  return out.length + old.length;
+  return out.length;
 }
 let sweeping = false;
 export async function sweepRooms() {
@@ -299,6 +293,54 @@ export async function sweepRooms() {
   } finally {
     sweeping = false;
   }
+}
+
+// Big-win posts are news, not records: each one is removed 3 hours after it was posted, in whichever room they go to
+// (the live match money room, else the room for the other automatic posts). Older ones still there go too (Discord
+// only bulk deletes messages under 14 days old, so older ones are removed one at a time, a few each run).
+export const BIG_WIN_HOURS = 3;
+let clearingWins = false;
+export async function clearBigWins() {
+  if (clearingWins || !botReady()) return 0;
+  clearingWins = true;
+  let n = 0;
+  try {
+    const rooms = new Set();
+    for (const k of ['discord_money_channel', 'discord_post_channel']) {
+      const id = String((await setting(k)) || '').trim();
+      if (/^\d{15,22}$/.test(id)) rooms.add(id);
+    }
+    const cutoff = Date.now() - BIG_WIN_HOURS * 3600e3;
+    const bulkLimit = Date.now() - 14 * DAY + 3600e3;
+    for (const room of rooms) {
+      const recent = [];
+      const old = [];
+      let before = '';
+      for (let page = 0; page < 5; page++) {
+        const list = await discordFetch(`/channels/${room}/messages?limit=100${before ? `&before=${before}` : ''}`);
+        if (!list.length) break;
+        for (const m of list) {
+          if (m.pinned || !isBigWin(m) || Date.parse(m.timestamp) >= cutoff) continue;
+          if (Date.parse(m.timestamp) > bulkLimit) recent.push(m.id);
+          else if (old.length < 20) old.push(m.id);
+        }
+        before = list[list.length - 1].id;
+        if (list.length < 100) break;
+      }
+      for (let i = 0; i < recent.length; i += 100) {
+        const chunk = recent.slice(i, i + 100);
+        if (chunk.length === 1) await discordFetch(`/channels/${room}/messages/${chunk[0]}`, 'DELETE');
+        else await discordFetch(`/channels/${room}/messages/bulk-delete`, 'POST', { messages: chunk });
+      }
+      for (const id of old) await discordFetch(`/channels/${room}/messages/${id}`, 'DELETE').catch(() => {});
+      n += recent.length + old.length;
+    }
+  } catch (e) {
+    console.warn('[rooms] big wins', e.message);
+  } finally {
+    clearingWins = false;
+  }
+  return n;
 }
 
 // ---------- Bot posts ----------
@@ -726,6 +768,8 @@ export function startDiscordRooms() {
     refreshPosts();
   }, 20e3);
   setInterval(() => sweepRooms().catch((e) => console.warn('[rooms] clear', e.message)), 60e3);
+  setTimeout(() => clearBigWins(), 90e3);
+  setInterval(() => clearBigWins(), 10 * 60e3); // big-win posts go 3 hours after posting
   setInterval(() => syncRooms().catch(() => {}), 30 * 60e3); // catches anything missed while the bot was offline
   setInterval(() => refreshPosts(), 60 * 60e3);
   let t = null;
